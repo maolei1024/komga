@@ -1,4 +1,4 @@
-import _, {LoDashStatic} from 'lodash'
+import _, { LoDashStatic } from 'lodash'
 import Vue from 'vue'
 // @ts-ignore
 import * as lineClamp from 'vue-line-clamp'
@@ -7,7 +7,7 @@ import Vuelidate from 'vuelidate'
 import Chartkick from 'vue-chartkick'
 // @ts-ignore
 import Chart from 'chart.js'
-import {sync} from 'vuex-router-sync'
+import { sync } from 'vuex-router-sync'
 import App from './App.vue'
 import actuator from './plugins/actuator.plugin'
 import httpPlugin from './plugins/http.plugin'
@@ -33,6 +33,7 @@ import komgaAnnouncements from './plugins/komga-announcements.plugin'
 import komgaReleases from './plugins/komga-releases.plugin'
 import komgaSettings from './plugins/komga-settings.plugin'
 import komgaFonts from './plugins/komga-fonts.plugin'
+import komgaGorse from './plugins/komga-gorse.plugin'
 import vuetify from './plugins/vuetify'
 import logger from './plugins/logger.plugin'
 import './public-path'
@@ -59,29 +60,30 @@ Vue.use(Chartkick.use(Chart))
 
 Vue.use(httpPlugin)
 Vue.use(logger)
-Vue.use(komgaSettings, {store: store, http: Vue.prototype.$http})
-Vue.use(komgaFileSystem, {http: Vue.prototype.$http})
-Vue.use(komgaSeries, {http: Vue.prototype.$http})
-Vue.use(komgaCollections, {http: Vue.prototype.$http})
-Vue.use(komgaReadLists, {http: Vue.prototype.$http})
-Vue.use(komgaBooks, {http: Vue.prototype.$http})
-Vue.use(komgaReferential, {http: Vue.prototype.$http})
-Vue.use(komgaClaim, {http: Vue.prototype.$http})
-Vue.use(komgaTransientBooks, {http: Vue.prototype.$http})
-Vue.use(komgaUsers, {store: store, http: Vue.prototype.$http})
-Vue.use(komgaLibraries, {store: store, http: Vue.prototype.$http})
-Vue.use(komgaSse, {eventHub: Vue.prototype.$eventHub, store: store})
-Vue.use(actuator, {http: Vue.prototype.$http})
-Vue.use(komgaTasks, {http: Vue.prototype.$http})
-Vue.use(komgaSyncPoints, {http: Vue.prototype.$http})
-Vue.use(komgaOauth2, {http: Vue.prototype.$http})
-Vue.use(komgaLogin, {http: Vue.prototype.$http})
-Vue.use(komgaPageHashes, {http: Vue.prototype.$http})
-Vue.use(komgaMetrics, {http: Vue.prototype.$http})
-Vue.use(komgaHistory, {http: Vue.prototype.$http})
-Vue.use(komgaAnnouncements, {http: Vue.prototype.$http})
-Vue.use(komgaReleases, {http: Vue.prototype.$http})
-Vue.use(komgaFonts, {http: Vue.prototype.$http})
+Vue.use(komgaSettings, { store: store, http: Vue.prototype.$http })
+Vue.use(komgaFileSystem, { http: Vue.prototype.$http })
+Vue.use(komgaSeries, { http: Vue.prototype.$http })
+Vue.use(komgaCollections, { http: Vue.prototype.$http })
+Vue.use(komgaReadLists, { http: Vue.prototype.$http })
+Vue.use(komgaBooks, { http: Vue.prototype.$http })
+Vue.use(komgaReferential, { http: Vue.prototype.$http })
+Vue.use(komgaClaim, { http: Vue.prototype.$http })
+Vue.use(komgaTransientBooks, { http: Vue.prototype.$http })
+Vue.use(komgaUsers, { store: store, http: Vue.prototype.$http })
+Vue.use(komgaLibraries, { store: store, http: Vue.prototype.$http })
+Vue.use(komgaSse, { eventHub: Vue.prototype.$eventHub, store: store })
+Vue.use(actuator, { http: Vue.prototype.$http })
+Vue.use(komgaTasks, { http: Vue.prototype.$http })
+Vue.use(komgaSyncPoints, { http: Vue.prototype.$http })
+Vue.use(komgaOauth2, { http: Vue.prototype.$http })
+Vue.use(komgaLogin, { http: Vue.prototype.$http })
+Vue.use(komgaPageHashes, { http: Vue.prototype.$http })
+Vue.use(komgaMetrics, { http: Vue.prototype.$http })
+Vue.use(komgaHistory, { http: Vue.prototype.$http })
+Vue.use(komgaAnnouncements, { http: Vue.prototype.$http })
+Vue.use(komgaReleases, { http: Vue.prototype.$http })
+Vue.use(komgaFonts, { http: Vue.prototype.$http })
+Vue.use(komgaGorse, { http: Vue.prototype.$http })
 
 Vue.config.productionTip = false
 

@@ -2,7 +2,7 @@ import urls from '@/functions/urls'
 import Vue from 'vue'
 import Router from 'vue-router'
 import store from './store'
-import {LIBRARIES_ALL, LIBRARY_ROUTE} from '@/types/library'
+import { LIBRARIES_ALL, LIBRARY_ROUTE } from '@/types/library'
 
 const qs = require('qs')
 
@@ -11,21 +11,21 @@ Vue.use(Router)
 const lStore = store as any
 
 const adminGuard = (to: any, from: any, next: any) => {
-  if (!lStore.getters.meAdmin) next({name: 'home'})
+  if (!lStore.getters.meAdmin) next({ name: 'home' })
   else next()
 }
 
 const noLibraryGuard = (to: any, from: any, next: any) => {
   if (lStore.state.komgaLibraries.libraries.length === 0) {
-    next({name: 'welcome'})
+    next({ name: 'welcome' })
   } else next()
 }
 
 const noLibraryNorPinGuard = (to: any, from: any, next: any) => {
   if (lStore.state.komgaLibraries.libraries.length === 0) {
-    next({name: 'welcome'})
+    next({ name: 'welcome' })
   } else if (lStore.getters.getLibrariesPinned.length === 0) {
-    next({name: 'no-pins'})
+    next({ name: 'no-pins' })
   } else next()
 }
 
@@ -59,7 +59,7 @@ const router = new Router({
     {
       path: '/',
       name: 'home',
-      redirect: {name: 'dashboard'},
+      redirect: { name: 'dashboard' },
       component: () => import(/* webpackChunkName: "home" */ './views/HomeView.vue'),
       children: [
         {
@@ -102,6 +102,12 @@ const router = new Router({
           name: 'settings-ui',
           beforeEnter: adminGuard,
           component: () => import(/* webpackChunkName: "settings-ui" */ './views/UISettings.vue'),
+        },
+        {
+          path: '/settings/gorse',
+          name: 'settings-gorse',
+          beforeEnter: adminGuard,
+          component: () => import(/* webpackChunkName: "settings-gorse" */ './views/GorseSettings.vue'),
         },
         {
           path: '/settings/metrics',
@@ -182,7 +188,7 @@ const router = new Router({
           name: 'libraries',
           redirect: (route) => ({
             name: getLibraryRoute(route.params.libraryId || LIBRARIES_ALL),
-            params: {libraryId: route.params.libraryId || LIBRARIES_ALL},
+            params: { libraryId: route.params.libraryId || LIBRARIES_ALL },
           }),
         },
         {
@@ -190,65 +196,65 @@ const router = new Router({
           name: 'recommended-libraries',
           beforeEnter: noLibraryGuard,
           component: () => import(/* webpackChunkName: "dashboard" */ './views/DashboardView.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
+          props: (route) => ({ libraryId: route.params.libraryId }),
         },
         {
           path: '/libraries/:libraryId/books',
           name: 'browse-books',
           beforeEnter: noLibraryGuard,
           component: () => import(/* webpackChunkName: "browse-books" */ './views/BrowseBooks.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
+          props: (route) => ({ libraryId: route.params.libraryId }),
         },
         {
           path: '/libraries/:libraryId/series',
           name: 'browse-libraries',
           beforeEnter: noLibraryGuard,
           component: () => import(/* webpackChunkName: "browse-libraries" */ './views/BrowseLibraries.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
+          props: (route) => ({ libraryId: route.params.libraryId }),
         },
         {
           path: '/libraries/:libraryId/collections',
           name: 'browse-collections',
           beforeEnter: noLibraryGuard,
           component: () => import(/* webpackChunkName: "browse-collections" */ './views/BrowseCollections.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
+          props: (route) => ({ libraryId: route.params.libraryId }),
         },
         {
           path: '/libraries/:libraryId/readlists',
           name: 'browse-readlists',
           beforeEnter: noLibraryGuard,
           component: () => import(/* webpackChunkName: "browse-readlists" */ './views/BrowseReadLists.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
+          props: (route) => ({ libraryId: route.params.libraryId }),
         },
         {
           path: '/collections/:collectionId',
           name: 'browse-collection',
           component: () => import(/* webpackChunkName: "browse-collection" */ './views/BrowseCollection.vue'),
-          props: (route) => ({collectionId: route.params.collectionId}),
+          props: (route) => ({ collectionId: route.params.collectionId }),
         },
         {
           path: '/readlists/:readListId',
           name: 'browse-readlist',
           component: () => import(/* webpackChunkName: "browse-readlist" */ './views/BrowseReadList.vue'),
-          props: (route) => ({readListId: route.params.readListId}),
+          props: (route) => ({ readListId: route.params.readListId }),
         },
         {
           path: '/series/:seriesId',
           name: 'browse-series',
           component: () => import(/* webpackChunkName: "browse-series" */ './views/BrowseSeries.vue'),
-          props: (route) => ({seriesId: route.params.seriesId}),
+          props: (route) => ({ seriesId: route.params.seriesId }),
         },
         {
           path: '/book/:bookId',
           name: 'browse-book',
           component: () => import(/* webpackChunkName: "browse-book" */ './views/BrowseBook.vue'),
-          props: (route) => ({bookId: route.params.bookId}),
+          props: (route) => ({ bookId: route.params.bookId }),
         },
         {
           path: '/oneshot/:seriesId',
           name: 'browse-oneshot',
           component: () => import(/* webpackChunkName: "browse-oneshot" */ './views/BrowseOneshot.vue'),
-          props: (route) => ({seriesId: route.params.seriesId}),
+          props: (route) => ({ seriesId: route.params.seriesId }),
         },
         {
           path: '/search',
@@ -283,13 +289,13 @@ const router = new Router({
       path: '/book/:bookId/read',
       name: 'read-book',
       component: () => import(/* webpackChunkName: "read-book" */ './views/DivinaReader.vue'),
-      props: (route) => ({bookId: route.params.bookId}),
+      props: (route) => ({ bookId: route.params.bookId }),
     },
     {
       path: '/book/:bookId/read-epub',
       name: 'read-epub',
       component: () => import(/* webpackChunkName: "read-epub" */ './views/EpubReader.vue'),
-      props: (route) => ({bookId: route.params.bookId}),
+      props: (route) => ({ bookId: route.params.bookId }),
     },
     {
       path: '*',
@@ -302,7 +308,7 @@ const router = new Router({
       return savedPosition
     } else {
       if (to.name !== from.name) {
-        return {x: 0, y: 0}
+        return { x: 0, y: 0 }
       }
     }
   },
@@ -332,8 +338,8 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.name !== 'startup' && to.name !== 'login' && !lStore.getters.authenticated) {
-    const query = Object.assign({}, to.query, {redirect: to.fullPath})
-    next({name: 'startup', query: query})
+    const query = Object.assign({}, to.query, { redirect: to.fullPath })
+    next({ name: 'startup', query: query })
   } else next()
 })
 
