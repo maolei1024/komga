@@ -2,6 +2,7 @@ package org.gotson.komga.infrastructure.gorse
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.domain.model.DomainEvent
+import org.gotson.komga.domain.persistence.BookMetadataAggregationRepository
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.KomgaUserRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
@@ -21,6 +22,7 @@ class GorseEventListener(
   private val gorseClient: GorseClient,
   private val gorseSettings: GorseSettingsProvider,
   private val seriesMetadataRepository: SeriesMetadataRepository,
+  private val bookMetadataAggregationRepository: BookMetadataAggregationRepository,
   private val seriesRepository: SeriesRepository,
   private val bookRepository: BookRepository,
   private val userRepository: KomgaUserRepository,
@@ -42,36 +44,71 @@ class GorseEventListener(
     }
   }
 
-  private fun buildLabels(tags: Set<String>, genres: Set<String>): Map<String, Any> {
+  /**
+   * 构建 Gorse Labels，合并 SeriesMetadata (genres, tags) 和
+   * BookMetadataAggregation (authors, tags) 的信息
+   */
+  private fun buildLabelsForSeries(seriesId: String): Map<String, Any> {
     val labels = mutableMapOf<String, Any>()
-    if (tags.isNotEmpty()) labels["tags"] = tags.toList()
-    if (genres.isNotEmpty()) labels["genres"] = genres.toList()
+
+    // SeriesMetadata: genres + series-level tags
+    val metadata = seriesMetadataRepository.findByIdOrNull(seriesId)
+    if (metadata != null) {
+      if (metadata.genres.isNotEmpty()) labels["genres"] = metadata.genres.toList()
+      if (metadata.publisher.isNotBlank()) labels["publisher"] = metadata.publisher
+      if (metadata.language.isNotBlank()) labels["language"] = metadata.language
+      if (metadata.status.name.isNotBlank()) labels["status"] = metadata.status.name.lowercase()
+      if (metadata.ageRating != null) labels["ageRating"] = metadata.ageRating
+    }
+
+    // BookMetadataAggregation: authors + book-level tags (aggregated across all books in series)
+    val aggregation = bookMetadataAggregationRepository.findByIdOrNull(seriesId)
+    if (aggregation != null) {
+      if (aggregation.authors.isNotEmpty()) {
+        labels["authors"] = aggregation.authors.map { it.name }.distinct()
+      }
+      // 合并 series-level tags 和 book-level aggregated tags
+      val allTags = mutableSetOf<String>()
+      if (metadata != null) allTags.addAll(metadata.tags)
+      allTags.addAll(aggregation.tags)
+      if (allTags.isNotEmpty()) labels["tags"] = allTags.toList()
+    } else {
+      // 仅有 series-level tags
+      if (metadata != null && metadata.tags.isNotEmpty()) {
+        labels["tags"] = metadata.tags.toList()
+      }
+    }
+
     return labels
+  }
+
+  private fun getSeriesTitle(seriesId: String): String {
+    return seriesMetadataRepository.findByIdOrNull(seriesId)?.title ?: ""
   }
 
   private fun handleSeriesAdded(event: DomainEvent.SeriesAdded) {
     val series = event.series
-    val metadata = seriesMetadataRepository.findByIdOrNull(series.id) ?: return
     val item = GorseItem(
       ItemId = series.id,
-      Labels = buildLabels(metadata.tags, metadata.genres),
+      Labels = buildLabelsForSeries(series.id),
       Categories = listOf(series.libraryId),
       Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-      Comment = metadata.title,
+      Comment = getSeriesTitle(series.id),
     )
+    logger.info { "Gorse: inserting item ${series.id}, labels=${item.Labels}" }
     gorseClient.insertItem(item)
   }
 
   private fun handleSeriesUpdated(event: DomainEvent.SeriesUpdated) {
     val series = event.series
-    val metadata = seriesMetadataRepository.findByIdOrNull(series.id) ?: return
     val item = GorseItem(
       ItemId = series.id,
-      Labels = buildLabels(metadata.tags, metadata.genres),
+      Labels = buildLabelsForSeries(series.id),
       Categories = listOf(series.libraryId),
       Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-      Comment = metadata.title,
+      Comment = getSeriesTitle(series.id),
     )
+    logger.info { "Gorse: updating item ${series.id}, labels=${item.Labels}" }
     gorseClient.updateItem(series.id, item)
   }
 
@@ -104,14 +141,13 @@ class GorseEventListener(
    */
   fun syncAllItems(): Int {
     val allSeries = seriesRepository.findAll()
-    val items = allSeries.mapNotNull { series ->
-      val metadata = seriesMetadataRepository.findByIdOrNull(series.id) ?: return@mapNotNull null
+    val items = allSeries.map { series ->
       GorseItem(
         ItemId = series.id,
-        Labels = buildLabels(metadata.tags, metadata.genres),
+        Labels = buildLabelsForSeries(series.id),
         Categories = listOf(series.libraryId),
         Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-        Comment = metadata.title,
+        Comment = getSeriesTitle(series.id),
       )
     }
     if (items.isNotEmpty()) {
