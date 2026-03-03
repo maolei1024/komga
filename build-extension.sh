@@ -19,16 +19,16 @@ echo "=== Building komga-gorse extension ==="
 
 # 1. Copy extension source to extensions-source
 echo "Copying extension source..."
-rm -rf "$EXT_SOURCE_DIR/src/all/komga-gorse"
-cp -r "$KOMGA_DIR/komga-gorse-extension" "$EXT_SOURCE_DIR/src/all/komga-gorse"
+rm -rf "$EXT_SOURCE_DIR/src/all/komgagorse"
+cp -r "$KOMGA_DIR/komgagorse-extension" "$EXT_SOURCE_DIR/src/all/komgagorse"
 
 # 2. Build the APK
 echo "Building APK..."
 cd "$EXT_SOURCE_DIR"
-./gradlew :src:all:komga-gorse:assembleDebug
+./gradlew :src:all:komgagorse:assembleDebug
 
 # 3. Find the built APK
-APK_PATH=$(find "$EXT_SOURCE_DIR/src/all/komga-gorse/build" -name "*.apk" | head -1)
+APK_PATH=$(find "$EXT_SOURCE_DIR/src/all/komgagorse/build" -name "*.apk" | head -1)
 
 if [ -z "$APK_PATH" ]; then
     echo "ERROR: APK not found!"

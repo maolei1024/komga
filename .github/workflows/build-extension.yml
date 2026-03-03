@@ -3,7 +3,7 @@ name: Build Komga-Gorse Extension APK
 on:
   push:
     paths:
-      - 'komga-gorse-extension/**'
+      - 'komgagorse-extension/**'
       - '.github/workflows/build-extension.yml'
   workflow_dispatch:
 
@@ -34,17 +34,17 @@ jobs:
 
       - name: Copy extension source
         run: |
-          cp -r komga-gorse-extension /tmp/extensions-source/src/all/komga-gorse
+          cp -r komgagorse-extension /tmp/extensions-source/src/all/komgagorse
 
       - name: Build APK
         working-directory: /tmp/extensions-source
         run: |
           chmod +x gradlew
-          ./gradlew :src:all:komga-gorse:assembleDebug
+          ./gradlew :src:all:komgagorse:assembleDebug
 
       - name: Find and copy APK
         run: |
-          APK_PATH=$(find /tmp/extensions-source/src/all/komga-gorse/build -name "*.apk" -type f | head -1)
+          APK_PATH=$(find /tmp/extensions-source/src/all/komgagorse/build -name "*.apk" -type f | head -1)
           echo "Found APK: $APK_PATH"
           mkdir -p repo/apk
           cp "$APK_PATH" repo/apk/tachiyomi-all.komga-gorse-v1.apk
