@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.komga_gorse
+package eu.kanade.tachiyomi.extension.all.komgagorse
 
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory

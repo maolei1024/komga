@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.komga_gorse
+package eu.kanade.tachiyomi.extension.all.komgagorse
 
 import android.content.SharedPreferences
 import android.text.InputType
@@ -8,14 +8,14 @@ import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.AppInfo
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.AuthorDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.BookDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.CollectionDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.LibraryDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.PageDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.PageWrapperDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.ReadListDto
-import eu.kanade.tachiyomi.extension.all.komga_gorse.dto.SeriesDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.AuthorDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.BookDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.CollectionDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.LibraryDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.PageDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.PageWrapperDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.ReadListDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.SeriesDto
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.ConfigurableSource

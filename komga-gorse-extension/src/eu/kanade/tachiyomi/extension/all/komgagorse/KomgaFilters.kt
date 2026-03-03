@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.komga_gorse
+package eu.kanade.tachiyomi.extension.all.komgagorse
 
 import eu.kanade.tachiyomi.extension.all.komga.dto.AuthorDto
 import eu.kanade.tachiyomi.extension.all.komga.dto.LibraryDto

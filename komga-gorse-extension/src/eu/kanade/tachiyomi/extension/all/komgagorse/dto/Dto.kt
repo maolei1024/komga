@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.komga_gorse.dto
+package eu.kanade.tachiyomi.extension.all.komgagorse.dto
 
 import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.serialization.Serializable
