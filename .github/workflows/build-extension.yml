@@ -46,14 +46,13 @@ jobs:
         run: |
           APK_PATH=$(find /tmp/extensions-source/src/all/komgagorse/build -name "*.apk" -type f | head -1)
           echo "Found APK: $APK_PATH"
-          mkdir -p repo/apk
-          cp "$APK_PATH" repo/apk/tachiyomi-all.komga-gorse-v1.apk
+          cp "$APK_PATH" repo/tachiyomi-all.komga-gorse-v1.apk
 
       - name: Commit and push APK
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add repo/apk/
+          git add repo/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
