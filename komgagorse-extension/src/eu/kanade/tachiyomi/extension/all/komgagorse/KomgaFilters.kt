@@ -1,7 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.komgagorse
 
-import eu.kanade.tachiyomi.extension.all.komga.dto.AuthorDto
-import eu.kanade.tachiyomi.extension.all.komga.dto.LibraryDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.AuthorDto
+import eu.kanade.tachiyomi.extension.all.komgagorse.dto.LibraryDto
 import eu.kanade.tachiyomi.source.model.Filter
 import okhttp3.HttpUrl
 
@@ -13,9 +13,9 @@ internal class TypeSelect :
     Filter.Select<String>(
         "Search for",
         arrayOf(
-            Komga.TYPE_SERIES,
-            Komga.TYPE_READLISTS,
-            Komga.TYPE_BOOKS,
+            KomgaGorse.TYPE_SERIES,
+            KomgaGorse.TYPE_READLISTS,
+            KomgaGorse.TYPE_BOOKS,
         ),
     )
 
