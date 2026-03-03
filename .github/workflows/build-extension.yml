@@ -26,7 +26,7 @@ jobs:
 
       - name: Install Android SDK components
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Clone extensions-source
         run: |
@@ -36,19 +36,147 @@ jobs:
         run: |
           cp -r komgagorse-extension /tmp/extensions-source/src/all/komgagorse
 
-      - name: Build APK
+      - name: Generate signing key
+        run: |
+          keytool -genkeypair \
+            -alias komga-gorse \
+            -keypass android \
+            -keystore /tmp/signingkey.jks \
+            -storepass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Komga Gorse, OU=Extensions, O=KomgaGorse, L=Unknown, ST=Unknown, C=US"
+
+      - name: Build APK (Release)
         working-directory: /tmp/extensions-source
+        env:
+          ALIAS: komga-gorse
+          KEY_STORE_PASSWORD: android
+          KEY_PASSWORD: android
         run: |
+          cp /tmp/signingkey.jks signingkey.jks
           chmod +x gradlew
-          ./gradlew :src:all:komgagorse:assembleDebug
+          ./gradlew :src:all:komgagorse:assembleRelease
 
-      - name: Find and copy APK
+      - name: Prepare repo structure
         run: |
-          APK_PATH=$(find /tmp/extensions-source/src/all/komgagorse/build -name "*.apk" -type f | head -1)
-          echo "Found APK: $APK_PATH"
-          cp "$APK_PATH" repo/tachiyomi-all.komga-gorse-v1.apk
+          mkdir -p /tmp/repo-output/apk /tmp/repo-output/icon
 
-      - name: Commit and push APK
+          # Find and copy APK
+          APK_PATH=$(find /tmp/extensions-source/src/all/komgagorse/build -name "*-release.apk" -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find /tmp/extensions-source/src/all/komgagorse/build -name "*.apk" -type f | head -1)
+          fi
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" /tmp/repo-output/apk/tachiyomi-all.komga-gorse-v1.0.apk
+
+      - name: Generate index.min.json with extensions-inspector
+        run: |
+          # Download extensions-inspector
+          INSPECTOR_LINK="$(curl -s "https://api.github.com/repos/keiyoushi/extensions-inspector/releases/latest" | jq -r '.assets[0].browser_download_url')"
+          curl -L "$INSPECTOR_LINK" -o /tmp/Inspector.jar
+
+          # Run inspector to extract source info
+          java -jar /tmp/Inspector.jar "/tmp/repo-output/apk" "/tmp/inspector-output.json" "/tmp/inspector-tmp"
+
+          echo "Inspector output:"
+          cat /tmp/inspector-output.json
+
+      - name: Create index.min.json and repo.json
+        run: |
+          APK_FILE="/tmp/repo-output/apk/tachiyomi-all.komga-gorse-v1.0.apk"
+          AAPT=$(find $ANDROID_HOME/build-tools -name "aapt" | sort -r | head -1)
+
+          # Extract APK info using aapt
+          BADGING=$($AAPT dump --include-meta-data badging "$APK_FILE")
+
+          PKG_NAME=$(echo "$BADGING" | grep "^package:" | sed "s/.*name='\\([^']*\\)'.*/\\1/")
+          VERSION_CODE=$(echo "$BADGING" | grep "^package:" | sed "s/.*versionCode='\\([^']*\\)'.*/\\1/")
+          VERSION_NAME=$(echo "$BADGING" | grep "^package:" | sed "s/.*versionName='\\([^']*\\)'.*/\\1/")
+          APP_LABEL=$(echo "$BADGING" | grep "^application-label:" | sed "s/application-label:'\\([^']*\\)'/\\1/")
+          NSFW=$(echo "$BADGING" | grep "tachiyomi.extension.nsfw" | sed "s/.*value='\\([^']*\\)'.*/\\1/")
+          ICON_PATH=$(echo "$BADGING" | grep "^application-icon-320:" | sed "s/application-icon-320:'\\([^']*\\)'/\\1/")
+
+          echo "Package: $PKG_NAME"
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+          echo "Label: $APP_LABEL"
+          echo "NSFW: $NSFW"
+
+          # Extract icon
+          if [ -n "$ICON_PATH" ]; then
+            unzip -jo "$APK_FILE" "$ICON_PATH" -d /tmp/repo-output/icon/ 2>/dev/null || true
+            ICON_FILE=$(basename "$ICON_PATH")
+            mv /tmp/repo-output/icon/$ICON_FILE /tmp/repo-output/icon/${PKG_NAME}.png 2>/dev/null || true
+          fi
+
+          # Build index.min.json using inspector output + aapt data
+          python3 << 'PYEOF'
+          import json
+
+          # Read inspector output for source IDs
+          with open("/tmp/inspector-output.json") as f:
+              inspector = json.load(f)
+
+          pkg = "$PKG_NAME"
+          sources = inspector.get(pkg, [])
+
+          min_sources = []
+          for s in sources:
+              min_sources.append({
+                  "name": s["name"],
+                  "lang": s["lang"],
+                  "id": s["id"],
+                  "baseUrl": s.get("baseUrl", ""),
+              })
+
+          # If inspector didn't find sources, use placeholder
+          if not min_sources:
+              min_sources = [{"name": "Komga Gorse", "lang": "all", "id": "0", "baseUrl": ""}]
+
+          entry = {
+              "name": "$APP_LABEL",
+              "pkg": pkg,
+              "apk": "tachiyomi-all.komga-gorse-v1.0.apk",
+              "lang": "all",
+              "code": int("$VERSION_CODE"),
+              "version": "$VERSION_NAME",
+              "nsfw": int("$NSFW" or "0"),
+              "sources": min_sources,
+          }
+
+          with open("/tmp/repo-output/index.min.json", "w") as f:
+              json.dump([entry], f, ensure_ascii=False, separators=(",", ":"))
+
+          print("Generated index.min.json:")
+          print(json.dumps([entry], indent=2))
+          PYEOF
+
+          # Generate repo.json with signing key fingerprint
+          FINGERPRINT=$(keytool -printcert -jarfile "$APK_FILE" 2>/dev/null | grep "SHA-256" | sed 's/.*SHA-256: //' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          echo "Signing fingerprint: $FINGERPRINT"
+
+          cat > /tmp/repo-output/repo.json << REPOEOF
+          {"meta":{"name":"Komga Gorse","website":"https://github.com/maolei1024/komga","signingKeyFingerprint":"${FINGERPRINT}"}}
+          REPOEOF
+
+          echo "Generated repo.json:"
+          cat /tmp/repo-output/repo.json
+
+      - name: Deploy to repo directory
+        run: |
+          # Copy all generated files to repo/
+          rm -rf repo/apk repo/icon
+          mkdir -p repo/apk repo/icon
+          cp /tmp/repo-output/apk/*.apk repo/apk/
+          cp /tmp/repo-output/icon/*.png repo/icon/ 2>/dev/null || true
+          cp /tmp/repo-output/index.min.json repo/
+          cp /tmp/repo-output/repo.json repo/
+
+          echo "Final repo structure:"
+          find repo/ -type f
+
+      - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -56,6 +184,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "ci: 自动构建 komga-gorse 扩展 APK"
+            git commit -m "ci: 构建 komga-gorse 扩展（含签名和元数据）"
             git push
           fi
