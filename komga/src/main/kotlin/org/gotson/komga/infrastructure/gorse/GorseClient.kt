@@ -110,6 +110,22 @@ class GorseClient(
     }
   }
 
+  fun getRecommendations(userId: String, n: Int = 20, offset: Int = 0): List<String> {
+    return try {
+      val response = buildClient()
+        .get()
+        .uri("/api/recommend/$userId?n=$n&offset=$offset")
+        .retrieve()
+        .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<String>>() {})
+        .block() ?: emptyList()
+      logger.debug { "Gorse: got ${response.size} recommendations for user $userId" }
+      response
+    } catch (e: Exception) {
+      logger.error(e) { "Gorse: failed to get recommendations for user $userId" }
+      emptyList()
+    }
+  }
+
   fun insertFeedback(feedback: List<GorseFeedback>) {
     if (feedback.isEmpty()) return
     try {
