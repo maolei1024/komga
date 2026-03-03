@@ -37,7 +37,7 @@ class GorseClient(
   fun updateItem(itemId: String, item: GorseItem) {
     try {
       buildClient()
-        .put()
+        .patch()
         .uri("/api/item/$itemId")
         .bodyValue(item)
         .retrieve()
@@ -113,14 +113,15 @@ class GorseClient(
   fun insertFeedback(feedback: List<GorseFeedback>) {
     if (feedback.isEmpty()) return
     try {
-      buildClient()
+      logger.info { "Gorse: sending ${feedback.size} feedback entries: ${feedback.map { "${it.UserId}->${it.ItemId}(${it.FeedbackType})" }}" }
+      val response = buildClient()
         .put()
         .uri("/api/feedback")
         .bodyValue(feedback)
         .retrieve()
         .bodyToMono(String::class.java)
         .block()
-      logger.debug { "Gorse: inserted ${feedback.size} feedback entries" }
+      logger.info { "Gorse: inserted ${feedback.size} feedback entries, response: $response" }
     } catch (e: Exception) {
       logger.error(e) { "Gorse: failed to insert ${feedback.size} feedback entries" }
     }

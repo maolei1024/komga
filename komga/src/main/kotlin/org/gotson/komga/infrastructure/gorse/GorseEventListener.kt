@@ -9,9 +9,12 @@ import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 private val logger = KotlinLogging.logger {}
+
+private val ISO_UTC_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
 
 @Component
 class GorseEventListener(
@@ -39,14 +42,21 @@ class GorseEventListener(
     }
   }
 
+  private fun buildLabels(tags: Set<String>, genres: Set<String>): Map<String, Any> {
+    val labels = mutableMapOf<String, Any>()
+    if (tags.isNotEmpty()) labels["tags"] = tags.toList()
+    if (genres.isNotEmpty()) labels["genres"] = genres.toList()
+    return labels
+  }
+
   private fun handleSeriesAdded(event: DomainEvent.SeriesAdded) {
     val series = event.series
     val metadata = seriesMetadataRepository.findByIdOrNull(series.id) ?: return
     val item = GorseItem(
       ItemId = series.id,
-      Labels = (metadata.tags + metadata.genres).toList(),
+      Labels = buildLabels(metadata.tags, metadata.genres),
       Categories = listOf(series.libraryId),
-      Timestamp = series.createdDate.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+      Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
       Comment = metadata.title,
     )
     gorseClient.insertItem(item)
@@ -57,9 +67,9 @@ class GorseEventListener(
     val metadata = seriesMetadataRepository.findByIdOrNull(series.id) ?: return
     val item = GorseItem(
       ItemId = series.id,
-      Labels = (metadata.tags + metadata.genres).toList(),
+      Labels = buildLabels(metadata.tags, metadata.genres),
       Categories = listOf(series.libraryId),
-      Timestamp = series.createdDate.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+      Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
       Comment = metadata.title,
     )
     gorseClient.updateItem(series.id, item)
@@ -71,14 +81,20 @@ class GorseEventListener(
 
   private fun handleReadProgressChanged(event: DomainEvent.ReadProgressChanged) {
     val progress = event.progress
+    logger.info { "Gorse: ReadProgressChanged - bookId=${progress.bookId}, userId=${progress.userId}, completed=${progress.completed}, page=${progress.page}" }
     if (!progress.completed) return
 
-    val book = bookRepository.findByIdOrNull(progress.bookId) ?: return
+    val book = bookRepository.findByIdOrNull(progress.bookId)
+    if (book == null) {
+      logger.warn { "Gorse: book not found for bookId=${progress.bookId}" }
+      return
+    }
+    logger.info { "Gorse: sending feedback for series=${book.seriesId}, user=${progress.userId}, type=${gorseSettings.feedbackType}" }
     val feedback = GorseFeedback(
       FeedbackType = gorseSettings.feedbackType,
       UserId = progress.userId,
       ItemId = book.seriesId,
-      Timestamp = progress.readDate.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+      Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
     )
     gorseClient.insertFeedback(listOf(feedback))
   }
@@ -92,14 +108,13 @@ class GorseEventListener(
       val metadata = seriesMetadataRepository.findByIdOrNull(series.id) ?: return@mapNotNull null
       GorseItem(
         ItemId = series.id,
-        Labels = (metadata.tags + metadata.genres).toList(),
+        Labels = buildLabels(metadata.tags, metadata.genres),
         Categories = listOf(series.libraryId),
-        Timestamp = series.createdDate.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+        Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
         Comment = metadata.title,
       )
     }
     if (items.isNotEmpty()) {
-      // 分批发送，每批 100 个
       items.chunked(100).forEach { chunk ->
         gorseClient.insertItems(chunk)
       }
@@ -138,11 +153,10 @@ class GorseEventListener(
         FeedbackType = gorseSettings.feedbackType,
         UserId = progress.userId,
         ItemId = book.seriesId,
-        Timestamp = progress.readDate.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+        Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
       )
     }
     if (feedbackList.isNotEmpty()) {
-      // 分批发送，每批 100 个
       feedbackList.chunked(100).forEach { chunk ->
         gorseClient.insertFeedback(chunk)
       }
