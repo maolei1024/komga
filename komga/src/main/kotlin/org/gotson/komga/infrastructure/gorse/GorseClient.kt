@@ -142,4 +142,34 @@ class GorseClient(
       logger.error(e) { "Gorse: failed to insert ${feedback.size} feedback entries" }
     }
   }
+
+  fun getUserFeedbackByType(userId: String, feedbackType: String): List<GorseFeedback> {
+    return try {
+      val response = buildClient()
+        .get()
+        .uri("/api/user/$userId/feedback/$feedbackType")
+        .retrieve()
+        .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<GorseFeedback>>() {})
+        .block() ?: emptyList()
+      logger.debug { "Gorse: got ${response.size} $feedbackType feedbacks for user $userId" }
+      response
+    } catch (e: Exception) {
+      logger.error(e) { "Gorse: failed to get $feedbackType feedbacks for user $userId" }
+      emptyList()
+    }
+  }
+
+  fun deleteFeedback(feedbackType: String, userId: String, itemId: String) {
+    try {
+      buildClient()
+        .delete()
+        .uri("/api/feedback/$feedbackType/$userId/$itemId")
+        .retrieve()
+        .bodyToMono(String::class.java)
+        .block()
+      logger.debug { "Gorse: deleted $feedbackType feedback for user $userId item $itemId" }
+    } catch (e: Exception) {
+      logger.error(e) { "Gorse: failed to delete $feedbackType feedback for user $userId item $itemId" }
+    }
+  }
 }
