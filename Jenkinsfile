@@ -18,6 +18,10 @@ def LATEST_IMAGE_WITH_TAG = ''
 pipeline {
     agent any
 
+    tools {
+        nodejs 'node-24.10.0'
+    }
+
     environment {
         APP_NAME = 'komga'
         NEXUS_DOCKER_REGISTRY = 'docker.nexus.ixuni.win'
