@@ -51,32 +51,22 @@ class GorseEventListener(
   private fun buildLabelsForSeries(seriesId: String): Map<String, Any> {
     val labels = mutableMapOf<String, Any>()
 
-    // SeriesMetadata: genres + series-level tags
     val metadata = seriesMetadataRepository.findByIdOrNull(seriesId)
     if (metadata != null) {
       if (metadata.genres.isNotEmpty()) labels["genres"] = metadata.genres.toList()
-      if (metadata.publisher.isNotBlank()) labels["publisher"] = metadata.publisher
-      if (metadata.language.isNotBlank()) labels["language"] = metadata.language
-      if (metadata.status.name.isNotBlank()) labels["status"] = metadata.status.name.lowercase()
-      if (metadata.ageRating != null) labels["ageRating"] = metadata.ageRating
     }
 
-    // BookMetadataAggregation: authors + book-level tags (aggregated across all books in series)
     val aggregation = bookMetadataAggregationRepository.findByIdOrNull(seriesId)
     if (aggregation != null) {
       if (aggregation.authors.isNotEmpty()) {
         labels["authors"] = aggregation.authors.map { it.name }.distinct()
       }
-      // 合并 series-level tags 和 book-level aggregated tags
       val allTags = mutableSetOf<String>()
       if (metadata != null) allTags.addAll(metadata.tags)
       allTags.addAll(aggregation.tags)
       if (allTags.isNotEmpty()) labels["tags"] = allTags.toList()
-    } else {
-      // 仅有 series-level tags
-      if (metadata != null && metadata.tags.isNotEmpty()) {
-        labels["tags"] = metadata.tags.toList()
-      }
+    } else if (metadata != null && metadata.tags.isNotEmpty()) {
+      labels["tags"] = metadata.tags.toList()
     }
 
     return labels
