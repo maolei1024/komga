@@ -65,7 +65,7 @@ export default Vue.extend({
         const result = await this.$komgaGorse.getLikeStatus(this.resolvedSeriesId)
         this.liked = result.liked
       } catch (e) {
-        console.error('Failed to fetch like status', e)
+        // silently fail, default to not liked
       } finally {
         this.loading = false
       }
@@ -78,7 +78,7 @@ export default Vue.extend({
         this.liked = result.liked
         this.resolvedSeriesId = result.seriesId
       } catch (e) {
-        console.error('Failed to fetch like status by book', e)
+        // silently fail, default to not liked
       } finally {
         this.loading = false
       }
@@ -95,7 +95,7 @@ export default Vue.extend({
           this.liked = true
         }
       } catch (e) {
-        console.error('Failed to toggle like', e)
+        // silently fail
       } finally {
         this.loading = false
       }

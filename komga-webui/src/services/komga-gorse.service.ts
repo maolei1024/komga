@@ -92,7 +92,6 @@ export default class KomgaGorseService {
         try {
             return (await this.http.get(`${API_GORSE}/like/${seriesId}`)).data
         } catch (e) {
-            console.error('Failed to get like status', e)
             return { liked: false }
         }
     }
@@ -109,7 +108,6 @@ export default class KomgaGorseService {
         try {
             return (await this.http.get(`${API_GORSE}/like/book/${bookId}`)).data
         } catch (e) {
-            console.error('Failed to get like status by book', e)
             return { liked: false, seriesId: '' }
         }
     }
