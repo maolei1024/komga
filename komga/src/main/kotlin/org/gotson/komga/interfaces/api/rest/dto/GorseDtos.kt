@@ -5,6 +5,8 @@ data class GorseSettingsDto(
   val apiUrl: String,
   val apiKey: String,
   val feedbackType: String,
+  val positiveFeedbackType: String,
+  val anonymousUserId: String,
 )
 
 data class GorseSettingsUpdateDto(
@@ -12,6 +14,8 @@ data class GorseSettingsUpdateDto(
   val apiUrl: String? = null,
   val apiKey: String? = null,
   val feedbackType: String? = null,
+  val positiveFeedbackType: String? = null,
+  val anonymousUserId: String? = null,
 )
 
 data class GorseSyncResultDto(

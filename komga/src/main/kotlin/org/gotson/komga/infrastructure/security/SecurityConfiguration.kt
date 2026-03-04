@@ -97,6 +97,8 @@ class SecurityConfiguration(
             "/opds/v2/auth",
             // KOReader user creation
             "/koreader/users/create",
+            // Gorse anonymous like API
+            "/api/v1/gorse/like/anonymous/**",
           ).permitAll()
 
         // all other endpoints are restricted to authenticated users

@@ -34,6 +34,8 @@ class GorseController(
       apiUrl = gorseSettings.apiUrl,
       apiKey = gorseSettings.apiKey,
       feedbackType = gorseSettings.feedbackType,
+      positiveFeedbackType = gorseSettings.positiveFeedbackType,
+      anonymousUserId = gorseSettings.anonymousUserId,
     )
 
   @PatchMapping
@@ -46,6 +48,8 @@ class GorseController(
     newSettings.apiUrl?.let { gorseSettings.apiUrl = it }
     newSettings.apiKey?.let { gorseSettings.apiKey = it }
     newSettings.feedbackType?.let { gorseSettings.feedbackType = it }
+    newSettings.positiveFeedbackType?.let { gorseSettings.positiveFeedbackType = it }
+    newSettings.anonymousUserId?.let { gorseSettings.anonymousUserId = it }
   }
 
   @PostMapping("sync/items")

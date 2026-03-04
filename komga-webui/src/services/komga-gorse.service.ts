@@ -7,6 +7,8 @@ export interface GorseSettingsDto {
     apiUrl: string
     apiKey: string
     feedbackType: string
+    positiveFeedbackType: string
+    anonymousUserId: string
 }
 
 export interface GorseSettingsUpdateDto {
@@ -14,6 +16,8 @@ export interface GorseSettingsUpdateDto {
     apiUrl?: string
     apiKey?: string
     feedbackType?: string
+    positiveFeedbackType?: string
+    anonymousUserId?: string
 }
 
 export interface GorseSyncResultDto {

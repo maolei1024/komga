@@ -1,20 +1,20 @@
 <template>
   <v-container fluid class="pa-6">
     <v-row>
-      <v-col><span class="text-h5">Gorse Recommendation Settings</span></v-col>
+      <v-col><span class="text-h5">Gorse 推荐系统设置</span></v-col>
     </v-row>
 
     <!-- Settings Section -->
     <v-row>
       <v-col cols="12" md="6">
         <v-card outlined>
-          <v-card-title>Configuration</v-card-title>
+          <v-card-title>基本配置</v-card-title>
           <v-card-text>
             <v-switch
               v-model="form.enabled"
               @change="formDirty = true"
-              label="Enable Gorse Integration"
-              hint="Enable automatic sync of series and read progress to Gorse"
+              label="启用 Gorse 集成"
+              hint="启用后将自动同步系列和阅读进度到 Gorse"
               persistent-hint
               class="mb-4"
             />
@@ -22,8 +22,8 @@
             <v-text-field
               v-model="form.apiUrl"
               @input="formDirty = true"
-              label="Gorse API URL"
-              hint="e.g. http://localhost:8087"
+              label="Gorse API 地址"
+              hint="例如：http://localhost:8087"
               persistent-hint
               :rules="[rules.required]"
               class="mb-4"
@@ -32,11 +32,11 @@
             <v-text-field
               v-model="form.apiKey"
               @input="formDirty = true"
-              label="Gorse API Key"
+              label="Gorse API 密钥"
               :type="showApiKey ? 'text' : 'password'"
               :append-icon="showApiKey ? 'mdi-eye' : 'mdi-eye-off'"
               @click:append="showApiKey = !showApiKey"
-              hint="API key for Gorse authentication"
+              hint="用于 Gorse 认证的 API 密钥"
               persistent-hint
               class="mb-4"
             />
@@ -44,10 +44,29 @@
             <v-text-field
               v-model="form.feedbackType"
               @input="formDirty = true"
-              label="Feedback Type"
-              hint="The feedback type sent to Gorse when a book is completed (default: read)"
+              label="已读反馈类型"
+              hint="阅读完成后发送到 Gorse 的反馈类型（默认：read）"
               persistent-hint
               :rules="[rules.required]"
+              class="mb-4"
+            />
+
+            <v-text-field
+              v-model="form.positiveFeedbackType"
+              @input="formDirty = true"
+              label="正反馈类型"
+              hint="点击喜欢按钮时发送到 Gorse 的反馈类型（默认：like）"
+              persistent-hint
+              :rules="[rules.required]"
+              class="mb-4"
+            />
+
+            <v-text-field
+              v-model="form.anonymousUserId"
+              @input="formDirty = true"
+              label="匿名用户 ID"
+              hint="未登录时使用的默认用户 ID（留空则匿名接口不可用）"
+              persistent-hint
             />
           </v-card-text>
           <v-card-actions>
@@ -56,14 +75,14 @@
               text
               :disabled="!formDirty"
               @click="refreshSettings"
-            >Discard
+            >放弃修改
             </v-btn>
             <v-btn
               color="primary"
               :disabled="!formDirty"
               :loading="saving"
               @click="saveSettings"
-            >Save Changes
+            >保存设置
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -74,17 +93,17 @@
     <v-row class="mt-4">
       <v-col cols="12" md="6">
         <v-card outlined>
-          <v-card-title>Batch Sync</v-card-title>
+          <v-card-title>批量同步</v-card-title>
           <v-card-subtitle>
-            Manually sync all data to Gorse. Use this for initial setup or to re-sync after changes.
+            手动将所有数据同步到 Gorse。适用于初始设置或数据修改后的重新同步。
           </v-card-subtitle>
           <v-card-text>
             <v-list>
               <v-list-item>
                 <v-list-item-content>
-                  <v-list-item-title>Sync Series → Items</v-list-item-title>
+                  <v-list-item-title>同步系列 → 项目</v-list-item-title>
                   <v-list-item-subtitle>
-                    Sync all manga series as Gorse items with tags and genres as labels.
+                    将所有漫画系列同步为 Gorse 项目，标签和类型作为标签。
                   </v-list-item-subtitle>
                 </v-list-item-content>
                 <v-list-item-action>
@@ -96,7 +115,7 @@
                     @click="syncItems"
                   >
                     <v-icon left>mdi-sync</v-icon>
-                    Sync
+                    同步
                   </v-btn>
                 </v-list-item-action>
               </v-list-item>
@@ -105,9 +124,9 @@
 
               <v-list-item>
                 <v-list-item-content>
-                  <v-list-item-title>Sync Users</v-list-item-title>
+                  <v-list-item-title>同步用户</v-list-item-title>
                   <v-list-item-subtitle>
-                    Sync all Komga users to Gorse.
+                    将所有 Komga 用户同步到 Gorse。
                   </v-list-item-subtitle>
                 </v-list-item-content>
                 <v-list-item-action>
@@ -119,7 +138,7 @@
                     @click="syncUsers"
                   >
                     <v-icon left>mdi-sync</v-icon>
-                    Sync
+                    同步
                   </v-btn>
                 </v-list-item-action>
               </v-list-item>
@@ -128,9 +147,9 @@
 
               <v-list-item>
                 <v-list-item-content>
-                  <v-list-item-title>Sync Read Progress → Feedback</v-list-item-title>
+                  <v-list-item-title>同步阅读进度 → 反馈</v-list-item-title>
                   <v-list-item-subtitle>
-                    Sync completed read progress as Gorse feedback (type: {{ form.feedbackType }}).
+                    将已完成的阅读进度同步为 Gorse 反馈（类型：{{ form.feedbackType }}）。
                   </v-list-item-subtitle>
                 </v-list-item-content>
                 <v-list-item-action>
@@ -142,7 +161,7 @@
                     @click="syncFeedback"
                   >
                     <v-icon left>mdi-sync</v-icon>
-                    Sync
+                    同步
                   </v-btn>
                 </v-list-item-action>
               </v-list-item>
@@ -156,10 +175,11 @@
     <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000">
       {{ snackbarText }}
       <template v-slot:action="{ attrs }">
-        <v-btn text v-bind="attrs" @click="snackbar = false">Close</v-btn>
+        <v-btn text v-bind="attrs" @click="snackbar = false">关闭</v-btn>
       </template>
     </v-snackbar>
   </v-container>
+
 </template>
 
 <script lang="ts">
@@ -174,6 +194,8 @@ export default Vue.extend({
       apiUrl: 'http://localhost:8087',
       apiKey: '',
       feedbackType: 'read',
+      positiveFeedbackType: 'like',
+      anonymousUserId: '',
     } as GorseSettingsDto,
     formDirty: false,
     saving: false,
@@ -185,7 +207,7 @@ export default Vue.extend({
     snackbarText: '',
     snackbarColor: 'success',
     rules: {
-      required: (value: string) => !!value || 'Required.',
+      required: (value: string) => !!value || '必填项',
     },
   }),
   mounted() {
@@ -198,7 +220,7 @@ export default Vue.extend({
         this.form = {...settings}
         this.formDirty = false
       } catch (e) {
-        this.showSnackbar('Failed to load Gorse settings', 'error')
+        this.showSnackbar('加载 Gorse 设置失败', 'error')
       }
     },
     async saveSettings() {
@@ -206,9 +228,9 @@ export default Vue.extend({
       try {
         await this.$komgaGorse.updateSettings(this.form)
         await this.refreshSettings()
-        this.showSnackbar('Settings saved successfully', 'success')
+        this.showSnackbar('设置已保存', 'success')
       } catch (e) {
-        this.showSnackbar('Failed to save settings', 'error')
+        this.showSnackbar('保存设置失败', 'error')
       } finally {
         this.saving = false
       }
@@ -217,9 +239,9 @@ export default Vue.extend({
       this.syncingItems = true
       try {
         const result = await this.$komgaGorse.syncItems()
-        this.showSnackbar(`Synced ${result.count} items to Gorse`, 'success')
+        this.showSnackbar(`已同步 ${result.count} 个项目到 Gorse`, 'success')
       } catch (e) {
-        this.showSnackbar('Failed to sync items', 'error')
+        this.showSnackbar('同步项目失败', 'error')
       } finally {
         this.syncingItems = false
       }
@@ -228,9 +250,9 @@ export default Vue.extend({
       this.syncingUsers = true
       try {
         const result = await this.$komgaGorse.syncUsers()
-        this.showSnackbar(`Synced ${result.count} users to Gorse`, 'success')
+        this.showSnackbar(`已同步 ${result.count} 个用户到 Gorse`, 'success')
       } catch (e) {
-        this.showSnackbar('Failed to sync users', 'error')
+        this.showSnackbar('同步用户失败', 'error')
       } finally {
         this.syncingUsers = false
       }
@@ -239,9 +261,9 @@ export default Vue.extend({
       this.syncingFeedback = true
       try {
         const result = await this.$komgaGorse.syncFeedback()
-        this.showSnackbar(`Synced ${result.count} feedback entries to Gorse`, 'success')
+        this.showSnackbar(`已同步 ${result.count} 条反馈到 Gorse`, 'success')
       } catch (e) {
-        this.showSnackbar('Failed to sync feedback', 'error')
+        this.showSnackbar('同步反馈失败', 'error')
       } finally {
         this.syncingFeedback = false
       }
