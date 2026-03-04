@@ -87,4 +87,30 @@ export default class KomgaGorseService {
             throw new Error(msg)
         }
     }
+
+    async getLikeStatus(seriesId: string): Promise<{ liked: boolean }> {
+        try {
+            return (await this.http.get(`${API_GORSE}/like/${seriesId}`)).data
+        } catch (e) {
+            console.error('Failed to get like status', e)
+            return { liked: false }
+        }
+    }
+
+    async likeSeries(seriesId: string): Promise<void> {
+        await this.http.put(`${API_GORSE}/like/${seriesId}`)
+    }
+
+    async unlikeSeries(seriesId: string): Promise<void> {
+        await this.http.delete(`${API_GORSE}/like/${seriesId}`)
+    }
+
+    async getLikeStatusByBook(bookId: string): Promise<{ liked: boolean; seriesId: string }> {
+        try {
+            return (await this.http.get(`${API_GORSE}/like/book/${bookId}`)).data
+        } catch (e) {
+            console.error('Failed to get like status by book', e)
+            return { liked: false, seriesId: '' }
+        }
+    }
 }

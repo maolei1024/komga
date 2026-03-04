@@ -202,6 +202,9 @@
                     {{ $t('common.download') }}
                   </v-btn>
                 </v-col>
+                <v-col cols="auto">
+                  <gorse-like-button :series-id="seriesId"/>
+                </v-col>
               </v-row>
 
               <v-row v-if="series.metadata.summary">
@@ -263,6 +266,9 @@
               <v-icon left small>mdi-file-download</v-icon>
               {{ $t('common.download') }}
             </v-btn>
+          </v-col>
+          <v-col cols="auto">
+            <gorse-like-button :series-id="seriesId"/>
           </v-col>
         </v-row>
 
@@ -504,6 +510,7 @@ import MultiSelectBar from '@/components/bars/MultiSelectBar.vue'
 import ToolbarSticky from '@/components/bars/ToolbarSticky.vue'
 import CollectionsExpansionPanels from '@/components/CollectionsExpansionPanels.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import GorseLikeButton from '@/components/GorseLikeButton.vue'
 import ItemBrowser from '@/components/ItemBrowser.vue'
 import ItemCard from '@/components/ItemCard.vue'
 import SeriesActionsMenu from '@/components/menus/SeriesActionsMenu.vue'
@@ -596,6 +603,7 @@ export default Vue.extend({
     EmptyState,
     MultiSelectBar,
     CollectionsExpansionPanels,
+    GorseLikeButton,
     FilterDrawer,
     FilterList,
     FilterPanels,

@@ -222,6 +222,9 @@
                     {{ $t('common.download') }}
                   </v-btn>
                 </v-col>
+                <v-col cols="auto">
+                  <gorse-like-button :book-id="bookId"/>
+                </v-col>
               </v-row>
 
               <v-row v-if="book.metadata.summary">
@@ -267,6 +270,9 @@
               <v-icon left small>mdi-file-download</v-icon>
               {{ $t('common.download') }}
             </v-btn>
+          </v-col>
+          <v-col cols="auto">
+            <gorse-like-button :book-id="bookId"/>
           </v-col>
         </v-row>
 
@@ -440,6 +446,7 @@
 
 <script lang="ts">
 import BookActionsMenu from '@/components/menus/BookActionsMenu.vue'
+import GorseLikeButton from '@/components/GorseLikeButton.vue'
 import ItemCard from '@/components/ItemCard.vue'
 import ToolbarSticky from '@/components/bars/ToolbarSticky.vue'
 import {groupAuthorsByRole} from '@/functions/authors'
@@ -474,7 +481,7 @@ import {BookSearch, SearchConditionSeriesId, SearchConditionTag, SearchOperatorI
 
 export default Vue.extend({
   name: 'BrowseBook',
-  components: {ReadMore, ToolbarSticky, ItemCard, BookActionsMenu, ReadListsExpansionPanels, VueHorizontal, RtlIcon},
+  components: {ReadMore, ToolbarSticky, ItemCard, BookActionsMenu, GorseLikeButton, ReadListsExpansionPanels, VueHorizontal, RtlIcon},
   data: () => {
     return {
       MediaStatus,
