@@ -5,6 +5,7 @@ import org.gotson.komga.domain.model.DomainEvent
 import org.gotson.komga.domain.persistence.BookMetadataAggregationRepository
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.KomgaUserRepository
+import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -12,6 +13,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 
 private val logger = KotlinLogging.logger {}
 
@@ -27,7 +29,10 @@ class GorseEventListener(
   private val bookRepository: BookRepository,
   private val userRepository: KomgaUserRepository,
   private val readProgressRepository: ReadProgressRepository,
+  private val mediaRepository: MediaRepository,
 ) {
+  // 去重：同一 bookId:userId 运行期间只发送一次 read 反馈
+  private val sentReadFeedback = ConcurrentHashMap<String, Boolean>()
   @EventListener
   fun handleEvent(event: DomainEvent) {
     if (!gorseSettings.enabled) return
@@ -108,15 +113,30 @@ class GorseEventListener(
 
   private fun handleReadProgressChanged(event: DomainEvent.ReadProgressChanged) {
     val progress = event.progress
-    logger.info { "Gorse: ReadProgressChanged - bookId=${progress.bookId}, userId=${progress.userId}, completed=${progress.completed}, page=${progress.page}" }
-    if (!progress.completed) return
+    val media = mediaRepository.findByIdOrNull(progress.bookId)
+    if (media == null || media.pageCount == 0) {
+      logger.warn { "Gorse: media not found or empty for bookId=${progress.bookId}" }
+      return
+    }
+
+    val readRatio = progress.page.toDouble() / media.pageCount
+    logger.info { "Gorse: ReadProgressChanged - bookId=${progress.bookId}, userId=${progress.userId}, page=${progress.page}/${media.pageCount}, ratio=${String.format("%.0f%%", readRatio * 100)}, threshold=${String.format("%.0f%%", gorseSettings.readThreshold * 100)}" }
+
+    if (readRatio < gorseSettings.readThreshold) return
+
+    // 去重：同一 book+user 只发送一次
+    val feedbackKey = "${progress.bookId}:${progress.userId}"
+    if (sentReadFeedback.putIfAbsent(feedbackKey, true) != null) {
+      logger.info { "Gorse: feedback already sent for $feedbackKey, skipping" }
+      return
+    }
 
     val book = bookRepository.findByIdOrNull(progress.bookId)
     if (book == null) {
       logger.warn { "Gorse: book not found for bookId=${progress.bookId}" }
       return
     }
-    logger.info { "Gorse: sending feedback for series=${book.seriesId}, user=${progress.userId}, type=${gorseSettings.feedbackType}" }
+    logger.info { "Gorse: sending feedback (threshold reached) for series=${book.seriesId}, user=${progress.userId}, type=${gorseSettings.feedbackType}" }
     val feedback = GorseFeedback(
       FeedbackType = gorseSettings.feedbackType,
       UserId = progress.userId,
@@ -172,8 +192,12 @@ class GorseEventListener(
    */
   fun syncAllFeedback(): Int {
     val allProgress = readProgressRepository.findAll()
-    val completedProgress = allProgress.filter { it.completed }
-    val feedbackList = completedProgress.mapNotNull { progress ->
+    val feedbackList = allProgress.mapNotNull { progress ->
+      val media = mediaRepository.findByIdOrNull(progress.bookId) ?: return@mapNotNull null
+      if (media.pageCount == 0) return@mapNotNull null
+      val readRatio = progress.page.toDouble() / media.pageCount
+      if (readRatio < gorseSettings.readThreshold) return@mapNotNull null
+
       val book = bookRepository.findByIdOrNull(progress.bookId) ?: return@mapNotNull null
       GorseFeedback(
         FeedbackType = gorseSettings.feedbackType,
@@ -187,7 +211,7 @@ class GorseEventListener(
         gorseClient.insertFeedback(chunk)
       }
     }
-    logger.info { "Gorse: synced ${feedbackList.size} feedback entries" }
+    logger.info { "Gorse: synced ${feedbackList.size} feedback entries (threshold=${String.format("%.0f%%", gorseSettings.readThreshold * 100)})" }
     return feedbackList.size
   }
 }

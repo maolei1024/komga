@@ -67,7 +67,27 @@
               label="匿名用户 ID"
               hint="未登录时使用的默认用户 ID（留空则匿名接口不可用）"
               persistent-hint
+              class="mb-4"
             />
+
+            <v-slider
+              v-model="readThresholdPercent"
+              @input="formDirty = true"
+              label="阅读反馈阈值"
+              :min="10"
+              :max="100"
+              :step="5"
+              thumb-label="always"
+              :thumb-size="24"
+              class="mb-4"
+            >
+              <template v-slot:append>
+                <span class="text-body-2">{{ readThresholdPercent }}%</span>
+              </template>
+            </v-slider>
+            <div class="text-caption grey--text mt-n4 mb-4">
+              阅读进度达到此百分比时发送反馈到 Gorse（默认：50%）
+            </div>
           </v-card-text>
           <v-card-actions>
             <v-spacer/>
@@ -196,6 +216,7 @@ export default Vue.extend({
       feedbackType: 'read',
       positiveFeedbackType: 'like',
       anonymousUserId: '',
+      readThreshold: 0.5,
     } as GorseSettingsDto,
     formDirty: false,
     saving: false,
@@ -212,6 +233,16 @@ export default Vue.extend({
   }),
   mounted() {
     this.refreshSettings()
+  },
+  computed: {
+    readThresholdPercent: {
+      get(): number {
+        return Math.round(this.form.readThreshold * 100)
+      },
+      set(val: number) {
+        this.form.readThreshold = val / 100
+      },
+    },
   },
   methods: {
     async refreshSettings() {

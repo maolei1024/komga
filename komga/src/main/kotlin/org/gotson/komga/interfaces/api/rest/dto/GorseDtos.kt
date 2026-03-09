@@ -7,6 +7,7 @@ data class GorseSettingsDto(
   val feedbackType: String,
   val positiveFeedbackType: String,
   val anonymousUserId: String,
+  val readThreshold: Double,
 )
 
 data class GorseSettingsUpdateDto(
@@ -16,6 +17,7 @@ data class GorseSettingsUpdateDto(
   val feedbackType: String? = null,
   val positiveFeedbackType: String? = null,
   val anonymousUserId: String? = null,
+  val readThreshold: Double? = null,
 )
 
 data class GorseSyncResultDto(

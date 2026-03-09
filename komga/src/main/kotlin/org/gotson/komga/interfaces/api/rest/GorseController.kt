@@ -36,6 +36,7 @@ class GorseController(
       feedbackType = gorseSettings.feedbackType,
       positiveFeedbackType = gorseSettings.positiveFeedbackType,
       anonymousUserId = gorseSettings.anonymousUserId,
+      readThreshold = gorseSettings.readThreshold,
     )
 
   @PatchMapping
@@ -50,6 +51,7 @@ class GorseController(
     newSettings.feedbackType?.let { gorseSettings.feedbackType = it }
     newSettings.positiveFeedbackType?.let { gorseSettings.positiveFeedbackType = it }
     newSettings.anonymousUserId?.let { gorseSettings.anonymousUserId = it }
+    newSettings.readThreshold?.let { gorseSettings.readThreshold = it }
   }
 
   @PostMapping("sync/items")

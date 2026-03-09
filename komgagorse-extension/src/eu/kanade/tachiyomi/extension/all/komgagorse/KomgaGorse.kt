@@ -37,13 +37,16 @@ import okhttp3.Credentials
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.apache.commons.text.StringSubstitutor
 import uy.kohesive.injekt.injectLazy
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 open class KomgaGorse(private val suffix: String = "") :
     HttpSource(),
@@ -85,6 +88,11 @@ open class KomgaGorse(private val suffix: String = "") :
         get() = preferences.getStringSet(PREF_DEFAULT_LIBRARIES, emptySet())!!
 
     private val json: Json by injectLazy()
+
+    // 阅读进度追踪: key=bookId, value=Pair(totalPages, maxPageFetched)
+    private val readingTracker = ConcurrentHashMap<String, Pair<Int, Int>>()
+    // 已发送过 read-progress 的 bookId 集合（避免重复）
+    private val feedbackSent = ConcurrentHashMap.newKeySet<String>()
 
     override fun headersBuilder() = super.headersBuilder()
         .set("User-Agent", "TachiyomiKomga/${AppInfo.getVersionName()}")
@@ -270,6 +278,15 @@ open class KomgaGorse(private val suffix: String = "") :
     override fun pageListParse(response: Response): List<Page> {
         val pages = response.parseAs<List<PageDto>>()
 
+        // 从 URL 提取 bookId: .../api/v1/books/{bookId}/pages
+        val segments = response.request.url.pathSegments
+        val booksIdx = segments.indexOf("books")
+        if (booksIdx >= 0 && booksIdx + 1 < segments.size) {
+            val bookId = segments[booksIdx + 1]
+            readingTracker[bookId] = Pair(pages.size, 0)
+            Log.d(logTag, "Tracking book $bookId with ${pages.size} pages")
+        }
+
         return pages.map {
             val url = "${response.request.url}/${it.number}" +
                 if (!SUPPORTED_IMAGE_TYPES.contains(it.mediaType)) {
@@ -284,7 +301,58 @@ open class KomgaGorse(private val suffix: String = "") :
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
-    override fun imageRequest(page: Page): Request = GET(page.imageUrl!!, headers = headersBuilder().add("Accept", "image/*,*/*;q=0.8").build())
+    override fun imageRequest(page: Page): Request {
+        val url = page.imageUrl!!
+
+        // 从 URL 提取 bookId 和 pageNumber 追踪阅读进度
+        // URL 格式: {baseUrl}/api/v1/books/{bookId}/pages/{pageNumber}
+        try {
+            val segments = url.toHttpUrl().pathSegments
+            val booksIdx = segments.indexOf("books")
+            if (booksIdx >= 0 && booksIdx + 3 < segments.size) {
+                val bookId = segments[booksIdx + 1]
+                val pageNumber = segments[booksIdx + 3].substringBefore("?").toIntOrNull()
+                if (pageNumber != null) {
+                    trackReadProgress(bookId, pageNumber)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(logTag, "Error tracking read progress", e)
+        }
+
+        return GET(url, headers = headersBuilder().add("Accept", "image/*,*/*;q=0.8").build())
+    }
+
+    /**
+     * 追踪阅读进度，达到 50% 阈值时发送 read-progress 到 Komga
+     */
+    private fun trackReadProgress(bookId: String, pageNumber: Int) {
+        val (totalPages, maxPage) = readingTracker[bookId] ?: return
+        val newMax = maxOf(maxPage, pageNumber)
+        readingTracker[bookId] = Pair(totalPages, newMax)
+
+        // 检查是否达到 50% 阈值
+        if (totalPages > 0 && newMax.toDouble() / totalPages >= 0.5) {
+            if (feedbackSent.add(bookId)) { // 只发送一次
+                scope.launch {
+                    try {
+                        val requestBody = """{"page":$newMax}"""
+                            .toRequestBody("application/json".toMediaType())
+                        val request = Request.Builder()
+                            .url("$baseUrl/api/v1/books/$bookId/read-progress")
+                            .patch(requestBody)
+                            .headers(headers)
+                            .build()
+                        client.newCall(request).execute().close()
+                        Log.i(logTag, "Read progress sent for book $bookId: page $newMax/$totalPages")
+                    } catch (e: Exception) {
+                        feedbackSent.remove(bookId) // 失败时允许重试
+                        Log.e(logTag, "Failed to send read progress for book $bookId", e)
+                    }
+                }
+            }
+        }
+    }
 
     override fun getFilterList(): FilterList {
         fetchFilterOptions()

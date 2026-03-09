@@ -48,6 +48,13 @@ class GorseSettingsProvider(
       serverSettingsDao.saveSetting(GorseSettings.GORSE_ANONYMOUS_USER_ID.name, value)
       field = value
     }
+
+  var readThreshold: Double =
+    serverSettingsDao.getSettingByKey(GorseSettings.GORSE_READ_THRESHOLD.name, String::class.java)?.toDoubleOrNull() ?: 0.5
+    set(value) {
+      serverSettingsDao.saveSetting(GorseSettings.GORSE_READ_THRESHOLD.name, value.toString())
+      field = value
+    }
 }
 
 private enum class GorseSettings {
@@ -57,4 +64,5 @@ private enum class GorseSettings {
   GORSE_FEEDBACK_TYPE,
   GORSE_POSITIVE_FEEDBACK_TYPE,
   GORSE_ANONYMOUS_USER_ID,
+  GORSE_READ_THRESHOLD,
 }

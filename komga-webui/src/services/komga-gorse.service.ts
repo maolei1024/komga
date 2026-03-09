@@ -9,6 +9,7 @@ export interface GorseSettingsDto {
     feedbackType: string
     positiveFeedbackType: string
     anonymousUserId: string
+    readThreshold: number
 }
 
 export interface GorseSettingsUpdateDto {
@@ -18,6 +19,7 @@ export interface GorseSettingsUpdateDto {
     feedbackType?: string
     positiveFeedbackType?: string
     anonymousUserId?: string
+    readThreshold?: number
 }
 
 export interface GorseSyncResultDto {
