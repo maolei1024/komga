@@ -26,7 +26,6 @@ class GorseFeedbackController(
   private val gorseClient: GorseClient,
   private val gorseSettings: GorseSettingsProvider,
 ) {
-
   @GetMapping("like/{itemId}")
   @Operation(summary = "Check if current user liked an item")
   fun getLikeStatus(
@@ -55,12 +54,13 @@ class GorseFeedbackController(
     }
 
     val userId = principal.user.id
-    val feedback = GorseFeedback(
-      FeedbackType = "like",
-      UserId = userId,
-      ItemId = itemId,
-      Timestamp = Instant.now().toString(),
-    )
+    val feedback =
+      GorseFeedback(
+        FeedbackType = "like",
+        UserId = userId,
+        ItemId = itemId,
+        Timestamp = Instant.now().toString(),
+      )
     gorseClient.insertFeedback(listOf(feedback))
     logger.info { "Gorse: user $userId liked item $itemId" }
     return mapOf("isLiked" to true)

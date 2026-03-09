@@ -13,7 +13,8 @@ class GorseClient(
   private val gorseSettings: GorseSettingsProvider,
 ) {
   private fun buildClient(): WebClient =
-    WebClient.builder()
+    WebClient
+      .builder()
       .baseUrl(gorseSettings.apiUrl)
       .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
       .defaultHeader("X-API-Key", gorseSettings.apiKey)
@@ -34,7 +35,10 @@ class GorseClient(
     }
   }
 
-  fun updateItem(itemId: String, item: GorseItem) {
+  fun updateItem(
+    itemId: String,
+    item: GorseItem,
+  ) {
     try {
       buildClient()
         .patch()
@@ -110,56 +114,68 @@ class GorseClient(
     }
   }
 
-  fun getRecommendations(userId: String, n: Int = 20, offset: Int = 0): List<String> {
-    return try {
-      val response = buildClient()
-        .get()
-        .uri("/api/recommend/$userId?n=$n&offset=$offset")
-        .retrieve()
-        .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<String>>() {})
-        .block() ?: emptyList()
+  fun getRecommendations(
+    userId: String,
+    n: Int = 20,
+    offset: Int = 0,
+  ): List<String> =
+    try {
+      val response =
+        buildClient()
+          .get()
+          .uri("/api/recommend/$userId?n=$n&offset=$offset")
+          .retrieve()
+          .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<String>>() {})
+          .block() ?: emptyList()
       logger.debug { "Gorse: got ${response.size} recommendations for user $userId" }
       response
     } catch (e: Exception) {
       logger.error(e) { "Gorse: failed to get recommendations for user $userId" }
       emptyList()
     }
-  }
 
   fun insertFeedback(feedback: List<GorseFeedback>) {
     if (feedback.isEmpty()) return
     try {
       logger.info { "Gorse: sending ${feedback.size} feedback entries: ${feedback.map { "${it.UserId}->${it.ItemId}(${it.FeedbackType})" }}" }
-      val response = buildClient()
-        .put()
-        .uri("/api/feedback")
-        .bodyValue(feedback)
-        .retrieve()
-        .bodyToMono(String::class.java)
-        .block()
+      val response =
+        buildClient()
+          .put()
+          .uri("/api/feedback")
+          .bodyValue(feedback)
+          .retrieve()
+          .bodyToMono(String::class.java)
+          .block()
       logger.info { "Gorse: inserted ${feedback.size} feedback entries, response: $response" }
     } catch (e: Exception) {
       logger.error(e) { "Gorse: failed to insert ${feedback.size} feedback entries" }
     }
   }
 
-  fun getUserFeedbackByType(userId: String, feedbackType: String): List<GorseFeedback> {
-    return try {
-      val response = buildClient()
-        .get()
-        .uri("/api/user/$userId/feedback/$feedbackType")
-        .retrieve()
-        .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<GorseFeedback>>() {})
-        .block() ?: emptyList()
+  fun getUserFeedbackByType(
+    userId: String,
+    feedbackType: String,
+  ): List<GorseFeedback> =
+    try {
+      val response =
+        buildClient()
+          .get()
+          .uri("/api/user/$userId/feedback/$feedbackType")
+          .retrieve()
+          .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<GorseFeedback>>() {})
+          .block() ?: emptyList()
       logger.debug { "Gorse: got ${response.size} $feedbackType feedbacks for user $userId" }
       response
     } catch (e: Exception) {
       logger.error(e) { "Gorse: failed to get $feedbackType feedbacks for user $userId" }
       emptyList()
     }
-  }
 
-  fun deleteFeedback(feedbackType: String, userId: String, itemId: String) {
+  fun deleteFeedback(
+    feedbackType: String,
+    userId: String,
+    itemId: String,
+  ) {
     try {
       buildClient()
         .delete()

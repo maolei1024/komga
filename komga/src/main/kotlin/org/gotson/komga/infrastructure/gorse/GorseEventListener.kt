@@ -33,6 +33,7 @@ class GorseEventListener(
 ) {
   // 去重：同一 bookId:userId 运行期间只发送一次 read 反馈
   private val sentReadFeedback = ConcurrentHashMap<String, Boolean>()
+
   @EventListener
   fun handleEvent(event: DomainEvent) {
     if (!gorseSettings.enabled) return
@@ -77,32 +78,32 @@ class GorseEventListener(
     return labels
   }
 
-  private fun getSeriesTitle(seriesId: String): String {
-    return seriesMetadataRepository.findByIdOrNull(seriesId)?.title ?: ""
-  }
+  private fun getSeriesTitle(seriesId: String): String = seriesMetadataRepository.findByIdOrNull(seriesId)?.title ?: ""
 
   private fun handleSeriesAdded(event: DomainEvent.SeriesAdded) {
     val series = event.series
-    val item = GorseItem(
-      ItemId = series.id,
-      Labels = buildLabelsForSeries(series.id),
-      Categories = listOf(series.libraryId),
-      Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-      Comment = getSeriesTitle(series.id),
-    )
+    val item =
+      GorseItem(
+        ItemId = series.id,
+        Labels = buildLabelsForSeries(series.id),
+        Categories = listOf(series.libraryId),
+        Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+        Comment = getSeriesTitle(series.id),
+      )
     logger.info { "Gorse: inserting item ${series.id}, labels=${item.Labels}" }
     gorseClient.insertItem(item)
   }
 
   private fun handleSeriesUpdated(event: DomainEvent.SeriesUpdated) {
     val series = event.series
-    val item = GorseItem(
-      ItemId = series.id,
-      Labels = buildLabelsForSeries(series.id),
-      Categories = listOf(series.libraryId),
-      Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-      Comment = getSeriesTitle(series.id),
-    )
+    val item =
+      GorseItem(
+        ItemId = series.id,
+        Labels = buildLabelsForSeries(series.id),
+        Categories = listOf(series.libraryId),
+        Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+        Comment = getSeriesTitle(series.id),
+      )
     logger.info { "Gorse: updating item ${series.id}, labels=${item.Labels}" }
     gorseClient.updateItem(series.id, item)
   }
@@ -137,12 +138,13 @@ class GorseEventListener(
       return
     }
     logger.info { "Gorse: sending feedback (threshold reached) for series=${book.seriesId}, user=${progress.userId}, type=${gorseSettings.feedbackType}" }
-    val feedback = GorseFeedback(
-      FeedbackType = gorseSettings.feedbackType,
-      UserId = progress.userId,
-      ItemId = book.seriesId,
-      Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-    )
+    val feedback =
+      GorseFeedback(
+        FeedbackType = gorseSettings.feedbackType,
+        UserId = progress.userId,
+        ItemId = book.seriesId,
+        Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+      )
     gorseClient.insertFeedback(listOf(feedback))
   }
 
@@ -151,15 +153,16 @@ class GorseEventListener(
    */
   fun syncAllItems(): Int {
     val allSeries = seriesRepository.findAll()
-    val items = allSeries.map { series ->
-      GorseItem(
-        ItemId = series.id,
-        Labels = buildLabelsForSeries(series.id),
-        Categories = listOf(series.libraryId),
-        Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-        Comment = getSeriesTitle(series.id),
-      )
-    }
+    val items =
+      allSeries.map { series ->
+        GorseItem(
+          ItemId = series.id,
+          Labels = buildLabelsForSeries(series.id),
+          Categories = listOf(series.libraryId),
+          Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+          Comment = getSeriesTitle(series.id),
+        )
+      }
     if (items.isNotEmpty()) {
       items.chunked(100).forEach { chunk ->
         gorseClient.insertItems(chunk)
@@ -174,12 +177,13 @@ class GorseEventListener(
    */
   fun syncAllUsers(): Int {
     val allUsers = userRepository.findAll()
-    val users = allUsers.map { user ->
-      GorseUser(
-        UserId = user.id,
-        Comment = user.email,
-      )
-    }
+    val users =
+      allUsers.map { user ->
+        GorseUser(
+          UserId = user.id,
+          Comment = user.email,
+        )
+      }
     if (users.isNotEmpty()) {
       gorseClient.insertUsers(users.toList())
     }
@@ -192,20 +196,21 @@ class GorseEventListener(
    */
   fun syncAllFeedback(): Int {
     val allProgress = readProgressRepository.findAll()
-    val feedbackList = allProgress.mapNotNull { progress ->
-      val media = mediaRepository.findByIdOrNull(progress.bookId) ?: return@mapNotNull null
-      if (media.pageCount == 0) return@mapNotNull null
-      val readRatio = progress.page.toDouble() / media.pageCount
-      if (readRatio < gorseSettings.readThreshold) return@mapNotNull null
+    val feedbackList =
+      allProgress.mapNotNull { progress ->
+        val media = mediaRepository.findByIdOrNull(progress.bookId) ?: return@mapNotNull null
+        if (media.pageCount == 0) return@mapNotNull null
+        val readRatio = progress.page.toDouble() / media.pageCount
+        if (readRatio < gorseSettings.readThreshold) return@mapNotNull null
 
-      val book = bookRepository.findByIdOrNull(progress.bookId) ?: return@mapNotNull null
-      GorseFeedback(
-        FeedbackType = gorseSettings.feedbackType,
-        UserId = progress.userId,
-        ItemId = book.seriesId,
-        Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-      )
-    }
+        val book = bookRepository.findByIdOrNull(progress.bookId) ?: return@mapNotNull null
+        GorseFeedback(
+          FeedbackType = gorseSettings.feedbackType,
+          UserId = progress.userId,
+          ItemId = book.seriesId,
+          Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+        )
+      }
     if (feedbackList.isNotEmpty()) {
       feedbackList.chunked(100).forEach { chunk ->
         gorseClient.insertFeedback(chunk)

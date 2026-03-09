@@ -129,35 +129,49 @@ class GorseLikeController(
     return userId
   }
 
-  private fun checkLikeStatus(userId: String, seriesId: String): Map<String, Boolean> {
+  private fun checkLikeStatus(
+    userId: String,
+    seriesId: String,
+  ): Map<String, Boolean> {
     val feedbacks = gorseClient.getUserFeedbackByType(userId, getFeedbackType())
     val liked = feedbacks.any { it.ItemId == seriesId }
     logger.debug { "Gorse: user $userId like status for series $seriesId: $liked" }
     return mapOf("liked" to liked)
   }
 
-  private fun checkLikeStatusByBook(userId: String, bookId: String): Map<String, Any> {
-    val book = bookRepository.findByIdOrNull(bookId)
-      ?: return mapOf("liked" to false, "seriesId" to "")
+  private fun checkLikeStatusByBook(
+    userId: String,
+    bookId: String,
+  ): Map<String, Any> {
+    val book =
+      bookRepository.findByIdOrNull(bookId)
+        ?: return mapOf("liked" to false, "seriesId" to "")
     val feedbacks = gorseClient.getUserFeedbackByType(userId, getFeedbackType())
     val liked = feedbacks.any { it.ItemId == book.seriesId }
     logger.debug { "Gorse: user $userId like status for book $bookId (series ${book.seriesId}): $liked" }
     return mapOf("liked" to liked, "seriesId" to book.seriesId)
   }
 
-  private fun doLike(userId: String, seriesId: String): Map<String, Boolean> {
-    val feedback = GorseFeedback(
-      FeedbackType = getFeedbackType(),
-      UserId = userId,
-      ItemId = seriesId,
-      Timestamp = ZonedDateTime.now(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-    )
+  private fun doLike(
+    userId: String,
+    seriesId: String,
+  ): Map<String, Boolean> {
+    val feedback =
+      GorseFeedback(
+        FeedbackType = getFeedbackType(),
+        UserId = userId,
+        ItemId = seriesId,
+        Timestamp = ZonedDateTime.now(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+      )
     gorseClient.insertFeedback(listOf(feedback))
     logger.info { "Gorse: user $userId liked series $seriesId" }
     return mapOf("success" to true)
   }
 
-  private fun doUnlike(userId: String, seriesId: String): Map<String, Boolean> {
+  private fun doUnlike(
+    userId: String,
+    seriesId: String,
+  ): Map<String, Boolean> {
     gorseClient.deleteFeedback(getFeedbackType(), userId, seriesId)
     logger.info { "Gorse: user $userId unliked series $seriesId" }
     return mapOf("success" to true)

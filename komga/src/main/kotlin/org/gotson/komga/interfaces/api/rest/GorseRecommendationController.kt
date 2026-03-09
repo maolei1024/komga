@@ -47,14 +47,16 @@ class GorseRecommendationController(
       return PageImpl(emptyList(), PageRequest.of(page, size), 0)
     }
 
-    val seriesList = recommendedIds.mapNotNull { seriesId ->
-      try {
-        seriesDtoRepository.findByIdOrNull(seriesId, userId)?.restrictUrl(!principal.user.isAdmin)
-      } catch (e: Exception) {
-        logger.debug { "Series $seriesId from Gorse not found in Komga" }
-        null
-      }
-    }.take(size)
+    val seriesList =
+      recommendedIds
+        .mapNotNull { seriesId ->
+          try {
+            seriesDtoRepository.findByIdOrNull(seriesId, userId)?.restrictUrl(!principal.user.isAdmin)
+          } catch (e: Exception) {
+            logger.debug { "Series $seriesId from Gorse not found in Komga" }
+            null
+          }
+        }.take(size)
 
     val total = if (seriesList.size == size) (offset + size + 1).toLong() else (offset + seriesList.size).toLong()
     return PageImpl(seriesList, PageRequest.of(page, size), total)
