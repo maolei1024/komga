@@ -91,6 +91,7 @@ open class KomgaGorse(private val suffix: String = "") :
 
     // 阅读进度追踪: key=bookId, value=Pair(totalPages, maxPageFetched)
     private val readingTracker = ConcurrentHashMap<String, Pair<Int, Int>>()
+
     // 已发送过 read-progress 的 bookId 集合（避免重复）
     private val feedbackSent = ConcurrentHashMap.newKeySet<String>()
 
