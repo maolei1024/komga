@@ -94,6 +94,7 @@ open class KomgaGorse(private val suffix: String = "") :
 
     // Gorse feedback: 仅在50%时发送一次 read 标记
     private val feedbackSent = ConcurrentHashMap.newKeySet<String>()
+
     // Komga page progress: 记录已发送的最大页码，持续更新
     private val lastSentPage = ConcurrentHashMap<String, Int>()
 
