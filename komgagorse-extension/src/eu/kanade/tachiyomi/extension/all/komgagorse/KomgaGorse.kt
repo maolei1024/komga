@@ -92,8 +92,10 @@ open class KomgaGorse(private val suffix: String = "") :
     // 阅读进度追踪: key=bookId, value=Pair(totalPages, maxPageFetched)
     private val readingTracker = ConcurrentHashMap<String, Pair<Int, Int>>()
 
-    // 已发送过 read-progress 的 bookId 集合（避免重复）
+    // Gorse feedback: 仅在50%时发送一次 read 标记
     private val feedbackSent = ConcurrentHashMap.newKeySet<String>()
+    // Komga page progress: 记录已发送的最大页码，持续更新
+    private val lastSentPage = ConcurrentHashMap<String, Int>()
 
     override fun headersBuilder() = super.headersBuilder()
         .set("User-Agent", "TachiyomiKomga/${AppInfo.getVersionName()}")
@@ -325,31 +327,42 @@ open class KomgaGorse(private val suffix: String = "") :
     }
 
     /**
-     * 追踪阅读进度，达到 50% 阈值时发送 read-progress 到 Komga
+     * 追踪阅读进度:
+     * - Gorse feedback: 达到 50% 时发送一次 read 标记
+     * - Komga page progress: 持续更新页码进度（每 10% 增量或跨阈值时发送）
      */
     private fun trackReadProgress(bookId: String, pageNumber: Int) {
         val (totalPages, maxPage) = readingTracker[bookId] ?: return
         val newMax = maxOf(maxPage, pageNumber)
         readingTracker[bookId] = Pair(totalPages, newMax)
+        if (totalPages <= 0) return
 
-        // 检查是否达到 50% 阈值
-        if (totalPages > 0 && newMax.toDouble() / totalPages >= 0.5) {
-            if (feedbackSent.add(bookId)) { // 只发送一次
-                scope.launch {
-                    try {
-                        val requestBody = """{"page":$newMax}"""
-                            .toRequestBody("application/json".toMediaType())
-                        val request = Request.Builder()
-                            .url("$baseUrl/api/v1/books/$bookId/read-progress")
-                            .patch(requestBody)
-                            .headers(headers)
-                            .build()
-                        client.newCall(request).execute().close()
-                        Log.i(logTag, "Read progress sent for book $bookId: page $newMax/$totalPages")
-                    } catch (e: Exception) {
-                        feedbackSent.remove(bookId) // 失败时允许重试
-                        Log.e(logTag, "Failed to send read progress for book $bookId", e)
-                    }
+        val progress = newMax.toDouble() / totalPages
+
+        // Gorse feedback: 50% 时发送一次 read 标记
+        if (progress >= 0.5) {
+            feedbackSent.add(bookId)
+        }
+
+        // Komga page progress: 仅当页码有显著变化时发送（每 10% 增量）
+        val previousSentPage = lastSentPage[bookId] ?: 0
+        val pageIncrement = (totalPages * 0.1).toInt().coerceAtLeast(1)
+        if (newMax > previousSentPage && (newMax - previousSentPage) >= pageIncrement) {
+            lastSentPage[bookId] = newMax
+            scope.launch {
+                try {
+                    val requestBody = """{"page":$newMax}"""
+                        .toRequestBody("application/json".toMediaType())
+                    val request = Request.Builder()
+                        .url("$baseUrl/api/v1/books/$bookId/read-progress")
+                        .patch(requestBody)
+                        .headers(headers)
+                        .build()
+                    client.newCall(request).execute().close()
+                    Log.i(logTag, "Read progress sent for book $bookId: page $newMax/$totalPages (${(progress * 100).toInt()}%)")
+                } catch (e: Exception) {
+                    lastSentPage[bookId] = previousSentPage // 失败时回退
+                    Log.e(logTag, "Failed to send read progress for book $bookId", e)
                 }
             }
         }
