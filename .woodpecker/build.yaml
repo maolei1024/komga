@@ -10,10 +10,11 @@ when:
     branch: master
     evaluate: 'CI_REPO_OWNER == "maolei1024"'
 steps:
-  # Gradle 预构建 (komga 需要先编译 JAR)
+  # Gradle 预构建 (需要 JDK 21+ 和 Node.js)
   - name: gradle-build
     image: eclipse-temurin:21-jdk
     commands:
+      - 'apt-get update && apt-get install -y nodejs npm'
       - chmod +x ./gradlew
       - './gradlew :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
 
