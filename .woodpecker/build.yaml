@@ -1,0 +1,30 @@
+# 矩阵多架构原生构建 (PUBLIC 仓库，添加 owner 限制)
+matrix:
+  ARCH:
+    - amd64
+    - arm64
+labels:
+  arch: ${ARCH}
+when:
+  - event: push
+    branch: master
+    evaluate: 'CI_REPO_OWNER == "maolei1024"'
+steps:
+  # Gradle 预构建 (komga 需要先编译 JAR)
+  - name: gradle-build
+    image: eclipse-temurin:17-jdk
+    commands:
+      - chmod +x ./gradlew
+      - './gradlew :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
+
+  - name: build
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      repo: docker.nexus.ixuni.win/komga
+      registry: docker.nexus.ixuni.win
+      tags: "${CI_PIPELINE_NUMBER}-${ARCH}"
+      platforms: "linux/${ARCH}"
+      username:
+        from_secret: nexus_username
+      password:
+        from_secret: nexus_password

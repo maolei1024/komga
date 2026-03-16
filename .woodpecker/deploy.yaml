@@ -1,0 +1,39 @@
+# Manifest 合并 + 通知 (仅构建推送，无 K8s 部署)
+depends_on:
+  - build
+when:
+  - event: push
+    branch: master
+    evaluate: 'CI_REPO_OWNER == "maolei1024"'
+steps:
+  - name: manifest
+    image: mplatform/manifest-tool:alpine
+    commands:
+      - 'manifest-tool --username=$${NEXUS_USERNAME} --password=$${NEXUS_PASSWORD} push from-args --platforms linux/amd64,linux/arm64 --template docker.nexus.ixuni.win/komga:${CI_PIPELINE_NUMBER}-ARCH --target docker.nexus.ixuni.win/komga:${CI_PIPELINE_NUMBER}'
+      - 'manifest-tool --username=$${NEXUS_USERNAME} --password=$${NEXUS_PASSWORD} push from-args --platforms linux/amd64,linux/arm64 --template docker.nexus.ixuni.win/komga:${CI_PIPELINE_NUMBER}-ARCH --target docker.nexus.ixuni.win/komga:latest'
+    environment:
+      NEXUS_USERNAME:
+        from_secret: nexus_username
+      NEXUS_PASSWORD:
+        from_secret: nexus_password
+
+  - name: notify-success
+    image: docker.nexus.ixuni.win/woodpecker-mlntfy:v4
+    when:
+      - status: [success]
+    settings:
+      url: https://mlntfy.project.k3s.ixuni.win
+      topic: ci-notify
+      status: success
+      tags: ci,success
+
+  - name: notify-failure
+    image: docker.nexus.ixuni.win/woodpecker-mlntfy:v4
+    when:
+      - status: [failure]
+    settings:
+      url: https://mlntfy.project.k3s.ixuni.win
+      topic: ci-notify
+      status: failure
+      priority: high
+      tags: ci,failure
