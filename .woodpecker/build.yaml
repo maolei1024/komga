@@ -14,7 +14,7 @@ steps:
   - name: gradle-build
     image: eclipse-temurin:21-jdk
     commands:
-      - 'apt-get update && apt-get install -y nodejs npm'
+      - 'apt-get update && apt-get install -y curl && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs'
       - chmod +x ./gradlew
       - './gradlew :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
 
