@@ -10,11 +10,10 @@ when:
     branch: master
     evaluate: 'CI_REPO_OWNER == "maolei1024"'
 steps:
-  # Gradle 预构建 (需要 JDK 21+ 和 Node.js)
+  # Gradle 预构建 (使用预构建基础镜像)
   - name: gradle-build
-    image: eclipse-temurin:21-jdk
+    image: docker.nexus.ixuni.win/baseimg-java21-node20
     commands:
-      - 'apt-get update && apt-get install -y curl && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs'
       - chmod +x ./gradlew
       - './gradlew :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
 
