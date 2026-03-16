@@ -12,7 +12,7 @@ when:
 steps:
   # Gradle 预构建 (komga 需要先编译 JAR)
   - name: gradle-build
-    image: eclipse-temurin:17-jdk
+    image: eclipse-temurin:21-jdk
     commands:
       - chmod +x ./gradlew
       - './gradlew :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
