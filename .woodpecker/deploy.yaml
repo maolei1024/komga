@@ -23,7 +23,7 @@ steps:
       - status: [success]
     settings:
       url: https://mlntfy.project.k3s.ixuni.win
-      topic: ci-notify
+      topic: mlNtfy
       status: success
       tags: ci,success
 
@@ -33,7 +33,7 @@ steps:
       - status: [failure]
     settings:
       url: https://mlntfy.project.k3s.ixuni.win
-      topic: ci-notify
+      topic: mlNtfy
       status: failure
       priority: high
       tags: ci,failure
