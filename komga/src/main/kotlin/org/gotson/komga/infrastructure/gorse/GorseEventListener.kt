@@ -117,7 +117,8 @@ class GorseEventListener(
   private fun handleBookDeleted(event: DomainEvent.BookDeleted) {
     val book = event.book
     val remainingBooks =
-      bookRepository.findAllBySeriesId(book.seriesId)
+      bookRepository
+        .findAllBySeriesId(book.seriesId)
         .filter { it.deletedDate == null }
     if (remainingBooks.isEmpty()) {
       logger.info { "Gorse: all books deleted for series ${book.seriesId}, hiding item" }
