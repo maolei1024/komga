@@ -39,6 +39,9 @@ node_modules
 ### IntelliJ Fleet
 .fleet/
 
+### VS Code
+.vscode/
+
 ### NetBeans
 nbproject/private/
 build/
