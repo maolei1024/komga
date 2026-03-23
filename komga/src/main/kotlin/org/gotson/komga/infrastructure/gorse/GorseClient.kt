@@ -67,6 +67,21 @@ class GorseClient(
     }
   }
 
+  fun hideItem(itemId: String) {
+    try {
+      buildClient()
+        .patch()
+        .uri("/api/item/$itemId")
+        .bodyValue(mapOf("IsHidden" to true))
+        .retrieve()
+        .bodyToMono(String::class.java)
+        .block()
+      logger.info { "Gorse: hidden item $itemId (preserved for training)" }
+    } catch (e: Exception) {
+      logger.error(e) { "Gorse: failed to hide item $itemId" }
+    }
+  }
+
   fun insertItems(items: List<GorseItem>) {
     if (items.isEmpty()) return
     try {

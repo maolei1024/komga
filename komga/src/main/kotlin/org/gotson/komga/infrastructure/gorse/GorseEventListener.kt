@@ -43,6 +43,7 @@ class GorseEventListener(
         is DomainEvent.SeriesUpdated -> handleSeriesUpdated(event)
         is DomainEvent.SeriesDeleted -> handleSeriesDeleted(event)
         is DomainEvent.ReadProgressChanged -> handleReadProgressChanged(event)
+        is DomainEvent.BookDeleted -> handleBookDeleted(event)
         else -> Unit
       }
     } catch (e: Exception) {
@@ -109,7 +110,21 @@ class GorseEventListener(
   }
 
   private fun handleSeriesDeleted(event: DomainEvent.SeriesDeleted) {
-    gorseClient.deleteItem(event.series.id)
+    logger.info { "Gorse: hiding item ${event.series.id} (series deleted from Komga)" }
+    gorseClient.hideItem(event.series.id)
+  }
+
+  private fun handleBookDeleted(event: DomainEvent.BookDeleted) {
+    val book = event.book
+    val remainingBooks =
+      bookRepository.findAllBySeriesId(book.seriesId)
+        .filter { it.deletedDate == null }
+    if (remainingBooks.isEmpty()) {
+      logger.info { "Gorse: all books deleted for series ${book.seriesId}, hiding item" }
+      gorseClient.hideItem(book.seriesId)
+    } else {
+      logger.debug { "Gorse: book deleted but series ${book.seriesId} still has ${remainingBooks.size} books" }
+    }
   }
 
   private fun handleReadProgressChanged(event: DomainEvent.ReadProgressChanged) {
