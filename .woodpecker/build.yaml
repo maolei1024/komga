@@ -29,3 +29,14 @@ steps:
       password:
         from_secret: nexus_password
 
+  - name: notify-failure
+    image: docker.nexus.ixuni.win/woodpecker-mlntfy:v4
+    when:
+      - status: [failure]
+    settings:
+      url: https://mlntfy.project.k3s.ixuni.win
+      topic: mlNtfy
+      status: failure
+      priority: high
+      tags: "ci,failure,build,${ARCH}"
+
