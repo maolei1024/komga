@@ -2,6 +2,7 @@ package org.gotson.komga.interfaces.api.rest
 
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.gotson.komga.infrastructure.gorse.GorseEventListener
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.interfaces.api.rest.dto.GorseSettingsDto
@@ -37,13 +38,14 @@ class GorseController(
       positiveFeedbackType = gorseSettings.positiveFeedbackType,
       anonymousUserId = gorseSettings.anonymousUserId,
       readThreshold = gorseSettings.readThreshold,
+      tagPenaltyExponent = gorseSettings.tagPenaltyExponent,
     )
 
   @PatchMapping
   @ResponseStatus(HttpStatus.NO_CONTENT)
   @Operation(summary = "Update Gorse settings")
   fun updateGorseSettings(
-    @RequestBody newSettings: GorseSettingsUpdateDto,
+    @Valid @RequestBody newSettings: GorseSettingsUpdateDto,
   ) {
     newSettings.enabled?.let { gorseSettings.enabled = it }
     newSettings.apiUrl?.let { gorseSettings.apiUrl = it }
@@ -52,6 +54,7 @@ class GorseController(
     newSettings.positiveFeedbackType?.let { gorseSettings.positiveFeedbackType = it }
     newSettings.anonymousUserId?.let { gorseSettings.anonymousUserId = it }
     newSettings.readThreshold?.let { gorseSettings.readThreshold = it }
+    newSettings.tagPenaltyExponent?.let { gorseSettings.tagPenaltyExponent = it }
   }
 
   @PostMapping("sync/items")

@@ -133,14 +133,15 @@ class GorseClient(
     userId: String,
     n: Int = 20,
     offset: Int = 0,
-  ): List<String> =
+  ): List<GorseRecommendation> =
     try {
       val response =
         buildClient()
           .get()
           .uri("/api/recommend/$userId?n=$n&offset=$offset")
+          .header("X-API-Version", "2")
           .retrieve()
-          .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<String>>() {})
+          .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<GorseRecommendation>>() {})
           .block() ?: emptyList()
       logger.debug { "Gorse: got ${response.size} recommendations for user $userId" }
       response

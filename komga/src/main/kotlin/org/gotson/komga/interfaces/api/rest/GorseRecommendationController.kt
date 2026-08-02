@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 private val logger = KotlinLogging.logger {}
+private const val RECOMMENDATION_CANDIDATE_COUNT = 100
 
 @RestController
 @RequestMapping("api/v1/series", produces = [MediaType.APPLICATION_JSON_VALUE])
@@ -40,25 +41,38 @@ class GorseRecommendationController(
 
     val userId = principal.user.id
     val offset = page * size
-    val recommendedIds = gorseClient.getRecommendations(userId, n = size * 2, offset = offset)
-    logger.debug { "Gorse recommended ${recommendedIds.size} items for user $userId" }
+    val recommendations = gorseClient.getRecommendations(userId, n = RECOMMENDATION_CANDIDATE_COUNT, offset = 0)
+    logger.debug { "Gorse recommended ${recommendations.size} candidate items for user $userId" }
 
-    if (recommendedIds.isEmpty()) {
+    if (recommendations.isEmpty()) {
       return PageImpl(emptyList(), PageRequest.of(page, size), 0)
     }
 
-    val seriesList =
-      recommendedIds
-        .mapNotNull { seriesId ->
+    val candidates =
+      recommendations
+        .mapNotNull { recommendation ->
           try {
-            seriesDtoRepository.findByIdOrNull(seriesId, userId)?.restrictUrl(!principal.user.isAdmin)
+            seriesDtoRepository
+              .findByIdOrNull(recommendation.Id, userId)
+              ?.restrictUrl(!principal.user.isAdmin)
+              ?.let { recommendation to it }
           } catch (e: Exception) {
-            logger.debug { "Series $seriesId from Gorse not found in Komga" }
+            logger.debug { "Series ${recommendation.Id} from Gorse not found in Komga" }
             null
           }
-        }.take(size)
+        }
 
-    val total = if (seriesList.size == size) (offset + size + 1).toLong() else (offset + seriesList.size).toLong()
-    return PageImpl(seriesList, PageRequest.of(page, size), total)
+    val rankedSeries =
+      GorseRecommendationRanker.rank(
+        candidates = candidates,
+        tagPenaltyExponent = gorseSettings.tagPenaltyExponent,
+      )
+    val seriesList = rankedSeries.drop(offset).take(size)
+
+    logger.debug {
+      "Gorse reranked ${rankedSeries.size} visible candidates for user $userId " +
+        "with tag penalty exponent ${gorseSettings.tagPenaltyExponent}"
+    }
+    return PageImpl(seriesList, PageRequest.of(page, size), rankedSeries.size.toLong())
   }
 }

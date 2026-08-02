@@ -1,5 +1,8 @@
 package org.gotson.komga.interfaces.api.rest.dto
 
+import jakarta.validation.constraints.DecimalMax
+import jakarta.validation.constraints.DecimalMin
+
 data class GorseSettingsDto(
   val enabled: Boolean,
   val apiUrl: String,
@@ -8,6 +11,7 @@ data class GorseSettingsDto(
   val positiveFeedbackType: String,
   val anonymousUserId: String,
   val readThreshold: Double,
+  val tagPenaltyExponent: Double,
 )
 
 data class GorseSettingsUpdateDto(
@@ -18,6 +22,9 @@ data class GorseSettingsUpdateDto(
   val positiveFeedbackType: String? = null,
   val anonymousUserId: String? = null,
   val readThreshold: Double? = null,
+  @field:DecimalMin("0.0")
+  @field:DecimalMax("1.0")
+  val tagPenaltyExponent: Double? = null,
 )
 
 data class GorseSyncResultDto(

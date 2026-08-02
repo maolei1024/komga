@@ -21,3 +21,8 @@ data class GorseUser(
   val Labels: Map<String, Any> = emptyMap(),
   val Comment: String = "",
 )
+
+data class GorseRecommendation(
+  val Id: String,
+  val Score: Double,
+)

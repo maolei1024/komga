@@ -10,6 +10,7 @@ export interface GorseSettingsDto {
     positiveFeedbackType: string
     anonymousUserId: string
     readThreshold: number
+    tagPenaltyExponent: number
 }
 
 export interface GorseSettingsUpdateDto {
@@ -20,6 +21,7 @@ export interface GorseSettingsUpdateDto {
     positiveFeedbackType?: string
     anonymousUserId?: string
     readThreshold?: number
+    tagPenaltyExponent?: number
 }
 
 export interface GorseSyncResultDto {

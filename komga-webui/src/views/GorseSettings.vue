@@ -88,6 +88,26 @@
             <div class="text-caption grey--text mt-n4 mb-4">
               阅读进度达到此百分比时发送反馈到 Gorse（默认：50%）
             </div>
+
+            <v-slider
+              v-model="form.tagPenaltyExponent"
+              @input="formDirty = true"
+              label="标签数量惩罚力度"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              thumb-label="always"
+              :thumb-size="24"
+              class="mb-4"
+            >
+              <template v-slot:append>
+                <span class="text-body-2">{{ form.tagPenaltyExponent.toFixed(2) }}</span>
+              </template>
+            </v-slider>
+            <div class="text-caption grey--text mt-n4 mb-4">
+              0 表示关闭；0.5 表示按标签数量平方根惩罚；1 表示按标签数量直接惩罚。
+              计算时忽略 tagSize_* 和 pageSize_* 技术标签。
+            </div>
           </v-card-text>
           <v-card-actions>
             <v-spacer/>
@@ -217,6 +237,7 @@ export default Vue.extend({
       positiveFeedbackType: 'like',
       anonymousUserId: '',
       readThreshold: 0.5,
+      tagPenaltyExponent: 0.5,
     } as GorseSettingsDto,
     formDirty: false,
     saving: false,
