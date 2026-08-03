@@ -1,0 +1,233 @@
+CREATE TABLE DEDUP_LIBRARY_SETTINGS
+(
+    LIBRARY_ID                  varchar  NOT NULL PRIMARY KEY,
+    ENABLED                     boolean  NOT NULL DEFAULT false,
+    PAUSED                      boolean  NOT NULL DEFAULT false,
+    SCAN_INTERVAL               varchar  NOT NULL DEFAULT 'DAILY',
+    BATCH_SIZE                  integer  NOT NULL DEFAULT 100 CHECK (BATCH_SIZE > 0),
+    MAX_DURATION_SECONDS        integer  NOT NULL DEFAULT 300 CHECK (MAX_DURATION_SECONDS > 0),
+    QUIET_PERIOD_SECONDS        integer  NOT NULL DEFAULT 180 CHECK (QUIET_PERIOD_SECONDS >= 0),
+    COMPLETION_STABILITY_SECONDS integer NOT NULL DEFAULT 300 CHECK (COMPLETION_STABILITY_SECONDS >= 0),
+    COVER_CANDIDATE_DISTANCE     integer  NOT NULL DEFAULT 15 CHECK (COVER_CANDIDATE_DISTANCE BETWEEN 0 AND 256),
+    COVER_TOP_K                  integer  NOT NULL DEFAULT 20 CHECK (COVER_TOP_K > 0),
+    CREATED_DATE                datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_DATE          datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (LIBRARY_ID) REFERENCES LIBRARY (ID) ON DELETE CASCADE
+);
+
+CREATE TABLE DEDUP_WORK
+(
+    ID                  varchar  NOT NULL PRIMARY KEY,
+    LIBRARY_ID          varchar  NOT NULL,
+    TYPE                varchar  NOT NULL,
+    TARGET_KEY          varchar  NOT NULL DEFAULT '',
+    STATE               varchar  NOT NULL DEFAULT 'WAITING',
+    DESIRED_REVISION    int8     NOT NULL DEFAULT 1 CHECK (DESIRED_REVISION > 0),
+    COMPLETED_REVISION  int8     NOT NULL DEFAULT 0 CHECK (COMPLETED_REVISION >= 0),
+    NOT_BEFORE          datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    NEXT_RETRY_AT       datetime NULL,
+    LEASE_OWNER         varchar  NULL,
+    LEASE_TOKEN         varchar  NULL,
+    LEASE_UNTIL         datetime NULL,
+    ATTEMPT_COUNT       integer  NOT NULL DEFAULT 0 CHECK (ATTEMPT_COUNT >= 0),
+    MAX_ATTEMPTS        integer  NOT NULL DEFAULT 8 CHECK (MAX_ATTEMPTS > 0),
+    LAST_ERROR_CODE     varchar  NULL,
+    LAST_ERROR          varchar  NULL,
+    PRIORITY            integer  NOT NULL DEFAULT 0,
+    CREATED_DATE        datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_DATE  datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    COMPLETED_DATE      datetime NULL,
+    UNIQUE (LIBRARY_ID, TYPE, TARGET_KEY),
+    FOREIGN KEY (LIBRARY_ID) REFERENCES LIBRARY (ID) ON DELETE CASCADE,
+    CHECK (STATE IN ('WAITING', 'PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED_REVIEW', 'CANCELLED'))
+);
+
+CREATE INDEX IDX__DEDUP_WORK__CLAIM
+    ON DEDUP_WORK (STATE, NOT_BEFORE, NEXT_RETRY_AT, PRIORITY, CREATED_DATE);
+
+CREATE INDEX IDX__DEDUP_WORK__LEASE
+    ON DEDUP_WORK (STATE, LEASE_UNTIL);
+
+CREATE TABLE DEDUP_FEATURE
+(
+    BOOK_ID                     varchar  NOT NULL PRIMARY KEY,
+    SERIES_ID                   varchar  NOT NULL,
+    LIBRARY_ID                  varchar  NOT NULL,
+    SOURCE_CONTENT_GENERATION   varchar  NOT NULL,
+    SOURCE_COVER_GENERATION     varchar  NOT NULL DEFAULT '',
+    SOURCE_METADATA_GENERATION  varchar  NOT NULL DEFAULT '',
+    SERIES_SCOPE_REVISION       varchar  NOT NULL,
+    FEATURE_SCHEMA_VERSION      integer  NOT NULL,
+    COVER_STATE                 varchar  NOT NULL DEFAULT 'WAITING',
+    PAGE_STATE                  varchar  NOT NULL DEFAULT 'WAITING',
+    COVER_SOURCE                varchar  NULL,
+    COVER_HASH                  blob     NULL,
+    COVER_QUALITY               integer  NULL,
+    PAGE_COUNT                  integer  NULL,
+    ANALYZED_DATE               datetime NULL,
+    LAST_MODIFIED_DATE          datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (BOOK_ID) REFERENCES BOOK (ID) ON DELETE CASCADE,
+    FOREIGN KEY (SERIES_ID) REFERENCES SERIES (ID) ON DELETE CASCADE,
+    FOREIGN KEY (LIBRARY_ID) REFERENCES LIBRARY (ID) ON DELETE CASCADE
+);
+
+CREATE INDEX IDX__DEDUP_FEATURE__LIBRARY_COVER
+    ON DEDUP_FEATURE (LIBRARY_ID, COVER_STATE, FEATURE_SCHEMA_VERSION);
+
+CREATE TABLE DEDUP_PAGE_FEATURE
+(
+    BOOK_ID                    varchar NOT NULL,
+    SOURCE_CONTENT_GENERATION  varchar NOT NULL,
+    FEATURE_SCHEMA_VERSION     integer NOT NULL,
+    PAGE_NUMBER                integer NOT NULL CHECK (PAGE_NUMBER > 0),
+    EXACT_HASH                 varchar NULL,
+    PERCEPTUAL_HASH            blob    NULL,
+    QUALITY                    integer NULL,
+    PRIMARY KEY (BOOK_ID, SOURCE_CONTENT_GENERATION, FEATURE_SCHEMA_VERSION, PAGE_NUMBER),
+    FOREIGN KEY (BOOK_ID) REFERENCES BOOK (ID) ON DELETE CASCADE
+);
+
+CREATE TABLE DEDUP_RELATION
+(
+    ID                            varchar  NOT NULL PRIMARY KEY,
+    LIBRARY_ID                    varchar  NOT NULL,
+    BOOK_LOW_ID                   varchar  NOT NULL,
+    BOOK_HIGH_ID                  varchar  NOT NULL,
+    LOW_CONTENT_GENERATION        varchar  NOT NULL,
+    HIGH_CONTENT_GENERATION       varchar  NOT NULL,
+    LOW_COVER_GENERATION          varchar  NOT NULL DEFAULT '',
+    HIGH_COVER_GENERATION         varchar  NOT NULL DEFAULT '',
+    LOW_METADATA_GENERATION       varchar  NOT NULL DEFAULT '',
+    HIGH_METADATA_GENERATION      varchar  NOT NULL DEFAULT '',
+    RELATION_TYPE                 varchar  NOT NULL,
+    CONTAINED_BOOK_ID             varchar  NULL,
+    CONTAINER_BOOK_ID             varchar  NULL,
+    COVER_DISTANCE                integer  NULL,
+    COVERAGE_LEFT                 real     NULL,
+    COVERAGE_RIGHT                real     NULL,
+    ORDER_CONSISTENCY             real     NULL,
+    LONGEST_MATCHED_RUN           integer  NULL,
+    UNMATCHED_PREFIX_COUNT        integer  NULL,
+    UNMATCHED_SUFFIX_COUNT        integer  NULL,
+    UNMATCHED_INTERNAL_COUNT      integer  NULL,
+    CONFIDENCE                    real     NULL,
+    EVIDENCE_JSON                 varchar  NOT NULL DEFAULT '{}',
+    FEATURE_SCHEMA_VERSION        integer  NOT NULL,
+    CLASSIFIER_RULE_VERSION       integer  NOT NULL,
+    STATUS                        varchar  NOT NULL,
+    CREATED_DATE                  datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_DATE            datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (BOOK_LOW_ID, BOOK_HIGH_ID),
+    CHECK (BOOK_LOW_ID < BOOK_HIGH_ID),
+    FOREIGN KEY (BOOK_LOW_ID) REFERENCES BOOK (ID) ON DELETE CASCADE,
+    FOREIGN KEY (BOOK_HIGH_ID) REFERENCES BOOK (ID) ON DELETE CASCADE,
+    FOREIGN KEY (LIBRARY_ID) REFERENCES LIBRARY (ID) ON DELETE CASCADE
+);
+
+CREATE INDEX IDX__DEDUP_RELATION__LIBRARY_STATUS
+    ON DEDUP_RELATION (LIBRARY_ID, STATUS, RELATION_TYPE);
+
+CREATE TABLE DEDUP_REVIEW_CASE
+(
+    ID                        varchar  NOT NULL PRIMARY KEY,
+    LIBRARY_ID                varchar  NOT NULL,
+    REVISION                  int8     NOT NULL DEFAULT 1,
+    STATUS                    varchar  NOT NULL DEFAULT 'REVIEW_REQUIRED',
+    SUGGESTED_KEEPER_BOOK_ID  varchar  NULL,
+    ORIGIN                    varchar  NOT NULL,
+    CREATED_DATE              datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_DATE        datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (LIBRARY_ID) REFERENCES LIBRARY (ID) ON DELETE CASCADE
+);
+
+CREATE INDEX IDX__DEDUP_REVIEW_CASE__LIBRARY_STATUS
+    ON DEDUP_REVIEW_CASE (LIBRARY_ID, STATUS, LAST_MODIFIED_DATE);
+
+CREATE TABLE DEDUP_REVIEW_CASE_MEMBER
+(
+    CASE_ID   varchar NOT NULL,
+    BOOK_ID   varchar NOT NULL,
+    PRIMARY KEY (CASE_ID, BOOK_ID),
+    FOREIGN KEY (CASE_ID) REFERENCES DEDUP_REVIEW_CASE (ID) ON DELETE CASCADE,
+    FOREIGN KEY (BOOK_ID) REFERENCES BOOK (ID) ON DELETE CASCADE
+);
+
+CREATE INDEX IDX__DEDUP_REVIEW_CASE_MEMBER__BOOK
+    ON DEDUP_REVIEW_CASE_MEMBER (BOOK_ID);
+
+CREATE TABLE DEDUP_OVERRIDE
+(
+    ID                           varchar  NOT NULL PRIMARY KEY,
+    TYPE                         varchar  NOT NULL,
+    BOOK_LOW_ID                  varchar  NULL,
+    BOOK_HIGH_ID                 varchar  NULL,
+    BOOK_ID                      varchar  NULL,
+    LOW_CONTENT_GENERATION       varchar  NULL,
+    HIGH_CONTENT_GENERATION      varchar  NULL,
+    LOW_COVER_GENERATION         varchar  NULL,
+    HIGH_COVER_GENERATION        varchar  NULL,
+    ACTOR_ID                     varchar  NOT NULL,
+    REASON                       varchar  NULL,
+    CREATED_DATE                 datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IDX__DEDUP_OVERRIDE__PAIR
+    ON DEDUP_OVERRIDE (BOOK_LOW_ID, BOOK_HIGH_ID, TYPE);
+
+CREATE INDEX IDX__DEDUP_OVERRIDE__BOOK
+    ON DEDUP_OVERRIDE (BOOK_ID, TYPE);
+
+CREATE TABLE DEDUP_DECISION
+(
+    ID                            varchar  NOT NULL PRIMARY KEY,
+    REVIEW_CASE_ID                varchar  NULL,
+    PLAN_REVISION                 varchar  NOT NULL,
+    MODE                          varchar  NOT NULL,
+    KEEPER_BOOK_ID                varchar  NOT NULL,
+    KEEPER_SNAPSHOT_JSON          varchar  NOT NULL,
+    PLAN_JSON                     varchar  NOT NULL,
+    EVIDENCE_JSON                 varchar  NOT NULL,
+    ELIGIBILITY_JSON              varchar  NOT NULL,
+    CLASSIFIER_RULE_VERSION       integer  NOT NULL,
+    MANUAL_CONFIRMATION_JSON      varchar  NULL,
+    STATE                         varchar  NOT NULL DEFAULT 'DRAFT',
+    ACTOR_ID                      varchar  NOT NULL,
+    APPROVED_DATE                 datetime NULL,
+    EXECUTED_DATE                 datetime NULL,
+    COMPLETED_DATE                datetime NULL,
+    CREATED_DATE                  datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_DATE            datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IDX__DEDUP_DECISION__STATE
+    ON DEDUP_DECISION (STATE, LAST_MODIFIED_DATE);
+
+CREATE TABLE DEDUP_DECISION_ITEM
+(
+    ID                            varchar  NOT NULL PRIMARY KEY,
+    DECISION_ID                   varchar  NOT NULL,
+    BOOK_ID                       varchar  NOT NULL,
+    SERIES_ID                     varchar  NOT NULL,
+    LIBRARY_ID                    varchar  NOT NULL,
+    TITLE_SNAPSHOT                varchar  NOT NULL,
+    PATH_SNAPSHOT                 varchar  NOT NULL,
+    EXPECTED_PATH                 varchar  NOT NULL,
+    EXPECTED_SIZE                 int8     NOT NULL,
+    EXPECTED_MTIME                datetime NOT NULL,
+    EXPECTED_ARCHIVE_HASH         varchar  NOT NULL,
+    SOURCE_CONTENT_GENERATION     varchar  NOT NULL,
+    SERIES_SCOPE_REVISION         varchar  NOT NULL,
+    DIRECT_RELATION_ID            varchar  NOT NULL,
+    DIRECT_RELATION_GENERATIONS   varchar  NOT NULL,
+    STATE                         varchar  NOT NULL DEFAULT 'PENDING',
+    ATTEMPT_COUNT                 integer  NOT NULL DEFAULT 0,
+    RESULT_CODE                   varchar  NULL,
+    RESULT_JSON                   varchar  NULL,
+    LAST_ERROR                    varchar  NULL,
+    CREATED_DATE                  datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_DATE            datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (DECISION_ID) REFERENCES DEDUP_DECISION (ID) ON DELETE CASCADE
+);
+
+CREATE INDEX IDX__DEDUP_DECISION_ITEM__DECISION_STATE
+    ON DEDUP_DECISION_ITEM (DECISION_ID, STATE);

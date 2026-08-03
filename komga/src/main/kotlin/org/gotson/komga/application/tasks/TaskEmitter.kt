@@ -281,6 +281,13 @@ class TaskEmitter(
     submitTask(Task.FindBookThumbnailsToRegenerate(forBiggerResultOnly, priority))
   }
 
+  fun drainDedupQueue(
+    libraryId: String,
+    priority: Int = DEFAULT_PRIORITY,
+  ) {
+    submitTask(Task.DrainDedupQueue(libraryId, priority))
+  }
+
   private fun submitTask(task: Task) {
     logger.info { "Sending task: $task" }
     tasksRepository.save(task)

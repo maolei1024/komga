@@ -4,6 +4,7 @@ import org.gotson.komga.domain.model.BookSearch
 import org.gotson.komga.domain.model.ContentRestrictions
 import org.gotson.komga.domain.model.ReadList
 import org.gotson.komga.domain.model.SearchContext
+import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
 import org.gotson.komga.infrastructure.datasource.SqliteUdfDataSource
 import org.gotson.komga.infrastructure.jooq.BookSearchHelper
 import org.gotson.komga.infrastructure.jooq.RequiredJoin
@@ -48,6 +49,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import java.net.URL
 
 @Component
@@ -57,6 +59,7 @@ class BookDtoDao(
   private val luceneHelper: LuceneHelper,
   @param:Value("#{@komgaProperties.database.batchChunkSize}") private val batchSize: Int,
   private val bookCommonDao: BookCommonDao,
+  private val exactDuplicateBookRepository: ExactDuplicateBookRepository,
 ) : SplitDslDaoBase(dslRW, dslRO),
   BookDtoRepository {
   private val b = Tables.BOOK
@@ -269,30 +272,28 @@ class BookDtoDao(
     )
   }
 
+  @Transactional
   override fun findAllDuplicates(
     userId: String,
     pageable: Pageable,
   ): Page<BookDto> {
-    val hashes =
-      dslRO
-        .select(b.FILE_HASH, DSL.count(b.ID))
-        .from(b)
-        .where(b.FILE_HASH.ne(""))
-        .groupBy(b.FILE_HASH, b.FILE_SIZE)
-        .having(DSL.count(b.ID).gt(1))
-        .fetch()
-        .associate { it.value1() to it.value2() }
-
-    val count = hashes.values.sum()
+    val duplicateBookIds = exactDuplicateBookRepository.findAllExactDuplicates().map { it.id }
+    val count = duplicateBookIds.size
 
     val orderBy = pageable.sort.toOrderBy(sorts)
     val dtos =
-      dslRO
-        .selectBase(userId)
-        .where(b.FILE_HASH.`in`(hashes.keys))
-        .orderBy(orderBy)
-        .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-        .fetchAndMap(dslRO)
+      if (duplicateBookIds.isEmpty()) {
+        emptyList()
+      } else {
+        dslRO.withTempTable(batchSize, duplicateBookIds).use { tempTable ->
+          dslRO
+            .selectBase(userId)
+            .where(b.ID.`in`(tempTable.selectTempStrings()))
+            .orderBy(orderBy)
+            .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
+            .fetchAndMap(dslRO)
+        }
+      }
 
     val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
     return PageImpl(

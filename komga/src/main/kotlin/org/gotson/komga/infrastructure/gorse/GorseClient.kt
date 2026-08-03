@@ -35,6 +35,29 @@ class GorseClient(
     }
   }
 
+  fun upsertItemChecked(item: GorseItem) {
+    buildClient()
+      .post()
+      .uri("/api/item")
+      .bodyValue(item)
+      .retrieve()
+      .bodyToMono(String::class.java)
+      .block()
+  }
+
+  fun setHiddenChecked(
+    itemId: String,
+    hidden: Boolean,
+  ) {
+    buildClient()
+      .patch()
+      .uri("/api/item/$itemId")
+      .bodyValue(mapOf("IsHidden" to hidden))
+      .retrieve()
+      .bodyToMono(String::class.java)
+      .block()
+  }
+
   fun updateItem(
     itemId: String,
     item: GorseItem,

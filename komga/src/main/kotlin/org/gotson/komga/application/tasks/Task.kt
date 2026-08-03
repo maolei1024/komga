@@ -242,4 +242,16 @@ sealed class Task(
 
     override fun toString(): String = "FindBookThumbnailsToRegenerate(forBiggerResultOnly='$forBiggerResultOnly', priority='$priority')"
   }
+
+  /**
+   * A persistent wake-up only. Authoritative work revisions, leases and results live in database.sqlite.
+   */
+  class DrainDedupQueue(
+    val libraryId: String,
+    priority: Int = DEFAULT_PRIORITY,
+  ) : Task(priority, "DEDUP_$libraryId") {
+    override val uniqueId = "DRAIN_DEDUP_QUEUE_$libraryId"
+
+    override fun toString(): String = "DrainDedupQueue(libraryId='$libraryId', priority='$priority')"
+  }
 }

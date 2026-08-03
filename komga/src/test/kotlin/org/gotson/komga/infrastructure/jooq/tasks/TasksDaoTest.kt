@@ -23,14 +23,15 @@ class TasksDaoTest(
     val task1 = Task.AnalyzeBook("book1", 0, "group1")
     val task2 = Task.ConvertBook("book2", 1, "group2")
     val task3 = Task.ScanLibrary("library1", true, 2)
+    val task4 = Task.DrainDedupQueue("library1", 6)
 
-    tasksDao.save(listOf(task1, task2, task3))
+    tasksDao.save(listOf(task1, task2, task3, task4))
 
     // when
     val tasks = tasksDao.findAll()
 
     // then
-    assertThat(tasks).hasSize(3)
+    assertThat(tasks).hasSize(4)
     tasks.sortedBy { it.priority }.let {
       assertThat(it[0])
         .isInstanceOf(Task.AnalyzeBook::class.java)
@@ -50,6 +51,12 @@ class TasksDaoTest(
         .hasFieldOrPropertyWithValue("scanDeep", task3.scanDeep)
         .hasFieldOrPropertyWithValue("priority", task3.priority)
         .hasFieldOrPropertyWithValue("groupId", task3.groupId)
+
+      assertThat(it[3])
+        .isInstanceOf(Task.DrainDedupQueue::class.java)
+        .hasFieldOrPropertyWithValue("libraryId", task4.libraryId)
+        .hasFieldOrPropertyWithValue("priority", task4.priority)
+        .hasFieldOrPropertyWithValue("groupId", task4.groupId)
     }
   }
 
@@ -81,6 +88,30 @@ class TasksDaoTest(
         .hasFieldOrPropertyWithValue("priority", task2.priority)
         .hasFieldOrPropertyWithValue("groupId", task2.groupId)
     }
+  }
+
+  @Test
+  fun `given an owned task when saving the same unique id then payload is overwritten but ownership is retained`() {
+    // given
+    val runningTask = Task.AnalyzeBook("book1", 1, "group1")
+    tasksDao.save(runningTask)
+    assertThat(tasksDao.takeFirst("worker1")).isNotNull
+
+    // when
+    val replacementTask = Task.AnalyzeBook("book1", 7, "group2")
+    tasksDao.save(replacementTask)
+
+    // then: an old handler still owns the row, but now sees the replacement payload.
+    val byOwner = tasksDao.findAllGroupedByOwner()
+    assertThat(byOwner.keys).containsExactly("worker1")
+    assertThat(byOwner["worker1"])
+      .singleElement()
+      .hasFieldOrPropertyWithValue("priority", replacementTask.priority)
+      .hasFieldOrPropertyWithValue("groupId", replacementTask.groupId)
+
+    // The running handler deletes by unique id, so the replacement wake-up is lost.
+    tasksDao.delete(runningTask.uniqueId)
+    assertThat(tasksDao.findAll()).isEmpty()
   }
 
   @Test

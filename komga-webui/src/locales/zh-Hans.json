@@ -685,6 +685,177 @@
     "title": "重复文件",
     "url": "网址"
   },
+  "dedup_management": {
+    "actions": {
+      "accept": "采用建议方案",
+      "accept_blocked": "采用建议方案（{count} 项阻断）",
+      "alt_edition": "标记不同 Edition",
+      "custom": "自定义处理",
+      "compare_pages": "对比页面",
+      "keeper_saved": "已保存保留者",
+      "override_saved": "已保存审核判断",
+      "protect": "保护",
+      "reanalysis_requested": "已提交重新分析",
+      "reanalyze": "重新分析",
+      "refresh": "刷新",
+      "retry_decision": "安全重试",
+      "scan": "立即扫描",
+      "set_keeper": "设为保留者",
+      "unrelated": "标记不相关"
+    },
+    "blocker_count": "{count} 项阻断",
+    "case_count": "{count} 个审核 case",
+    "cover_distance": "封面距离 {distance}/256",
+    "eligibility": {
+      "actual": "实际值",
+      "threshold": "要求",
+      "title": "处理资格"
+    },
+    "decision": {
+      "acknowledge_title": "逐项确认当前风险",
+      "approve_and_execute": "批准并执行",
+      "custom_title": "批准自定义处理",
+      "irreversible_acknowledgement": "我理解列出的 CBZ 将被永久删除，且本功能无法恢复。",
+      "irreversible_body": "系统只删除明确列出的 CBZ，但每项删除均不可恢复。多文件计划按逐项 saga 执行，可能只完成一部分。",
+      "irreversible_title": "永久物理删除",
+      "keeper": "保留的 Book",
+      "partial_warning": "执行前和每项删除前都会重验 generation、直接关系、本地状态、实时 stat 与完整 archive hash。后续冲突会停止剩余项，已完成项无法回滚；Drive 与 Gorse 确认单独显示。",
+      "queued": "决策 {id} 已批准并入队",
+      "retry_queued": "已提交决策恢复，将重新执行全部强校验",
+      "remove_members": "将删除的 CBZ",
+      "suggested_title": "批准建议方案"
+    },
+    "empty": {
+      "body": "当前筛选条件下没有已知候选。这表示已启用扫描的已知积压已清空，不代表换封面的重复内容一定不存在。",
+      "title": "没有已知候选"
+    },
+    "evidence": {
+      "coverage_left": "左侧覆盖率",
+      "coverage_right": "右侧覆盖率",
+      "longest_run": "最长连续有序匹配",
+      "unmatched": "未匹配页"
+    },
+    "errors": {
+      "cases": "无法加载审核 case",
+      "case_changed": "审核 case 已变化，已重新加载当前数据",
+      "decision": "证据、状态或文件身份已变化，服务器未接受该决策",
+      "decisions": "无法加载决策审计记录",
+      "page_comparison": "无法加载当前页面证据",
+      "save": "无法保存重复内容设置",
+      "scan": "无法提交扫描",
+      "settings": "无法加载重复内容设置",
+      "status": "无法加载重复内容状态"
+    },
+    "filters": {
+      "library": "媒体库",
+      "source": "候选来源"
+    },
+    "intervals": {
+      "DAILY": "每天",
+      "EVERY_12H": "每 12 小时",
+      "EVERY_6H": "每 6 小时",
+      "HOURLY": "每小时",
+      "WEEKLY": "每周"
+    },
+    "members": "个成员",
+    "keeper": "保留者",
+    "out_of_scope": "超出 MVP 范围（Series 有 {count} 个 active Book）",
+    "pages": "页",
+    "page_comparison": {
+      "exact": "精确匹配",
+      "no_evidence": "当前没有页面特征，请先执行深度验证。",
+      "perceptual": "视觉匹配",
+      "title": "当前 generation 页面对比",
+      "unmatched": "未匹配"
+    },
+    "ready": "可处理",
+    "reasons": {
+      "ANALYSIS_INCOMPLETE": "当前分析阶段尚未开放删除",
+      "ALT_EDITION": "现有证据可能属于不同 Edition",
+      "ANCILLARY_UNCONFIRMED": "未匹配页尚未被确认是附属页",
+      "COVER_ONLY": "目前只验证了封面相似",
+      "COLLECTION_PRESENT": "待删除 Series 位于 Collection 中",
+      "DELETION_IN_PROGRESS": "已有成员属于活动删除决策",
+      "DIRECT_KEEPER_RELATION_MISSING": "每个待删除成员都必须有指向保留者的当前直接关系",
+      "EDITION_UNCERTAIN": "无法仅凭视觉证据确认 Edition",
+      "EXTERNAL_STATE_NOT_VERIFIED": "无法完整验证外部阅读器状态",
+      "GORSE_STATE_UNKNOWN": "Gorse 反馈状态未知",
+      "FEATURE_STALE": "关系与当前源 generation 不一致",
+      "LOW_CONFIDENCE": "该分类器尚未校准到可用于建议删除",
+      "MVP_SCOPE_CURRENT": "所有成员都是当前单 active Book 的 CBZ Series",
+      "NEAR_CONTAINED_IN": "疑似被包含的副本仍有未匹配页",
+      "NO_KEEPER": "采用建议方案前必须选择唯一保留者",
+      "NO_LOCAL_STATE": "待删除成员没有可验证的本地用户状态",
+      "NOT_CONTENT_DUPLICATE": "该 pair 已被判断为非正文副本",
+      "OUT_OF_SCOPE_MULTI_BOOK_SERIES": "Series 并非恰好只有一个 active Book",
+      "PARTIAL_OVERLAP": "页面序列只有部分重合",
+      "PLAN_CHANGED": "保留者或待删除集合已变化",
+      "PROTECTED": "该 Book 已被显式保护"
+      ,"READLIST_PRESENT": "待删除 Book 位于 ReadList 中"
+      ,"READ_PROGRESS_PRESENT": "一个或多个用户在待删除 Book 上有阅读进度"
+      ,"STRONG_FILE_IDENTITY_UNAVAILABLE": "必须具有可读的当前路径和强 archive 身份"
+      ,"USER_THUMBNAIL_OR_LOCKED_METADATA": "待删除 Book 或 Series 有用户封面或锁定 metadata"
+    },
+    "relations": {
+      "EXACT_FILE": "文件完全相同",
+      "EXACT_PAGE_SEQUENCE": "页面序列完全相同",
+      "CONTAINED_IN": "有方向包含",
+      "NEAR_CONTAINED_IN": "近似包含",
+      "PARTIAL_OVERLAP": "部分重合",
+      "ALT_EDITION": "不同 Edition",
+      "EDITION_UNCERTAIN": "Edition 不确定",
+      "SAME_EDITION_VARIANT": "同 Edition 变体",
+      "UNRELATED": "不相关",
+      "VISUALLY_SIMILAR": "视觉相似"
+    },
+    "scan_requested": "已为 {count} 个媒体库提交扫描",
+    "settings": {
+      "batch_size": "每轮 Book 数",
+      "calibration_notice": "封面距离只用于发现候选，绝不授权删除。请使用目标媒体库的人工标注样本校准阈值。",
+      "cover_distance": "封面候选距离",
+      "enabled": "启用",
+      "interval": "扫描间隔",
+      "max_duration": "最长运行时间",
+      "paused": "暂停",
+      "quiet_period": "静默期",
+      "saved": "重复内容设置已保存",
+      "stability_period": "完成稳定期",
+      "top_k": "每个 Book 最大邻居数"
+    },
+    "status": {
+      "failed": "需要处理",
+      "pending": "待处理工作",
+      "review_cases": "审核 case",
+      "running": "运行中"
+    },
+    "subtitle": "持续增量分析 CBZ 相似性、审核版本化证据，并通过可恢复的逐文件 saga 执行不可逆决策。",
+    "tabs": {
+      "cases": "疑似 case",
+      "settings": "设置",
+      "tasks": "任务状态"
+    },
+    "tasks": {
+      "audit_title": "最近决策审计",
+      "failed_help": "需要人工处理的工作会保留在主数据库。修复原因后，可通过重试 API 重新提交。",
+      "gorse": "Gorse {state}",
+      "no_decisions": "尚未批准任何删除决策。",
+      "subtitle": "这里展示主数据库中的持久状态；Komga 通用 Task 队列只负责唤醒。",
+      "title": "持久工作队列"
+    },
+    "title": "重复内容管理",
+    "validation": {
+      "hash_distance": "请输入 0 到 256 之间的距离",
+      "non_negative": "请输入零或正数",
+      "positive": "请输入大于零的数"
+    },
+    "work_states": {
+      "FAILED_REVIEW": "需要处理",
+      "PENDING": "待处理",
+      "RUNNING": "运行中",
+      "SUCCEEDED": "已完成",
+      "WAITING": "等待中"
+    }
+  },
   "enums": {
     "copy_mode": {
       "HARDLINK": "硬链接/复制文件",

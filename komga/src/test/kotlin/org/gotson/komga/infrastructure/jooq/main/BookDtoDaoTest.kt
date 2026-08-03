@@ -20,6 +20,7 @@ import org.gotson.komga.domain.model.makeLibrary
 import org.gotson.komga.domain.model.makeSeries
 import org.gotson.komga.domain.persistence.BookMetadataRepository
 import org.gotson.komga.domain.persistence.BookRepository
+import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
 import org.gotson.komga.domain.persistence.KomgaUserRepository
 import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.MediaRepository
@@ -50,6 +51,7 @@ import java.time.LocalDateTime
 class BookDtoDaoTest(
   @Autowired private val bookDtoDao: BookDtoDao,
   @Autowired private val bookRepository: BookRepository,
+  @Autowired private val exactDuplicateBookRepository: ExactDuplicateBookRepository,
   @Autowired private val bookMetadataRepository: BookMetadataRepository,
   @Autowired private val mediaRepository: MediaRepository,
   @Autowired private val bookLifecycle: BookLifecycle,
@@ -926,6 +928,8 @@ class BookDtoDaoTest(
       // then
       assertThat(found).hasSize(2)
       assertThat(found.map { it.name }).containsExactlyInAnyOrder("Book 1", "Book 2")
+      assertThat(exactDuplicateBookRepository.findAllExactDuplicates(includeDeleted = false).map { it.id })
+        .containsExactlyInAnyOrderElementsOf(found.map { it.id })
     }
 
     @Test

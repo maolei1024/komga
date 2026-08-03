@@ -140,6 +140,12 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "missing-posters" */ './views/MissingPosters.vue'),
         },
         {
+          path: '/media-management/dedup',
+          name: 'dedup-management',
+          beforeEnter: adminGuard,
+          component: () => import(/* webpackChunkName: "dedup-management" */ './views/DedupManagement.vue'),
+        },
+        {
           path: '/media-management/duplicate-files',
           name: 'duplicate-files',
           beforeEnter: adminGuard,

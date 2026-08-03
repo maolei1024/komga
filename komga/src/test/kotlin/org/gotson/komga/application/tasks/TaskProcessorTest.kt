@@ -19,6 +19,7 @@ import kotlin.time.Duration.Companion.seconds
 class TaskProcessorTest(
   @Autowired private val taskEmitter: TaskEmitter,
   @Autowired private val taskProcessor: TaskProcessor,
+  @Autowired private val tasksRepository: TasksRepository,
 ) {
   @MockkBean
   private lateinit var mockBookLifecycle: BookLifecycle
@@ -71,5 +72,18 @@ class TaskProcessorTest(
 
     verify(exactly = 10) { mockBookLifecycle.analyzeAndPersist(any()) }
     assertThat(calls.map { it.name }).containsExactlyElementsOf((9 downTo 0).map { "$it" })
+  }
+
+  @Test
+  fun `when a task handler throws then the task is still removed`() {
+    every { mockBookRepository.findByIdOrNull(any()) } returns makeBook("id")
+    every { mockBookLifecycle.analyzeAndPersist(any()) } throws IllegalStateException("expected failure")
+
+    testTasks {
+      taskEmitter.analyzeBook(makeBook("book"))
+    }
+
+    verify(exactly = 1) { mockBookLifecycle.analyzeAndPersist(any()) }
+    assertThat(tasksRepository.count()).isZero()
   }
 }

@@ -30,6 +30,7 @@ class GorseEventListener(
   private val userRepository: KomgaUserRepository,
   private val readProgressRepository: ReadProgressRepository,
   private val mediaRepository: MediaRepository,
+  private val desiredStateLifecycle: GorseDesiredStateLifecycle,
 ) {
   // 去重：同一 bookId:userId 运行期间只发送一次 read 反馈
   private val sentReadFeedback = ConcurrentHashMap<String, Boolean>()
@@ -39,16 +40,26 @@ class GorseEventListener(
     if (!gorseSettings.enabled) return
     try {
       when (event) {
-        is DomainEvent.SeriesAdded -> handleSeriesAdded(event)
-        is DomainEvent.SeriesUpdated -> handleSeriesUpdated(event)
-        is DomainEvent.SeriesDeleted -> handleSeriesDeleted(event)
+        is DomainEvent.SeriesAdded -> enqueueDesiredState(event.series.id, event.series.libraryId)
+        is DomainEvent.SeriesUpdated -> enqueueDesiredState(event.series.id, event.series.libraryId)
+        is DomainEvent.SeriesDeleted -> enqueueDesiredState(event.series.id, event.series.libraryId)
         is DomainEvent.ReadProgressChanged -> handleReadProgressChanged(event)
-        is DomainEvent.BookDeleted -> handleBookDeleted(event)
+        is DomainEvent.BookAdded -> enqueueDesiredState(event.book.seriesId, event.book.libraryId)
+        is DomainEvent.BookUpdated -> enqueueDesiredState(event.book.seriesId, event.book.libraryId)
+        is DomainEvent.BookDeleted -> enqueueDesiredState(event.book.seriesId, event.book.libraryId)
         else -> Unit
       }
     } catch (e: Exception) {
       logger.error(e) { "Gorse: error handling event $event" }
     }
+  }
+
+  private fun enqueueDesiredState(
+    seriesId: String,
+    libraryId: String,
+  ) {
+    desiredStateLifecycle.enqueue(seriesId, libraryId)
+    desiredStateLifecycle.reconcile(1)
   }
 
   /**
@@ -169,23 +180,10 @@ class GorseEventListener(
    */
   fun syncAllItems(): Int {
     val allSeries = seriesRepository.findAll()
-    val items =
-      allSeries.map { series ->
-        GorseItem(
-          ItemId = series.id,
-          Labels = buildLabelsForSeries(series.id),
-          Categories = listOf(series.libraryId),
-          Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-          Comment = getSeriesTitle(series.id),
-        )
-      }
-    if (items.isNotEmpty()) {
-      items.chunked(100).forEach { chunk ->
-        gorseClient.insertItems(chunk)
-      }
-    }
-    logger.info { "Gorse: synced ${items.size} items" }
-    return items.size
+    allSeries.forEach { desiredStateLifecycle.enqueue(it.id, it.libraryId) }
+    desiredStateLifecycle.reconcile(allSeries.size)
+    logger.info { "Gorse: queued desired state for ${allSeries.size} items" }
+    return allSeries.size
   }
 
   /**
