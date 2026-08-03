@@ -7,6 +7,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.DedupDeletionResultCode
 import org.gotson.komga.infrastructure.hash.Hasher
@@ -65,6 +66,55 @@ class DedupPhysicalBookDeletionLifecycleTest {
     assertThat(result.code).isEqualTo(DedupDeletionResultCode.GENERATION_MISMATCH)
     assertThat(cbz).exists()
     verify(exactly = 0) { bookLifecycle.softDeleteMany(any()) }
+  }
+
+  @Test
+  fun `blank or stale Komga hash does not block a stable live archive identity`() {
+    val cbz = Files.write(directory.resolve("no-database-hash.cbz"), "archive bytes".toByteArray())
+    val book = bookFor(cbz).copy(fileHash = "")
+
+    val identity = lifecycle.captureStrongIdentity(book)
+    val identityWithStaleHash = lifecycle.captureStrongIdentity(book.copy(fileHash = "stale-database-hash"))
+
+    assertThat(identity.archiveHash).isEqualTo(hasher.computeHash(cbz))
+    assertThat(identityWithStaleHash).isEqualTo(identity)
+    assertThat(lifecycle.precheck(book).status).isEqualTo(DedupFilePrecheckStatus.AVAILABLE)
+  }
+
+  @Test
+  fun `a non CBZ source remains ineligible for strong identity`() {
+    val zip = Files.write(directory.resolve("book.zip"), "archive bytes".toByteArray())
+    val book = bookFor(zip)
+
+    assertThat(lifecycle.precheck(book).status).isEqualTo(DedupFilePrecheckStatus.UNAVAILABLE)
+    assertThatThrownBy { lifecycle.captureStrongIdentity(book) }
+      .hasMessageContaining("not a CBZ archive")
+  }
+
+  @Test
+  fun `a file changing during full hash capture is rejected`() {
+    val cbz = Files.write(directory.resolve("changing-during-hash.cbz"), "first".toByteArray())
+    val book = bookFor(cbz)
+    val mutatingHasher = mockk<Hasher>()
+    every { mutatingHasher.computeHash(cbz) } answers {
+      Files.write(cbz, "changed while hashing".toByteArray())
+      "unstable-hash"
+    }
+
+    assertThatThrownBy { DedupPhysicalBookDeletionLifecycle(mutatingHasher, bookLifecycle).captureStrongIdentity(book) }
+      .hasMessageContaining("changed while its full archive hash")
+  }
+
+  @Test
+  fun `stale Komga stat is distinguished from an unavailable source file`() {
+    val cbz = Files.write(directory.resolve("stale-stat.cbz"), "archive bytes".toByteArray())
+    val stale = bookFor(cbz).copy(fileSize = Files.size(cbz) + 1)
+
+    assertThat(lifecycle.precheck(stale).status).isEqualTo(DedupFilePrecheckStatus.STAT_STALE)
+    assertThatThrownBy { lifecycle.captureStrongIdentity(stale) }
+      .hasMessageContaining("size no longer matches Komga")
+    assertThat(lifecycle.precheck(stale.copy(url = directory.resolve("missing.cbz").toUri().toURL())).status)
+      .isEqualTo(DedupFilePrecheckStatus.UNAVAILABLE)
   }
 
   @Test

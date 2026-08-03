@@ -5,6 +5,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.application.tasks.DEFAULT_PRIORITY
 import org.gotson.komga.application.tasks.TaskEmitter
 import org.gotson.komga.domain.model.DedupLibrarySettings
+import org.gotson.komga.domain.model.DedupReviewCase
+import org.gotson.komga.domain.model.DedupReviewCaseOrigin
 import org.gotson.komga.domain.model.DedupWork
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
@@ -16,6 +18,24 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 private val logger = KotlinLogging.logger {}
+
+data class DedupCaseVerificationRequest(
+  val caseId: String,
+  val expectedRevision: Long,
+)
+
+data class DedupCaseVerificationResult(
+  val caseId: String,
+  val status: DedupCaseVerificationStatus,
+)
+
+enum class DedupCaseVerificationStatus {
+  QUEUED,
+  SKIPPED_EXACT_FILE,
+  STALE,
+  NOT_FOUND,
+  UNSUPPORTED_CASE,
+}
 
 @Service
 class DedupWorkLifecycle(
@@ -124,17 +144,42 @@ class DedupWorkLifecycle(
 
   fun requestCaseVerification(caseId: String): DedupWork? {
     val reviewCase = dedupRepository.findReviewCase(caseId) ?: return null
-    val work =
-      dedupRepository.enqueueWork(
-        id = TsidCreator.getTsid256().toString(),
-        libraryId = reviewCase.libraryId,
-        type = DedupWorkType.VERIFY_RELATION,
-        targetKey = caseId,
-        priority = 6,
-      )
+    val work = enqueueCaseVerification(reviewCase)
     taskEmitter.drainDedupQueue(reviewCase.libraryId, 6)
     return work
   }
+
+  fun requestCaseVerifications(requests: List<DedupCaseVerificationRequest>): List<DedupCaseVerificationResult> {
+    val queuedLibraries = mutableSetOf<String>()
+    val results =
+      requests.map { request ->
+        val reviewCase = dedupRepository.findReviewCase(request.caseId)
+        val status =
+          when {
+            reviewCase == null -> DedupCaseVerificationStatus.NOT_FOUND
+            reviewCase.revision != request.expectedRevision -> DedupCaseVerificationStatus.STALE
+            reviewCase.origin == DedupReviewCaseOrigin.EXACT_FILE -> DedupCaseVerificationStatus.SKIPPED_EXACT_FILE
+            reviewCase.memberBookIds.size != 2 -> DedupCaseVerificationStatus.UNSUPPORTED_CASE
+            else -> {
+              enqueueCaseVerification(reviewCase)
+              queuedLibraries += reviewCase.libraryId
+              DedupCaseVerificationStatus.QUEUED
+            }
+          }
+        DedupCaseVerificationResult(request.caseId, status)
+      }
+    queuedLibraries.forEach { libraryId -> taskEmitter.drainDedupQueue(libraryId, 6) }
+    return results
+  }
+
+  private fun enqueueCaseVerification(reviewCase: DedupReviewCase): DedupWork =
+    dedupRepository.enqueueWork(
+      id = TsidCreator.getTsid256().toString(),
+      libraryId = reviewCase.libraryId,
+      type = DedupWorkType.VERIFY_RELATION,
+      targetKey = reviewCase.id,
+      priority = 6,
+    )
 
   private fun process(work: DedupWork) {
     val leaseToken = requireNotNull(work.leaseToken)

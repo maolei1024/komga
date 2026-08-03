@@ -1,7 +1,7 @@
 <template>
-  <v-menu offset-y>
+  <v-menu offset-y :disabled="disabled">
     <template v-slot:activator="{on}">
-      <v-btn icon v-on="on">
+      <v-btn icon v-on="on" :disabled="disabled">
         <v-icon>mdi-view-grid-plus</v-icon>
       </v-btn>
     </template>
@@ -39,6 +39,10 @@ export default Vue.extend({
       required: true,
     },
     dark: {
+      type: Boolean,
+      default: false,
+    },
+    disabled: {
       type: Boolean,
       default: false,
     },

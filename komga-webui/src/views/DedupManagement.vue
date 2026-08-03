@@ -48,7 +48,8 @@
               outlined
               hide-details
               class="filter-control"
-              @change="loadCases"
+              :disabled="bulkVerifying || loadingCases"
+              @change="onFiltersChanged"
             />
             <v-select
               v-model="filters.origin"
@@ -59,14 +60,41 @@
               outlined
               hide-details
               class="filter-control mt-3 mt-md-0 ml-md-3"
-              @change="loadCases"
+              :disabled="bulkVerifying || loadingCases"
+              @change="onFiltersChanged"
             />
             <v-spacer/>
-            <span class="text-caption text--secondary mt-3 mt-md-0">
+            <span class="text-caption text--secondary mt-3 mt-md-0 mr-md-2">
               {{ $t('dedup_management.case_count', {count: totalCases}) }}
             </span>
+            <page-size-select
+              v-model="casePageSize"
+              :items="[20, 50, 100]"
+              :disabled="bulkVerifying || loadingCases"
+            />
+            <v-btn
+              outlined
+              color="primary"
+              class="mt-3 mt-md-0 ml-md-2"
+              :disabled="bulkVerifying || loadingCases || bulkVerificationRequests.length === 0"
+              :loading="bulkVerifying"
+              @click="openBulkVerificationDialog"
+            >
+              <v-icon left>mdi-file-compare</v-icon>
+              {{ $t('dedup_management.actions.verify_page', {count: bulkVerificationRequests.length}) }}
+            </v-btn>
           </div>
         </v-sheet>
+
+        <v-pagination
+          v-if="casePageCount > 1"
+          v-model="casePage"
+          :length="casePageCount"
+          :total-visible="paginationVisible"
+          :disabled="bulkVerifying || loadingCases"
+          class="mb-5"
+          @input="loadCases"
+        />
 
         <div v-if="loadingCases">
           <v-skeleton-loader v-for="index in 3" :key="index" type="list-item-avatar-three-line" class="mb-3"/>
@@ -99,7 +127,7 @@
                     <v-chip small label :color="relationColor(reviewCase.relationType)" class="mr-2 mb-1">
                       {{ relationLabel(reviewCase.relationType) }}
                     </v-chip>
-                    <span v-if="reviewCase.coverDistance !== undefined" class="text-caption text--secondary mb-1">
+                    <span v-if="reviewCase.coverDistance != null" class="text-caption text--secondary mb-1">
                       {{ $t('dedup_management.cover_distance', {distance: reviewCase.coverDistance}) }}
                     </span>
                   </div>
@@ -173,7 +201,7 @@
                 </v-sheet>
               </div>
 
-              <v-sheet v-if="reviewCase.coverageLeft !== undefined" outlined class="evidence-row pa-3 mb-5">
+              <v-sheet v-if="hasPageEvidence(reviewCase)" outlined class="evidence-row pa-3 mb-5">
                 <div>
                   <div class="text-caption text--secondary">{{ $t('dedup_management.evidence.coverage_left') }}</div>
                   <div class="text-subtitle-2">{{ percent(reviewCase.coverageLeft) }}</div>
@@ -184,53 +212,90 @@
                 </div>
                 <div>
                   <div class="text-caption text--secondary">{{ $t('dedup_management.evidence.longest_run') }}</div>
-                  <div class="text-subtitle-2">{{ reviewCase.longestMatchedRun || 0 }}</div>
+                  <div class="text-subtitle-2">{{ optionalNumber(reviewCase.longestMatchedRun) }}</div>
                 </div>
                 <div>
                   <div class="text-caption text--secondary">{{ $t('dedup_management.evidence.unmatched') }}</div>
                   <div class="text-subtitle-2">
-                    {{ (reviewCase.unmatchedPrefixCount || 0) + (reviewCase.unmatchedSuffixCount || 0) +
-                      (reviewCase.unmatchedInternalCount || 0) }}
+                    {{ optionalNumber(unmatchedPageCount(reviewCase)) }}
                   </div>
                 </div>
               </v-sheet>
+              <v-alert
+                v-else-if="reviewCase.origin !== 'EXACT_FILE'"
+                type="info"
+                text
+                dense
+                class="mb-5"
+              >
+                {{ $t('dedup_management.evidence.not_analyzed') }}
+              </v-alert>
 
               <section :aria-label="$t('dedup_management.eligibility.title').toString()">
                 <h3 class="text-subtitle-1 font-weight-medium mb-3">{{ $t('dedup_management.eligibility.title') }}</h3>
                 <v-alert
-                  v-for="reason in reviewCase.eligibility.blockers"
-                  :key="`blocker-${reason.code}-${reason.memberIds.join('-')}`"
+                  v-for="reason in groupedReasons(reviewCase)"
+                  :key="reason.key"
                   dense
                   outlined
-                  type="error"
+                  :type="reason.severity === 'BLOCKER' ? 'error' : 'warning'"
                   class="reason-alert"
                 >
                   <div class="font-weight-medium">{{ reasonLabel(reason.code) }}</div>
-                  <div class="text-body-2">{{ reasonDetails(reason) }}</div>
-                </v-alert>
-                <v-alert
-                  v-for="reason in reviewCase.eligibility.warnings"
-                  :key="`warning-${reason.code}-${reason.memberIds.join('-')}`"
-                  dense
-                  outlined
-                  type="warning"
-                  class="reason-alert"
-                >
-                  <div class="font-weight-medium">{{ reasonLabel(reason.code) }}</div>
+                  <div class="d-flex flex-wrap mt-1">
+                    <v-chip
+                      v-for="effect in reason.effects"
+                      :key="effect"
+                      x-small
+                      outlined
+                      class="mr-1 mb-1"
+                    >
+                      {{ reasonEffectLabel(effect) }}
+                    </v-chip>
+                  </div>
+                  <div v-if="reasonDetails(reason)" class="text-body-2 mt-1">{{ reasonDetails(reason) }}</div>
+                  <div v-if="reason.pageRanges.length" class="text-caption mt-1">
+                    {{ $t('dedup_management.eligibility.page_ranges') }}: {{ reason.pageRanges.join(' · ') }}
+                  </div>
+                  <div v-if="reason.actions.length" class="mt-1">
+                    <span class="text-caption text--secondary mr-2">{{ $t('dedup_management.eligibility.next_action') }}:</span>
+                    <span v-for="action in reason.actions" :key="action" class="reason-action">
+                      <v-btn
+                        v-if="reasonActionClickable(action, reason, reviewCase)"
+                        x-small
+                        text
+                        color="primary"
+                        class="px-0 mr-3"
+                        :disabled="bulkVerifying"
+                        :loading="reasonActionLoading(action, reviewCase)"
+                        @click="runReasonAction(action, reviewCase, reason)"
+                      >
+                        {{ reasonActionLabel(action) }}
+                      </v-btn>
+                      <span v-else class="text-caption text--secondary mr-3">{{ reasonActionLabel(action) }}</span>
+                    </span>
+                  </div>
                 </v-alert>
               </section>
 
               <div class="d-flex flex-column flex-sm-row justify-end mt-4">
                 <v-btn
-                  v-if="reviewCase.coverageLeft !== undefined"
+                  v-if="hasPageEvidence(reviewCase)"
                   text
                   :loading="caseActionId === `${reviewCase.id}-pages`"
                   @click="openPageComparison(reviewCase)"
                 >
                   {{ $t('dedup_management.actions.compare_pages') }}
                 </v-btn>
-                <v-btn text :loading="caseActionId === `${reviewCase.id}-reanalyze`" @click="reanalyze(reviewCase)">
-                  {{ $t('dedup_management.actions.reanalyze') }}
+                <v-btn
+                  v-if="reviewCase.origin !== 'EXACT_FILE'"
+                  text
+                  :loading="caseActionId === `${reviewCase.id}-reanalyze`"
+                  @click="reanalyze(reviewCase)"
+                >
+                  {{ hasPageEvidence(reviewCase)
+                    ? $t('dedup_management.actions.reverify')
+                    : $t('dedup_management.actions.verify_now') }}
                 </v-btn>
                 <v-btn
                   text
@@ -275,7 +340,8 @@
           v-if="casePageCount > 1"
           v-model="casePage"
           :length="casePageCount"
-          :total-visible="7"
+          :total-visible="paginationVisible"
+          :disabled="bulkVerifying || loadingCases"
           class="mt-5"
           @input="loadCases"
         />
@@ -523,6 +589,33 @@
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="bulkDialog.show" max-width="640" persistent>
+      <v-card>
+        <v-card-title>{{ $t('dedup_management.bulk_verify.title') }}</v-card-title>
+        <v-card-text>
+          <v-alert type="info" text>
+            {{ $t('dedup_management.bulk_verify.body', {count: bulkDialog.cases.length}) }}
+          </v-alert>
+          <div class="text-subtitle-2 mb-2">{{ $t('dedup_management.bulk_verify.snapshot') }}</div>
+          <v-list dense outlined class="bulk-case-list">
+            <v-list-item v-for="item in bulkDialog.cases" :key="item.caseId">
+              <v-list-item-content>
+                <v-list-item-title>{{ item.label }}</v-list-item-title>
+                <v-list-item-subtitle>{{ item.caseId }} · revision {{ item.expectedRevision }}</v-list-item-subtitle>
+              </v-list-item-content>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer/>
+          <v-btn text :disabled="bulkDialog.submitting" @click="bulkDialog.show = false">{{ $t('common.cancel') }}</v-btn>
+          <v-btn color="primary" :loading="bulkDialog.submitting" @click="submitBulkVerification">
+            {{ $t('dedup_management.bulk_verify.confirm', {count: bulkDialog.cases.length}) }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-dialog v-model="pageDialog.show" max-width="1100">
       <v-card>
         <v-card-title>{{ $t('dedup_management.page_comparison.title') }}</v-card-title>
@@ -536,7 +629,7 @@
               <h3 class="text-subtitle-2 mb-3">{{ pageBookTitle(bookId) }}</h3>
               <div class="page-evidence-list">
                 <div v-for="page in pages" :key="`${bookId}-${page.pageNumber}`" class="page-evidence-item">
-                  <v-img :src="pageThumbnailUrl(page.thumbnailUrl)" width="96" height="136" contain/>
+                  <v-img :src="pageThumbnailUrl(page)" width="96" height="136" contain/>
                   <div class="text-caption mt-1">
                     #{{ page.pageNumber }}
                     <span v-if="page.matchedPageNumber">→ #{{ page.matchedPageNumber }}</span>
@@ -570,16 +663,32 @@
 <script lang="ts">
 import Vue from 'vue'
 import {formatDistanceToNow} from 'date-fns'
+import PageSizeSelect from '@/components/PageSizeSelect.vue'
+import {
+  currentPageVerificationRequests,
+  DedupEligibilityDisplayReason,
+  DedupEligibilityEffect,
+  hasPageEvidence,
+  mergeEligibilityReasons,
+  unmatchedPageCount,
+} from '@/functions/dedup'
+import {bookPageThumbnailUrl, bookThumbnailUrl} from '@/functions/urls'
 import {
   DedupCaseOrigin,
+  DedupCaseVerificationRequestDto,
   DedupEligibilityReasonDto,
   DedupDecisionDto,
+  DedupPageEvidenceDto,
   DedupPageComparisonDto,
   DedupReviewCaseDto,
   DedupReviewCaseMemberDto,
   DedupSettingsDto,
   DedupStatusDto,
 } from '@/types/komga-dedup'
+
+interface DedupBulkCaseSnapshot extends DedupCaseVerificationRequestDto {
+  label: string
+}
 
 const EMPTY_STATUS: DedupStatusDto = {
   work: {},
@@ -594,6 +703,7 @@ const EMPTY_STATUS: DedupStatusDto = {
 
 export default Vue.extend({
   name: 'DedupManagement',
+  components: {PageSizeSelect},
   data: () => ({
     tab: 0,
     status: {...EMPTY_STATUS} as DedupStatusDto,
@@ -602,7 +712,6 @@ export default Vue.extend({
     recentDecisions: [] as DedupDecisionDto[],
     totalCases: 0,
     casePage: 1,
-    casePageSize: 20,
     filters: {
       libraryId: undefined as string | undefined,
       origin: undefined as DedupCaseOrigin | undefined,
@@ -631,9 +740,25 @@ export default Vue.extend({
       reviewCase: undefined as DedupReviewCaseDto | undefined,
       comparison: undefined as DedupPageComparisonDto | undefined,
     },
+    bulkDialog: {
+      show: false,
+      submitting: false,
+      cases: [] as DedupBulkCaseSnapshot[],
+    },
     snackbar: {show: false, text: '', color: 'success'},
   }),
   computed: {
+    casePageSize: {
+      get(): number {
+        const value = this.$store.state.persistedState.dedupCasePageSize
+        return [20, 50, 100].includes(value) ? value : 20
+      },
+      set(value: number) {
+        this.$store.commit('setDedupCasePageSize', value)
+        this.casePage = 1
+        this.loadCases()
+      },
+    },
     loading(): boolean {
       return this.loadingStatus || this.loadingSettings || this.loadingCases
     },
@@ -673,6 +798,24 @@ export default Vue.extend({
     },
     casePageCount(): number {
       return Math.ceil(this.totalCases / this.casePageSize)
+    },
+    paginationVisible(): number {
+      switch (this.$vuetify.breakpoint.name) {
+        case 'xs':
+        case 'sm':
+        case 'md':
+          return 5
+        case 'lg':
+          return 10
+        default:
+          return 15
+      }
+    },
+    bulkVerificationRequests(): DedupCaseVerificationRequestDto[] {
+      return currentPageVerificationRequests(this.cases)
+    },
+    bulkVerifying(): boolean {
+      return this.bulkDialog.submitting
     },
     decisionMemberOptions(): Array<{text: string; value: string}> {
       return (this.decisionDialog.reviewCase?.members || []).map(member => ({
@@ -735,6 +878,12 @@ export default Vue.extend({
           library_id: this.filters.libraryId,
           origin: this.filters.origin,
         })
+        if (page.totalPages > 0 && this.casePage > page.totalPages) {
+          this.casePage = page.totalPages
+          await this.loadCases()
+          return
+        }
+        if (page.totalPages === 0) this.casePage = 1
         this.cases = page.content
         this.totalCases = page.totalElements
       } catch (e) {
@@ -742,6 +891,10 @@ export default Vue.extend({
       } finally {
         this.loadingCases = false
       }
+    },
+    onFiltersChanged() {
+      this.casePage = 1
+      this.loadCases()
     },
     async loadDecisions() {
       try {
@@ -809,13 +962,42 @@ export default Vue.extend({
     async reanalyze(reviewCase: DedupReviewCaseDto) {
       this.caseActionId = `${reviewCase.id}-reanalyze`
       try {
-        await this.$komgaDedup.reanalyze(reviewCase.id)
-        this.notify(this.$t('dedup_management.actions.reanalysis_requested').toString(), 'success')
+        const result = await this.$komgaDedup.verifyCases([{caseId: reviewCase.id, expectedRevision: reviewCase.revision}])
+        if (result.queued === 1) {
+          this.notify(this.$t('dedup_management.actions.verification_requested').toString(), 'success')
+        } else {
+          this.notify(this.$t('dedup_management.errors.case_changed').toString(), 'warning')
+          await this.loadCases()
+        }
         await this.loadStatus()
       } catch (e) {
-        this.notify(this.$t('dedup_management.errors.scan').toString(), 'error')
+        this.notify(this.$t('dedup_management.errors.verify').toString(), 'error')
       } finally {
         this.caseActionId = ''
+      }
+    },
+    openBulkVerificationDialog() {
+      const requests = this.bulkVerificationRequests
+      this.bulkDialog.cases = requests.map(request => {
+        const reviewCase = this.cases.find(item => item.id === request.caseId)!
+        return {...request, label: this.memberTitles(reviewCase)}
+      })
+      this.bulkDialog.show = true
+    },
+    async submitBulkVerification() {
+      const cases = this.bulkDialog.cases.map(({caseId, expectedRevision}) => ({caseId, expectedRevision}))
+      if (!cases.length) return
+      this.bulkDialog.submitting = true
+      try {
+        const result = await this.$komgaDedup.verifyCases(cases)
+        this.bulkDialog.show = false
+        this.notify(this.$t('dedup_management.bulk_verify.result', result).toString(), result.stale || result.failed ? 'warning' : 'success')
+        await this.loadStatus()
+        if (result.stale || result.failed) await this.loadCases()
+      } catch (e) {
+        this.notify(this.$t('dedup_management.errors.verify').toString(), 'error')
+      } finally {
+        this.bulkDialog.submitting = false
       }
     },
     openDecisionDialog(reviewCase: DedupReviewCaseDto, mode: 'SUGGESTED' | 'MANUAL') {
@@ -897,7 +1079,7 @@ export default Vue.extend({
       if (index >= 0) this.$set(this.cases, index, updated)
     },
     thumbnailUrl(bookId: string): string {
-      return `${window.resourceBaseUrl || ''}/api/v1/books/${bookId}/thumbnail`
+      return bookThumbnailUrl(bookId)
     },
     libraryName(libraryId: string): string {
       const library = this.$store.state.komgaLibraries.libraries.find((item: any) => item.id === libraryId)
@@ -917,17 +1099,61 @@ export default Vue.extend({
     reasonLabel(code: string): string {
       return this.$t(`dedup_management.reasons.${code}`).toString()
     },
-    reasonDetails(reason: DedupEligibilityReasonDto): string {
+    groupedReasons(reviewCase: DedupReviewCaseDto): DedupEligibilityDisplayReason[] {
+      return mergeEligibilityReasons(reviewCase)
+    },
+    reasonEffectLabel(effect: DedupEligibilityEffect): string {
+      return this.$t(`dedup_management.eligibility.effects.${effect}`).toString()
+    },
+    reasonDetails(reason: DedupEligibilityDisplayReason): string {
       const details: string[] = []
-      if (reason.actual !== undefined) details.push(`${this.$t('dedup_management.eligibility.actual')}: ${JSON.stringify(reason.actual)}`)
-      if (reason.threshold !== undefined) details.push(`${this.$t('dedup_management.eligibility.threshold')}: ${JSON.stringify(reason.threshold)}`)
+      if (reason.actual != null) details.push(`${this.$t('dedup_management.eligibility.actual')}: ${this.reasonValue(reason.actual)}`)
+      if (reason.threshold != null) details.push(`${this.$t('dedup_management.eligibility.threshold')}: ${this.reasonValue(reason.threshold)}`)
       return details.join(' · ')
+    },
+    reasonValue(value: unknown): string {
+      return typeof value === 'string' ? value : JSON.stringify(value)
+    },
+    reasonActionLabel(action: string): string {
+      return this.$t(`dedup_management.eligibility.actions.${action}`).toString()
+    },
+    reasonActionClickable(action: string, reason: DedupEligibilityDisplayReason, reviewCase: DedupReviewCaseDto): boolean {
+      if (['RUN_DEEP_VERIFICATION', 'REANALYZE_CASE'].includes(action)) return reviewCase.origin !== 'EXACT_FILE'
+      if (action === 'OPEN_PAGE_COMPARISON') return hasPageEvidence(reviewCase)
+      if (action === 'ANALYZE_BOOK') return reason.memberIds.some(id => reviewCase.members.some(member => member.bookId === id && member.book))
+      return action === 'VIEW_TASK'
+    },
+    reasonActionLoading(action: string, reviewCase: DedupReviewCaseDto): boolean {
+      if (['RUN_DEEP_VERIFICATION', 'REANALYZE_CASE'].includes(action)) return this.caseActionId === `${reviewCase.id}-reanalyze`
+      if (action === 'OPEN_PAGE_COMPARISON') return this.caseActionId === `${reviewCase.id}-pages`
+      if (action === 'ANALYZE_BOOK') return this.caseActionId === `${reviewCase.id}-analyze-books`
+      return false
+    },
+    async runReasonAction(action: string, reviewCase: DedupReviewCaseDto, reason: DedupEligibilityDisplayReason) {
+      if (['RUN_DEEP_VERIFICATION', 'REANALYZE_CASE'].includes(action)) return this.reanalyze(reviewCase)
+      if (action === 'OPEN_PAGE_COMPARISON') return this.openPageComparison(reviewCase)
+      if (action === 'VIEW_TASK') {
+        this.tab = 2
+        return
+      }
+      if (action === 'ANALYZE_BOOK') {
+        const books = reviewCase.members.filter(member => reason.memberIds.includes(member.bookId)).map(member => member.book).filter(Boolean)
+        this.caseActionId = `${reviewCase.id}-analyze-books`
+        try {
+          await Promise.all(books.map(book => this.$komgaBooks.analyzeBook(book!)))
+          this.notify(this.$t('dedup_management.actions.book_analysis_requested', {count: books.length}).toString(), 'success')
+        } catch (e) {
+          this.notify(this.$t('dedup_management.errors.analyze_book').toString(), 'error')
+        } finally {
+          this.caseActionId = ''
+        }
+      }
     },
     blockerCount(reviewCase: DedupReviewCaseDto, action: 'SUGGESTED' | 'MANUAL'): number {
       return reviewCase.eligibility.blockers.filter(reason => reason.appliesTo.includes(action)).length
     },
-    pageThumbnailUrl(path: string): string {
-      return `${window.resourceBaseUrl || ''}${path}`
+    pageThumbnailUrl(page: DedupPageEvidenceDto): string {
+      return bookPageThumbnailUrl(page.bookId, page.pageNumber)
     },
     pageBookTitle(bookId: string): string {
       const member = this.pageDialog.reviewCase?.members.find(item => item.bookId === bookId)
@@ -936,9 +1162,14 @@ export default Vue.extend({
     formatDate(value: string): string {
       return formatDistanceToNow(new Date(value), {addSuffix: true})
     },
-    percent(value?: number): string {
-      return value === undefined ? '—' : `${Math.round(value * 1000) / 10}%`
+    percent(value?: number | null): string {
+      return value == null ? '—' : `${Math.round(value * 1000) / 10}%`
     },
+    optionalNumber(value?: number | null): number | string {
+      return value == null ? '—' : value
+    },
+    hasPageEvidence,
+    unmatchedPageCount,
     bookRoute(member: DedupReviewCaseMemberDto): object {
       return member.book?.oneshot
         ? {name: 'browse-oneshot', params: {seriesId: member.book.seriesId}}
@@ -1096,6 +1327,11 @@ export default Vue.extend({
 
 .reason-alert {
   max-width: 900px;
+}
+
+.bulk-case-list {
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .evidence-row {

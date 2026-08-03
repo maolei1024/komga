@@ -48,6 +48,43 @@ class DedupControllerTest(
   @WithMockUser(roles = ["USER"])
   fun `non admin users cannot read dedup status`() {
     mockMvc.get("/api/v1/dedup/status").andExpect { status { isForbidden() } }
+    mockMvc
+      .post("/api/v1/dedup/cases/verify") {
+        contentType = MediaType.APPLICATION_JSON
+        content = """{"cases":[{"caseId":"case","expectedRevision":1}]}"""
+      }.andExpect { status { isForbidden() } }
+  }
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `bulk verification reports missing cases and validates bounded unique input`() {
+    mockMvc
+      .post("/api/v1/dedup/cases/verify") {
+        contentType = MediaType.APPLICATION_JSON
+        content = """{"cases":[{"caseId":"missing","expectedRevision":1}]}"""
+      }.andExpect {
+        status { isAccepted() }
+        jsonPath("$.requested") { value(1) }
+        jsonPath("$.queued") { value(0) }
+        jsonPath("$.failed") { value(1) }
+        jsonPath("$.results[0].status") { value("NOT_FOUND") }
+      }
+
+    mockMvc
+      .post("/api/v1/dedup/cases/verify") {
+        contentType = MediaType.APPLICATION_JSON
+        content = """{"cases":[{"caseId":"duplicate","expectedRevision":1},{"caseId":"duplicate","expectedRevision":1}]}"""
+      }.andExpect { status { isBadRequest() } }
+
+    val oversized =
+      (1..101).joinToString(prefix = "{\"cases\":[", postfix = "]}") { index ->
+        "{\"caseId\":\"case-$index\",\"expectedRevision\":1}"
+      }
+    mockMvc
+      .post("/api/v1/dedup/cases/verify") {
+        contentType = MediaType.APPLICATION_JSON
+        content = oversized
+      }.andExpect { status { isBadRequest() } }
   }
 
   @Test

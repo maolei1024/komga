@@ -1,6 +1,8 @@
 import {AxiosInstance} from 'axios'
 import {
   DedupCaseOrigin,
+  DedupBulkVerificationResultDto,
+  DedupCaseVerificationRequestDto,
   DedupReviewCaseDto,
   DedupSettingsDto,
   DedupStatusDto,
@@ -63,6 +65,10 @@ export default class KomgaDedupService {
 
   async reanalyze(caseId: string): Promise<void> {
     await this.http.post(`${API_DEDUP}/cases/${caseId}/verify`)
+  }
+
+  async verifyCases(cases: DedupCaseVerificationRequestDto[]): Promise<DedupBulkVerificationResultDto> {
+    return (await this.http.post(`${API_DEDUP}/cases/verify`, {cases})).data
   }
 
   async getPageComparison(caseId: string): Promise<DedupPageComparisonDto> {

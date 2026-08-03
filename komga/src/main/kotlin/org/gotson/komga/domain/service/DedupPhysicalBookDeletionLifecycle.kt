@@ -33,6 +33,22 @@ data class DedupPhysicalDeletionResult(
   val detail: String? = null,
 )
 
+data class DedupFilePrecheck(
+  val status: DedupFilePrecheckStatus,
+  val path: String,
+  val databaseSize: Long,
+  val liveSize: Long? = null,
+  val databaseMtime: LocalDateTime,
+  val liveMtime: LocalDateTime? = null,
+  val detail: String? = null,
+)
+
+enum class DedupFilePrecheckStatus {
+  AVAILABLE,
+  UNAVAILABLE,
+  STAT_STALE,
+}
+
 @Service
 class DedupPhysicalBookDeletionLifecycle(
   private val hasher: Hasher,
@@ -40,7 +56,7 @@ class DedupPhysicalBookDeletionLifecycle(
 ) {
   fun captureStrongIdentity(
     book: Book,
-    requireDatabaseIdentity: Boolean = true,
+    requireDatabaseStat: Boolean = true,
   ): DedupStrongFileIdentity {
     val path = book.path.toAbsolutePath().normalize()
     val before = readStableAttributes(path)
@@ -49,12 +65,40 @@ class DedupPhysicalBookDeletionLifecycle(
     val after = readStableAttributes(path)
     check(before.sameFileVersion(after)) { "Book changed while its full archive hash was being computed" }
     val identity = DedupStrongFileIdentity(path.toString(), after.size(), after.lastModified(), hash)
-    if (requireDatabaseIdentity) {
+    if (requireDatabaseStat) {
       check(book.fileSize == identity.size) { "Live file size no longer matches Komga" }
       check(book.fileLastModified.sameStoredTime(identity.mtime)) { "Live file mtime no longer matches Komga" }
-      check(book.fileHash.isNotBlank() && book.fileHash == identity.archiveHash) { "Live archive hash no longer matches Komga" }
     }
     return identity
+  }
+
+  fun precheck(book: Book): DedupFilePrecheck {
+    val path = book.path.toAbsolutePath().normalize()
+    if (!path.isCbz()) return unavailable(book, path, "Expected path is not a CBZ archive")
+    if (!Files.isRegularFile(path)) return unavailable(book, path, "Expected path is not a regular file")
+    if (!Files.isReadable(path)) return unavailable(book, path, "Book path is not readable")
+    val attributes = runCatching { Files.readAttributes(path, BasicFileAttributes::class.java) }.getOrElse { return unavailable(book, path, it.message ?: "Book stat is unavailable") }
+    val liveMtime = attributes.lastModified()
+    return if (book.fileSize <= 0 || book.fileSize != attributes.size() || !book.fileLastModified.sameStoredTime(liveMtime)) {
+      DedupFilePrecheck(
+        status = DedupFilePrecheckStatus.STAT_STALE,
+        path = path.toString(),
+        databaseSize = book.fileSize,
+        liveSize = attributes.size(),
+        databaseMtime = book.fileLastModified,
+        liveMtime = liveMtime,
+        detail = "Live file size or mtime no longer matches Komga",
+      )
+    } else {
+      DedupFilePrecheck(
+        status = DedupFilePrecheckStatus.AVAILABLE,
+        path = path.toString(),
+        databaseSize = book.fileSize,
+        liveSize = attributes.size(),
+        databaseMtime = book.fileLastModified,
+        liveMtime = liveMtime,
+      )
+    }
   }
 
   fun deleteVerifiedBook(
@@ -68,7 +112,7 @@ class DedupPhysicalBookDeletionLifecycle(
 
     val current =
       try {
-        captureStrongIdentity(book, requireDatabaseIdentity = false)
+        captureStrongIdentity(book, requireDatabaseStat = false)
       } catch (exception: Exception) {
         return conflict(DedupDeletionResultCode.GENERATION_MISMATCH, exception.message)
       }
@@ -94,9 +138,24 @@ class DedupPhysicalBookDeletionLifecycle(
   }
 
   private fun readStableAttributes(path: Path): BasicFileAttributes {
+    check(path.isCbz()) { "Expected path is not a CBZ archive" }
     check(Files.isRegularFile(path)) { "Expected path is not a regular file" }
     return Files.readAttributes(path, BasicFileAttributes::class.java)
   }
+
+  private fun Path.isCbz(): Boolean = fileName.toString().endsWith(".cbz", ignoreCase = true)
+
+  private fun unavailable(
+    book: Book,
+    path: Path,
+    detail: String,
+  ) = DedupFilePrecheck(
+    status = DedupFilePrecheckStatus.UNAVAILABLE,
+    path = path.toString(),
+    databaseSize = book.fileSize,
+    databaseMtime = book.fileLastModified,
+    detail = detail,
+  )
 
   private fun isWritable(path: Path): Boolean {
     if (!Files.isWritable(path)) return false

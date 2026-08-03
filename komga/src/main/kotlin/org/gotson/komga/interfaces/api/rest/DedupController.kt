@@ -17,6 +17,8 @@ import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupDecisionRepository
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.LibraryRepository
+import org.gotson.komga.domain.service.DedupCaseVerificationRequest
+import org.gotson.komga.domain.service.DedupCaseVerificationStatus
 import org.gotson.komga.domain.service.DedupCoverLifecycle
 import org.gotson.komga.domain.service.DedupDecisionLifecycle
 import org.gotson.komga.domain.service.DedupDecisionValidationException
@@ -24,6 +26,9 @@ import org.gotson.komga.domain.service.DedupEligibilityPolicy
 import org.gotson.komga.domain.service.DedupWorkLifecycle
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.persistence.BookDtoRepository
+import org.gotson.komga.interfaces.api.rest.dto.DedupBulkVerificationRequestDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupBulkVerificationResultDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupCaseVerificationResultDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupCustomDecisionRequestDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupDecisionDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupDecisionItemDto
@@ -316,6 +321,30 @@ class DedupController(
     @PathVariable caseId: String,
   ) {
     if (dedupWorkLifecycle.requestCaseVerification(caseId) == null) throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @PostMapping("cases/verify")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  @Operation(summary = "Queue deep verification for a page of duplicate-content review cases")
+  fun verifyCases(
+    @Valid @RequestBody request: DedupBulkVerificationRequestDto,
+  ): DedupBulkVerificationResultDto {
+    val caseIds = request.cases.map { it.caseId }
+    if (caseIds.distinct().size != request.cases.size) {
+      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate case IDs are not allowed")
+    }
+    val results =
+      dedupWorkLifecycle.requestCaseVerifications(
+        request.cases.map { DedupCaseVerificationRequest(it.caseId, it.expectedRevision) },
+      )
+    return DedupBulkVerificationResultDto(
+      requested = results.size,
+      queued = results.count { it.status == DedupCaseVerificationStatus.QUEUED },
+      skipped = results.count { it.status == DedupCaseVerificationStatus.SKIPPED_EXACT_FILE },
+      stale = results.count { it.status == DedupCaseVerificationStatus.STALE },
+      failed = results.count { it.status in setOf(DedupCaseVerificationStatus.NOT_FOUND, DedupCaseVerificationStatus.UNSUPPORTED_CASE) },
+      results = results.map { DedupCaseVerificationResultDto(it.caseId, it.status.name) },
+    )
   }
 
   @PostMapping("cases/{caseId}/decisions/suggest")

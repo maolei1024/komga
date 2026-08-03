@@ -261,7 +261,7 @@ class DedupDecisionLifecycle(
     if (java.nio.file.Files
         .exists(path)
     ) {
-      val live = runCatching { book?.let { physicalDeletionLifecycle.captureStrongIdentity(it, requireDatabaseIdentity = false) } }.getOrNull()
+      val live = runCatching { book?.let { physicalDeletionLifecycle.captureStrongIdentity(it, requireDatabaseStat = false) } }.getOrNull()
       if (live?.archiveHash == item.expectedArchiveHash && live.size == item.expectedSize) {
         newItemState = DedupDecisionItemState.REAPPEARED
         resultCode = DedupDeletionResultCode.REAPPEARED_SAME_HASH
@@ -379,7 +379,7 @@ class DedupDecisionLifecycle(
 
         java.nio.file.Files
           .exists(path) -> {
-          val live = runCatching { book?.let { physicalDeletionLifecycle.captureStrongIdentity(it, requireDatabaseIdentity = false) } }.getOrNull()
+          val live = runCatching { book?.let { physicalDeletionLifecycle.captureStrongIdentity(it, requireDatabaseStat = false) } }.getOrNull()
           val unchanged = live?.matches(item.expectedIdentity()) == true
           decisionRepository.updateDecisionItem(
             item.id,
@@ -433,7 +433,7 @@ class DedupDecisionLifecycle(
     if (decisionRepository.hasActiveDecisionForBooks(reviewCase.memberBookIds)) conflict("DELETION_IN_PROGRESS", "A case member already belongs to an active decision")
     val keeper = bookRepository.findByIdOrNull(keeperBookId) ?: conflict("KEEPER_UNHEALTHY", "Keeper no longer exists")
     val keeperSource = coverLifecycle.currentSourceIdentity(keeperBookId) ?: conflict("KEEPER_UNHEALTHY", "Keeper is outside the current single-Book scope")
-    val keeperIdentity = physicalDeletionLifecycle.captureStrongIdentity(keeper)
+    val keeperIdentity = captureDecisionIdentity(keeper)
     val keeperSnapshot = DedupKeeperSnapshot(keeper.id, keeper.seriesId, keeper.libraryId, keeperSource.contentGeneration, keeperSource.seriesScopeRevision, keeperIdentity)
     val now = LocalDateTime.now()
     val decisionId = TsidCreator.getTsid256().toString()
@@ -444,7 +444,7 @@ class DedupDecisionLifecycle(
         val source = coverLifecycle.currentSourceIdentity(bookId) ?: conflict("OUT_OF_SCOPE_MULTI_BOOK_SERIES", "Removal member is outside the current single-Book scope")
         val relation = dedupRepository.findRelation(bookId, keeperBookId) ?: conflict("DIRECT_KEEPER_RELATION_MISSING", "A direct relation to the keeper is required")
         relations += relation
-        val identity = physicalDeletionLifecycle.captureStrongIdentity(book)
+        val identity = captureDecisionIdentity(book)
         val localState = localStateLifecycle.snapshot(bookId)
         DedupDecisionItem(
           id = TsidCreator.getTsid256().toString(),
@@ -650,6 +650,10 @@ class DedupDecisionLifecycle(
   }
 
   private fun DedupDecisionItem.expectedIdentity() = DedupStrongFileIdentity(expectedPath, expectedSize, expectedMtime, expectedArchiveHash)
+
+  private fun captureDecisionIdentity(book: org.gotson.komga.domain.model.Book): DedupStrongFileIdentity =
+    runCatching { physicalDeletionLifecycle.captureStrongIdentity(book) }
+      .getOrElse { conflict("STRONG_FILE_IDENTITY_UNAVAILABLE", it.message ?: "Strong file identity is unavailable") }
 
   private fun DedupRelation.planIdentity(): String = "$id:$bookLowId:$bookHighId:$lowContentGeneration:$highContentGeneration:$type:$containedBookId:$containerBookId:$classifierRuleVersion"
 

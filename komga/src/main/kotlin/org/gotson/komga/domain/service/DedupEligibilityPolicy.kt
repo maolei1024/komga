@@ -14,7 +14,6 @@ import org.gotson.komga.interfaces.api.rest.dto.DedupEligibilityReportDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupReasonSeverity
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.LocalDateTime
 
@@ -25,10 +24,11 @@ class DedupEligibilityPolicy(
   private val bookRepository: BookRepository,
   private val coverLifecycle: DedupCoverLifecycle,
   private val localStateLifecycle: DedupLocalStateLifecycle,
+  private val physicalDeletionLifecycle: DedupPhysicalBookDeletionLifecycle,
   private val objectMapper: ObjectMapper,
 ) {
   companion object {
-    const val RULE_VERSION = 3
+    const val RULE_VERSION = 4
   }
 
   fun evaluate(
@@ -158,16 +158,37 @@ class DedupEligibilityPolicy(
             action = "OPEN_PAGE_COMPARISON",
           )
       }
-      val book = books[snapshot.bookId]
-      if (book == null || book.fileHash.isBlank() || book.fileSize <= 0 || !Files.isRegularFile(book.path) || !Files.isReadable(book.path)) {
-        blockers +=
-          reason(
-            "STRONG_FILE_IDENTITY_UNAVAILABLE",
-            DedupReasonSeverity.BLOCKER,
-            DedupAction.entries.toSet(),
-            memberIds = setOf(snapshot.bookId),
-            action = "REANALYZE_CASE",
-          )
+    }
+    books.values.forEach { book ->
+      val precheck = physicalDeletionLifecycle.precheck(book)
+      when (precheck.status) {
+        DedupFilePrecheckStatus.AVAILABLE -> Unit
+        DedupFilePrecheckStatus.UNAVAILABLE ->
+          blockers +=
+            reason(
+              "SOURCE_FILE_UNAVAILABLE",
+              DedupReasonSeverity.BLOCKER,
+              DedupAction.entries.toSet(),
+              memberIds = setOf(book.id),
+              actual = precheck.detail,
+              action = "CHECK_SOURCE_FILE",
+            )
+        DedupFilePrecheckStatus.STAT_STALE ->
+          blockers +=
+            reason(
+              "SOURCE_FILE_STAT_STALE",
+              DedupReasonSeverity.BLOCKER,
+              DedupAction.entries.toSet(),
+              memberIds = setOf(book.id),
+              actual =
+                mapOf(
+                  "databaseSize" to precheck.databaseSize,
+                  "liveSize" to precheck.liveSize,
+                  "databaseMtime" to precheck.databaseMtime,
+                  "liveMtime" to precheck.liveMtime,
+                ),
+              action = "ANALYZE_BOOK",
+            )
       }
     }
     if (stateSnapshots.values.none { it.reasonCodes.isNotEmpty() }) {
@@ -221,6 +242,7 @@ class DedupEligibilityPolicy(
     warnings: MutableList<DedupEligibilityReasonDto>,
     action: String = "OPEN_PAGE_COMPARISON",
   ) {
+    val coverOnly = code == "COVER_ONLY"
     val ranges =
       runCatching {
         val evidence = objectMapper.readTree(relation.evidenceJson)
@@ -232,8 +254,8 @@ class DedupEligibilityPolicy(
         DedupReasonSeverity.BLOCKER,
         setOf(DedupAction.SUGGESTED),
         memberIds = setOf(relation.bookLowId, relation.bookHighId),
-        actual = relation.unmatchedPrefixCount.orZero() + relation.unmatchedSuffixCount.orZero() + relation.unmatchedInternalCount.orZero(),
-        threshold = 0,
+        actual = if (coverOnly) null else relation.unmatchedPrefixCount.orZero() + relation.unmatchedSuffixCount.orZero() + relation.unmatchedInternalCount.orZero(),
+        threshold = if (coverOnly) null else 0,
         pageRanges = ranges,
         action = action,
       )

@@ -109,6 +109,22 @@ class DedupDecisionLifecycleTest(
   }
 
   @Test
+  fun `approval captures a live full archive hash instead of a stale Komga hash`() {
+    val fixture = createExactPair()
+    bookRepository.update(requireNotNull(bookRepository.findByIdOrNull(fixture.loserId)).copy(fileHash = "stale-database-hash"))
+    bookRepository.update(requireNotNull(bookRepository.findByIdOrNull(fixture.keeperId)).copy(fileHash = "stale-database-hash"))
+    assertThat(exactLifecycle.reconcileLibrary(library.id)).isEqualTo(1)
+    val refreshedCaseId = dedupRepository.findReviewCases(library.id).single().id
+
+    val decision = approveSuggested(refreshedCaseId, fixture.keeperId)
+
+    val removalSnapshot = decisionRepository.findDecisionItems(decision.id).single()
+    assertThat(removalSnapshot.expectedArchiveHash).isEqualTo(hasher.computeHash(fixture.loserPath))
+    assertThat(removalSnapshot.expectedArchiveHash).isNotEqualTo("stale-database-hash")
+    assertThat(removalSnapshot.expectedSize).isEqualTo(Files.size(fixture.loserPath))
+  }
+
+  @Test
   fun `local state added after approval stops execution and requires a fresh approval`() {
     val fixture = createExactPair()
     val decision = approveSuggested(fixture.caseId, fixture.keeperId)

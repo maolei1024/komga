@@ -39,10 +39,10 @@ export interface DedupEligibilityReasonDto {
   scope: string
   memberIds: string[]
   messageKey: string
-  actual?: unknown
-  threshold?: unknown
+  actual?: unknown | null
+  threshold?: unknown | null
   pageRanges: string[]
-  action?: string
+  action?: string | null
 }
 
 export interface DedupEligibilityReportDto {
@@ -50,7 +50,7 @@ export interface DedupEligibilityReportDto {
   manualDeleteEligible: boolean
   ruleVersion: number
   stateRevision: string
-  planRevision?: string
+  planRevision?: string | null
   evaluatedAt: string
   blockers: DedupEligibilityReasonDto[]
   warnings: DedupEligibilityReasonDto[]
@@ -94,9 +94,9 @@ export interface DedupDecisionDto {
 export interface DedupPageEvidenceDto {
   bookId: string
   pageNumber: number
-  matchedBookId?: string
-  matchedPageNumber?: number
-  exactMatch?: boolean
+  matchedBookId?: string | null
+  matchedPageNumber?: number | null
+  exactMatch?: boolean | null
   thumbnailUrl: string
 }
 
@@ -106,7 +106,7 @@ export interface DedupPageComparisonDto {
 }
 
 export interface DedupReviewCaseMemberDto {
-  book?: BookDto
+  book: BookDto | null
   bookId: string
   activeBookCountInSeries: number
   inMvpScope: boolean
@@ -119,16 +119,32 @@ export interface DedupReviewCaseDto {
   status: string
   origin: DedupCaseOrigin
   relationType: string
-  coverDistance?: number
-  coverageLeft?: number
-  coverageRight?: number
-  longestMatchedRun?: number
-  unmatchedPrefixCount?: number
-  unmatchedSuffixCount?: number
-  unmatchedInternalCount?: number
-  suggestedKeeperBookId?: string
+  coverDistance: number | null
+  coverageLeft: number | null
+  coverageRight: number | null
+  longestMatchedRun: number | null
+  unmatchedPrefixCount: number | null
+  unmatchedSuffixCount: number | null
+  unmatchedInternalCount: number | null
+  suggestedKeeperBookId: string | null
   members: DedupReviewCaseMemberDto[]
   eligibility: DedupEligibilityReportDto
   created: string
   lastModified: string
+}
+
+export type DedupCaseVerificationStatus = 'QUEUED' | 'SKIPPED_EXACT_FILE' | 'STALE' | 'NOT_FOUND' | 'UNSUPPORTED_CASE'
+
+export interface DedupCaseVerificationRequestDto {
+  caseId: string
+  expectedRevision: number
+}
+
+export interface DedupBulkVerificationResultDto {
+  requested: number
+  queued: number
+  skipped: number
+  stale: number
+  failed: number
+  results: Array<{caseId: string; status: DedupCaseVerificationStatus}>
 }

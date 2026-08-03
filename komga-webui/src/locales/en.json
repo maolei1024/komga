@@ -690,6 +690,7 @@
       "accept": "Use suggested plan",
       "accept_blocked": "Use suggested plan ({count} blockers)",
       "alt_edition": "Different edition",
+      "book_analysis_requested": "Analysis requested for {count} books",
       "custom": "Custom handling",
       "compare_pages": "Compare pages",
       "keeper_saved": "Keeper selection saved",
@@ -697,17 +698,48 @@
       "protect": "Protect",
       "reanalysis_requested": "Reanalysis requested",
       "reanalyze": "Reanalyze",
+      "reverify": "Run deep verification again",
       "refresh": "Refresh",
       "retry_decision": "Retry safely",
       "scan": "Scan now",
       "set_keeper": "Set as keeper",
-      "unrelated": "Not related"
+      "unrelated": "Not related",
+      "verification_requested": "Deep verification requested",
+      "verify_now": "Run deep verification now",
+      "verify_page": "Verify current page ({count})"
     },
     "blocker_count": "{count} blockers",
+    "bulk_verify": {
+      "body": "Queue page-level deep verification for {count} visual candidates on this page. Missing or stale features require reading every page from both CBZ files and may generate substantial remote-mount I/O.",
+      "confirm": "Queue {count} verifications",
+      "result": "Deep verification processed: {queued} queued, {skipped} skipped, {stale} stale, {failed} failed",
+      "snapshot": "Current page snapshot",
+      "title": "Verify the current page now"
+    },
     "case_count": "{count} review cases",
     "cover_distance": "Cover distance {distance}/256",
     "eligibility": {
+      "actions": {
+        "ANALYZE_BOOK": "Analyze the affected books again",
+        "CHECK_SOURCE_FILE": "Check the source path, mount, and read permissions",
+        "OPEN_PAGE_COMPARISON": "Open page comparison",
+        "PROTECT_MEMBER": "Review member protection",
+        "REANALYZE_CASE": "Run deep verification again",
+        "RUN_DEEP_VERIFICATION": "Run deep verification now",
+        "SELECT_STATEFUL_COPY_AS_KEEPER": "Keep the copy that contains user state",
+        "SET_KEEPER": "Select one keeper in the member list",
+        "VIEW_TASK": "View task status"
+      },
       "actual": "Actual",
+      "effects": {
+        "BLOCK_MANUAL": "Blocks custom handling",
+        "BLOCK_SUGGESTED": "Blocks suggested plan",
+        "CONFIRM_MANUAL": "Custom handling requires confirmation",
+        "CONFIRM_SUGGESTED": "Suggested plan requires confirmation",
+        "WARNING": "Warning only"
+      },
+      "next_action": "Suggested action",
+      "page_ranges": "Related page ranges",
       "threshold": "Required",
       "title": "Decision eligibility"
     },
@@ -733,9 +765,11 @@
       "coverage_left": "Left coverage",
       "coverage_right": "Right coverage",
       "longest_run": "Longest ordered run",
+      "not_analyzed": "Page-level deep verification has not run yet. The current relation only has cover-candidate evidence.",
       "unmatched": "Unmatched pages"
     },
     "errors": {
+      "analyze_book": "Could not request Book analysis",
       "cases": "Could not load review cases",
       "case_changed": "The review case changed; current data has been reloaded",
       "decision": "The decision was not accepted because evidence, state, or file identity changed",
@@ -744,7 +778,8 @@
       "save": "Could not save duplicate-content settings",
       "scan": "Could not request a scan",
       "settings": "Could not load duplicate-content settings",
-      "status": "Could not load duplicate-content status"
+      "status": "Could not load duplicate-content status",
+      "verify": "Could not request page-level deep verification"
     },
     "filters": {
       "library": "Library",
@@ -793,6 +828,8 @@
       "PROTECTED": "This book is explicitly protected"
       ,"READLIST_PRESENT": "The losing Book belongs to a read list"
       ,"READ_PROGRESS_PRESENT": "One or more users have reading progress on the losing Book"
+      ,"SOURCE_FILE_STAT_STALE": "The source file size or modification time no longer matches Komga"
+      ,"SOURCE_FILE_UNAVAILABLE": "The source CBZ path is unreadable or is not a regular file"
       ,"STRONG_FILE_IDENTITY_UNAVAILABLE": "A readable current path and strong archive identity are required"
       ,"USER_THUMBNAIL_OR_LOCKED_METADATA": "The losing Book or Series has user artwork or locked metadata"
     },

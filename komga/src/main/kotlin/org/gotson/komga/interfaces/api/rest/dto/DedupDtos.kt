@@ -4,7 +4,9 @@ import com.fasterxml.jackson.annotation.JsonFormat
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
+import jakarta.validation.constraints.Size
 import org.gotson.komga.domain.model.DedupDecisionItemState
 import org.gotson.komga.domain.model.DedupDecisionMode
 import org.gotson.komga.domain.model.DedupDecisionState
@@ -76,6 +78,33 @@ data class DedupLibrarySelectionDto(
 
 data class DedupScanResultDto(
   val requestedLibraries: Int,
+)
+
+data class DedupBulkVerificationRequestDto(
+  @field:Size(min = 1, max = 100)
+  @field:Valid
+  val cases: List<DedupCaseVerificationRequestDto>,
+)
+
+data class DedupCaseVerificationRequestDto(
+  @field:NotBlank
+  val caseId: String,
+  @field:Min(1)
+  val expectedRevision: Long,
+)
+
+data class DedupBulkVerificationResultDto(
+  val requested: Int,
+  val queued: Int,
+  val skipped: Int,
+  val stale: Int,
+  val failed: Int,
+  val results: List<DedupCaseVerificationResultDto>,
+)
+
+data class DedupCaseVerificationResultDto(
+  val caseId: String,
+  val status: String,
 )
 
 data class DedupKeeperUpdateDto(

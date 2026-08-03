@@ -690,6 +690,7 @@
       "accept": "采用建议方案",
       "accept_blocked": "采用建议方案（{count} 项阻断）",
       "alt_edition": "标记不同 Edition",
+      "book_analysis_requested": "已提交 {count} 个 Book 的重新分析",
       "custom": "自定义处理",
       "compare_pages": "对比页面",
       "keeper_saved": "已保存保留者",
@@ -697,17 +698,48 @@
       "protect": "保护",
       "reanalysis_requested": "已提交重新分析",
       "reanalyze": "重新分析",
+      "reverify": "重新深度验证",
       "refresh": "刷新",
       "retry_decision": "安全重试",
       "scan": "立即扫描",
       "set_keeper": "设为保留者",
-      "unrelated": "标记不相关"
+      "unrelated": "标记不相关",
+      "verification_requested": "已提交深度验证",
+      "verify_now": "立即深度验证",
+      "verify_page": "深度验证当前页（{count}）"
     },
     "blocker_count": "{count} 项阻断",
+    "bulk_verify": {
+      "body": "将为当前页的 {count} 个视觉候选提交页面级深度验证。缺失或过期的特征需要读取两端 CBZ 的全部页面，远程挂载可能产生较多 I/O。",
+      "confirm": "提交 {count} 项验证",
+      "result": "深度验证已处理：入队 {queued}，跳过 {skipped}，已变化 {stale}，失败 {failed}",
+      "snapshot": "当前页快照",
+      "title": "立即深度验证当前页"
+    },
     "case_count": "{count} 个审核 case",
     "cover_distance": "封面距离 {distance}/256",
     "eligibility": {
+      "actions": {
+        "ANALYZE_BOOK": "重新分析受影响的 Book",
+        "CHECK_SOURCE_FILE": "检查源文件路径、挂载和读取权限",
+        "OPEN_PAGE_COMPARISON": "打开页面对比",
+        "PROTECT_MEMBER": "检查成员保护设置",
+        "REANALYZE_CASE": "重新深度验证",
+        "RUN_DEEP_VERIFICATION": "立即深度验证",
+        "SELECT_STATEFUL_COPY_AS_KEEPER": "将包含用户状态的副本设为保留者",
+        "SET_KEEPER": "在成员列表中选择唯一保留者",
+        "VIEW_TASK": "查看任务状态"
+      },
       "actual": "实际值",
+      "effects": {
+        "BLOCK_MANUAL": "阻断自定义处理",
+        "BLOCK_SUGGESTED": "阻断建议方案",
+        "CONFIRM_MANUAL": "自定义处理需确认",
+        "CONFIRM_SUGGESTED": "建议方案需确认",
+        "WARNING": "仅警告"
+      },
+      "next_action": "建议操作",
+      "page_ranges": "相关页面范围",
       "threshold": "要求",
       "title": "处理资格"
     },
@@ -733,9 +765,11 @@
       "coverage_left": "左侧覆盖率",
       "coverage_right": "右侧覆盖率",
       "longest_run": "最长连续有序匹配",
+      "not_analyzed": "尚未进行页面级深度验证。当前关系只基于封面候选证据。",
       "unmatched": "未匹配页"
     },
     "errors": {
+      "analyze_book": "无法提交 Book 重新分析",
       "cases": "无法加载审核 case",
       "case_changed": "审核 case 已变化，已重新加载当前数据",
       "decision": "证据、状态或文件身份已变化，服务器未接受该决策",
@@ -744,7 +778,8 @@
       "save": "无法保存重复内容设置",
       "scan": "无法提交扫描",
       "settings": "无法加载重复内容设置",
-      "status": "无法加载重复内容状态"
+      "status": "无法加载重复内容状态",
+      "verify": "无法提交页面级深度验证"
     },
     "filters": {
       "library": "媒体库",
@@ -793,6 +828,8 @@
       "PROTECTED": "该 Book 已被显式保护"
       ,"READLIST_PRESENT": "待删除 Book 位于 ReadList 中"
       ,"READ_PROGRESS_PRESENT": "一个或多个用户在待删除 Book 上有阅读进度"
+      ,"SOURCE_FILE_STAT_STALE": "源文件的大小或修改时间与 Komga 记录不一致"
+      ,"SOURCE_FILE_UNAVAILABLE": "源 CBZ 路径不可读或不是普通文件"
       ,"STRONG_FILE_IDENTITY_UNAVAILABLE": "必须具有可读的当前路径和强 archive 身份"
       ,"USER_THUMBNAIL_OR_LOCKED_METADATA": "待删除 Book 或 Series 有用户封面或锁定 metadata"
     },
