@@ -176,5 +176,5 @@ export default Vue.extend({
 .pagination-row { min-height: 52px; display: flex; align-items: center; justify-content: center; }
 .top-pagination { min-height: 44px; }
 @media (max-width: 900px) { .settings-row { grid-template-columns: 1fr 1fr; } .filter-bar { align-items: stretch; flex-wrap: wrap; } .filter-bar > .v-input { max-width: none; flex: 1 1 220px; } .filter-spacer { display: none; } }
-@media (max-width: 600px) { .page-header { flex-direction: column; } .header-actions { width: 100%; } .header-actions .v-btn { flex: 1; } .settings-row { grid-template-columns: 1fr; } .result-count { order: 2; flex: 1; } }
+@media (max-width: 600px) { .page-header { flex-direction: column; } .header-actions { width: 100%; flex-direction: column; } .header-actions .v-btn { width: 100%; flex: none; margin: 0; } .settings-row { grid-template-columns: 1fr; } .result-count { order: 2; flex: 1; } }
 </style>
