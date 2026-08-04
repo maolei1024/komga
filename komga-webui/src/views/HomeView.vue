@@ -191,7 +191,7 @@
             </v-list-item>
 
             <v-list-item :to="{name: 'dedup-management'}">
-              <v-list-item-title>{{ $t('dedup_management.title') }}</v-list-item-title>
+              <v-list-item-title>{{ $t('dedup.title') }}</v-list-item-title>
             </v-list-item>
 
             <v-list-group no-action
