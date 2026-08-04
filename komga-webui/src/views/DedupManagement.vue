@@ -31,7 +31,7 @@
             <v-text-field v-model.number="library.coverCandidateDistance" type="number" min="0" max="256" dense outlined hide-details :label="$t('dedup.coverDistance')" :disabled="!library.enabled" @input="settingsDirty = true"/>
             <v-text-field v-model.number="library.coverTopK" type="number" min="1" dense outlined hide-details :label="$t('dedup.topK')" :disabled="!library.enabled" @input="settingsDirty = true"/>
           </div>
-          <div class="settings-actions"><v-btn text :disabled="!settingsDirty" @click="loadSettings">{{ $t('common.cancel') }}</v-btn><v-btn color="primary" :loading="savingSettings" :disabled="!settingsDirty" @click="saveSettings">{{ $t('common.save') }}</v-btn></div>
+          <div class="settings-actions"><v-btn text :disabled="!settingsDirty" @click="loadSettings">{{ $t('common.cancel') }}</v-btn><v-btn color="primary" :loading="savingSettings" :disabled="!settingsDirty" @click="saveSettings">{{ $t('common.save_changes') }}</v-btn></div>
         </v-expansion-panel-content>
       </v-expansion-panel>
     </v-expansion-panels>
