@@ -1,106 +1,48 @@
 import {AxiosInstance} from 'axios'
 import {
-  DedupCaseOrigin,
   DedupBulkVerificationResultDto,
-  DedupCaseVerificationRequestDto,
-  DedupReviewCaseDto,
+  DedupClusterDetailDto,
+  DedupClusterStatus,
+  DedupClusterSummaryDto,
+  DedupClusterVerificationRequestDto,
+  DedupCustomResolutionMemberDto,
+  DedupEvidenceMaturity,
+  DedupPageComparisonDto,
+  DedupResolutionDto,
   DedupSettingsDto,
   DedupStatusDto,
-  DedupDecisionDto,
-  DedupPageComparisonDto,
 } from '@/types/komga-dedup'
 
 const API_DEDUP = '/api/v1/dedup'
 
 export default class KomgaDedupService {
-  private http: AxiosInstance
+  constructor(private http: AxiosInstance) {}
 
-  constructor(http: AxiosInstance) {
-    this.http = http
-  }
+  async getSettings(): Promise<DedupSettingsDto> { return (await this.http.get(`${API_DEDUP}/settings`)).data }
+  async updateSettings(settings: DedupSettingsDto): Promise<DedupSettingsDto> { return (await this.http.put(`${API_DEDUP}/settings`, settings)).data }
+  async getStatus(): Promise<DedupStatusDto> { return (await this.http.get(`${API_DEDUP}/status`)).data }
+  async requestScan(libraryIds: string[] = []): Promise<{requestedLibraries: number}> { return (await this.http.post(`${API_DEDUP}/scans`, {libraryIds})).data }
+  async pause(libraryIds: string[] = []): Promise<DedupSettingsDto> { return (await this.http.post(`${API_DEDUP}/scans/pause`, {libraryIds})).data }
+  async resume(libraryIds: string[] = []): Promise<DedupSettingsDto> { return (await this.http.post(`${API_DEDUP}/scans/resume`, {libraryIds})).data }
 
-  async getSettings(): Promise<DedupSettingsDto> {
-    return (await this.http.get(`${API_DEDUP}/settings`)).data
+  async getClusters(params: {page: number; size: number; library_id?: string; status?: DedupClusterStatus; evidence?: DedupEvidenceMaturity}): Promise<Page<DedupClusterSummaryDto>> {
+    return (await this.http.get(`${API_DEDUP}/clusters`, {params})).data
   }
-
-  async updateSettings(settings: DedupSettingsDto): Promise<DedupSettingsDto> {
-    return (await this.http.put(`${API_DEDUP}/settings`, settings)).data
+  async getCluster(clusterId: string): Promise<DedupClusterDetailDto> { return (await this.http.get(`${API_DEDUP}/clusters/${clusterId}`)).data }
+  async getPageComparison(clusterId: string, leftBookId: string, rightBookId: string): Promise<DedupPageComparisonDto> {
+    return (await this.http.get(`${API_DEDUP}/clusters/${clusterId}/pages`, {params: {left_book_id: leftBookId, right_book_id: rightBookId}})).data
   }
-
-  async getStatus(): Promise<DedupStatusDto> {
-    return (await this.http.get(`${API_DEDUP}/status`)).data
+  async verifyCluster(clusterId: string, expectedRevision: number): Promise<void> { await this.http.post(`${API_DEDUP}/clusters/${clusterId}/verify`, {expectedRevision}) }
+  async verifyClusters(clusters: DedupClusterVerificationRequestDto[]): Promise<DedupBulkVerificationResultDto> {
+    return (await this.http.post(`${API_DEDUP}/clusters/verify`, {clusters})).data
   }
-
-  async getCases(params: {
-    page: number
-    size: number
-    library_id?: string
-    origin?: DedupCaseOrigin
-  }): Promise<Page<DedupReviewCaseDto>> {
-    return (await this.http.get(`${API_DEDUP}/cases`, {params})).data
+  async createSuggestedResolution(clusterId: string, expectedRevision: number, stateRevision: string, planRevision: string): Promise<DedupResolutionDto> {
+    return (await this.http.post(`${API_DEDUP}/clusters/${clusterId}/resolutions/suggested`, {expectedRevision, stateRevision, planRevision})).data
   }
-
-  async requestScan(libraryIds: string[] = []): Promise<{requestedLibraries: number}> {
-    return (await this.http.post(`${API_DEDUP}/scans`, {libraryIds})).data
+  async createCustomResolution(clusterId: string, request: {expectedRevision: number; stateRevision: string; members: DedupCustomResolutionMemberDto[]; acknowledgedReasonCodes: string[]}): Promise<DedupResolutionDto> {
+    return (await this.http.post(`${API_DEDUP}/clusters/${clusterId}/resolutions/custom`, request)).data
   }
-
-  async pause(libraryIds: string[] = []): Promise<DedupSettingsDto> {
-    return (await this.http.post(`${API_DEDUP}/scans/pause`, {libraryIds})).data
-  }
-
-  async resume(libraryIds: string[] = []): Promise<DedupSettingsDto> {
-    return (await this.http.post(`${API_DEDUP}/scans/resume`, {libraryIds})).data
-  }
-
-  async setKeeper(caseId: string, expectedRevision: number, bookId: string): Promise<DedupReviewCaseDto> {
-    return (await this.http.put(`${API_DEDUP}/cases/${caseId}/keeper`, {expectedRevision, bookId})).data
-  }
-
-  async addOverride(
-    caseId: string,
-    request: {type: string; expectedRevision: number; bookId?: string; reason?: string},
-  ): Promise<DedupReviewCaseDto> {
-    return (await this.http.post(`${API_DEDUP}/cases/${caseId}/overrides`, request)).data
-  }
-
-  async reanalyze(caseId: string): Promise<void> {
-    await this.http.post(`${API_DEDUP}/cases/${caseId}/verify`)
-  }
-
-  async verifyCases(cases: DedupCaseVerificationRequestDto[]): Promise<DedupBulkVerificationResultDto> {
-    return (await this.http.post(`${API_DEDUP}/cases/verify`, {cases})).data
-  }
-
-  async getPageComparison(caseId: string): Promise<DedupPageComparisonDto> {
-    return (await this.http.get(`${API_DEDUP}/cases/${caseId}/pages`)).data
-  }
-
-  async createSuggestedDecision(caseId: string, expectedRevision: number, stateRevision: string): Promise<DedupDecisionDto> {
-    return (await this.http.post(`${API_DEDUP}/cases/${caseId}/decisions/suggest`, {expectedRevision, stateRevision})).data
-  }
-
-  async createCustomDecision(
-    caseId: string,
-    request: {
-      expectedRevision: number
-      keeperBookId: string
-      removeBookIds: string[]
-      stateRevision: string
-      acknowledgedReasonCodes: string[]
-    },
-  ): Promise<DedupDecisionDto> {
-    return (await this.http.post(`${API_DEDUP}/cases/${caseId}/decisions/custom`, request)).data
-  }
-
-  async executeDecision(decisionId: string): Promise<DedupDecisionDto> {
-    return (await this.http.post(`${API_DEDUP}/decisions/${decisionId}/execute`)).data
-  }
-
-  async getDecision(decisionId: string): Promise<DedupDecisionDto> {
-    return (await this.http.get(`${API_DEDUP}/decisions/${decisionId}`)).data
-  }
-
-  async getDecisions(page = 0, size = 20): Promise<Page<DedupDecisionDto>> {
-    return (await this.http.get(`${API_DEDUP}/decisions`, {params: {page, size}})).data
-  }
+  async retryResolution(resolutionId: string): Promise<DedupResolutionDto> { return (await this.http.post(`${API_DEDUP}/resolutions/${resolutionId}/retry`)).data }
+  async getResolution(resolutionId: string): Promise<DedupResolutionDto> { return (await this.http.get(`${API_DEDUP}/resolutions/${resolutionId}`)).data }
+  async getResolutions(page = 0, size = 20): Promise<Page<DedupResolutionDto>> { return (await this.http.get(`${API_DEDUP}/resolutions`, {params: {page, size}})).data }
 }

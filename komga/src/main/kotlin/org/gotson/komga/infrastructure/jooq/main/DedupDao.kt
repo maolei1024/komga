@@ -1,29 +1,29 @@
 package org.gotson.komga.infrastructure.jooq.main
 
-import org.gotson.komga.domain.model.DedupDecision
-import org.gotson.komga.domain.model.DedupDecisionItem
-import org.gotson.komga.domain.model.DedupDecisionItemState
-import org.gotson.komga.domain.model.DedupDecisionMode
-import org.gotson.komga.domain.model.DedupDecisionState
+import org.gotson.komga.domain.model.DedupCluster
+import org.gotson.komga.domain.model.DedupClusterMember
+import org.gotson.komga.domain.model.DedupClusterStatus
+import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.DedupLibrarySettings
-import org.gotson.komga.domain.model.DedupOverride
-import org.gotson.komga.domain.model.DedupOverrideType
 import org.gotson.komga.domain.model.DedupPageFeature
 import org.gotson.komga.domain.model.DedupRelation
+import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
-import org.gotson.komga.domain.model.DedupReviewCase
-import org.gotson.komga.domain.model.DedupReviewCaseCandidate
-import org.gotson.komga.domain.model.DedupReviewCaseOrigin
-import org.gotson.komga.domain.model.DedupReviewCaseStatus
+import org.gotson.komga.domain.model.DedupResolution
+import org.gotson.komga.domain.model.DedupResolutionAction
+import org.gotson.komga.domain.model.DedupResolutionMember
+import org.gotson.komga.domain.model.DedupResolutionMemberState
+import org.gotson.komga.domain.model.DedupResolutionMode
+import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.model.DedupWork
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
 import org.gotson.komga.domain.model.Library
-import org.gotson.komga.domain.persistence.DedupDecisionRepository
 import org.gotson.komga.domain.persistence.DedupRepository
+import org.gotson.komga.domain.persistence.DedupResolutionRepository
 import org.gotson.komga.infrastructure.jooq.SplitDslDaoBase
 import org.gotson.komga.jooq.main.Tables
 import org.gotson.komga.jooq.main.tables.records.DedupFeatureRecord
@@ -45,18 +45,17 @@ class DedupDao(
   @Qualifier("dslContextRO") dslRO: DSLContext,
 ) : SplitDslDaoBase(dslRW, dslRO),
   DedupRepository,
-  DedupDecisionRepository {
+  DedupResolutionRepository {
   private val settings = Tables.DEDUP_LIBRARY_SETTINGS
   private val work = Tables.DEDUP_WORK
-  private val relation = Tables.DEDUP_RELATION
-  private val reviewCase = Tables.DEDUP_REVIEW_CASE
-  private val reviewMember = Tables.DEDUP_REVIEW_CASE_MEMBER
-  private val override = Tables.DEDUP_OVERRIDE
-  private val decision = Tables.DEDUP_DECISION
-  private val decisionItem = Tables.DEDUP_DECISION_ITEM
-  private val gorseSync = Tables.DEDUP_GORSE_SYNC
   private val feature = Tables.DEDUP_FEATURE
   private val pageFeature = Tables.DEDUP_PAGE_FEATURE
+  private val relation = Tables.DEDUP_RELATION
+  private val cluster = Tables.DEDUP_CLUSTER
+  private val clusterMember = Tables.DEDUP_CLUSTER_MEMBER
+  private val resolution = Tables.DEDUP_RESOLUTION
+  private val resolutionMember = Tables.DEDUP_RESOLUTION_MEMBER
+  private val gorseSync = Tables.DEDUP_GORSE_SYNC
 
   override fun findLibrarySettings(libraryId: String): DedupLibrarySettings? =
     dslRO
@@ -72,46 +71,43 @@ class DedupDao(
       .fetch()
       .map { it.toDomain() }
 
-  override fun saveLibrarySettings(settings: DedupLibrarySettings) {
+  override fun saveLibrarySettings(value: DedupLibrarySettings) {
     dslRW
       .insertInto(
-        this.settings,
-        this.settings.LIBRARY_ID,
-        this.settings.ENABLED,
-        this.settings.PAUSED,
-        this.settings.SCAN_INTERVAL,
-        this.settings.BATCH_SIZE,
-        this.settings.MAX_DURATION_SECONDS,
-        this.settings.QUIET_PERIOD_SECONDS,
-        this.settings.COMPLETION_STABILITY_SECONDS,
-        this.settings.COVER_CANDIDATE_DISTANCE,
-        this.settings.COVER_TOP_K,
-        this.settings.CREATED_DATE,
-        this.settings.LAST_MODIFIED_DATE,
+        settings,
+        settings.LIBRARY_ID,
+        settings.ENABLED,
+        settings.PAUSED,
+        settings.SCAN_INTERVAL,
+        settings.BATCH_SIZE,
+        settings.MAX_DURATION_SECONDS,
+        settings.QUIET_PERIOD_SECONDS,
+        settings.COVER_CANDIDATE_DISTANCE,
+        settings.COVER_TOP_K,
+        settings.CREATED_DATE,
+        settings.LAST_MODIFIED_DATE,
       ).values(
-        settings.libraryId,
-        settings.enabled,
-        settings.paused,
-        settings.scanInterval.name,
-        settings.batchSize,
-        settings.maxDurationSeconds,
-        settings.quietPeriodSeconds,
-        settings.completionStabilitySeconds,
-        settings.coverCandidateDistance,
-        settings.coverTopK,
-        settings.createdDate,
-        settings.lastModifiedDate,
+        value.libraryId,
+        value.enabled,
+        value.paused,
+        value.scanInterval.name,
+        value.batchSize,
+        value.maxDurationSeconds,
+        value.quietPeriodSeconds,
+        value.coverCandidateDistance,
+        value.coverTopK,
+        value.createdDate,
+        value.lastModifiedDate,
       ).onDuplicateKeyUpdate()
-      .set(this.settings.ENABLED, settings.enabled)
-      .set(this.settings.PAUSED, settings.paused)
-      .set(this.settings.SCAN_INTERVAL, settings.scanInterval.name)
-      .set(this.settings.BATCH_SIZE, settings.batchSize)
-      .set(this.settings.MAX_DURATION_SECONDS, settings.maxDurationSeconds)
-      .set(this.settings.QUIET_PERIOD_SECONDS, settings.quietPeriodSeconds)
-      .set(this.settings.COMPLETION_STABILITY_SECONDS, settings.completionStabilitySeconds)
-      .set(this.settings.COVER_CANDIDATE_DISTANCE, settings.coverCandidateDistance)
-      .set(this.settings.COVER_TOP_K, settings.coverTopK)
-      .set(this.settings.LAST_MODIFIED_DATE, settings.lastModifiedDate)
+      .set(settings.ENABLED, value.enabled)
+      .set(settings.PAUSED, value.paused)
+      .set(settings.SCAN_INTERVAL, value.scanInterval.name)
+      .set(settings.BATCH_SIZE, value.batchSize)
+      .set(settings.MAX_DURATION_SECONDS, value.maxDurationSeconds)
+      .set(settings.QUIET_PERIOD_SECONDS, value.quietPeriodSeconds)
+      .set(settings.COVER_CANDIDATE_DISTANCE, value.coverCandidateDistance)
+      .set(settings.COVER_TOP_K, value.coverTopK)
+      .set(settings.LAST_MODIFIED_DATE, value.lastModifiedDate)
       .execute()
   }
 
@@ -124,9 +120,8 @@ class DedupDao(
     priority: Int,
     maxAttempts: Int,
   ): DedupWork {
-    require(maxAttempts > 0) { "Maximum attempts must be positive" }
+    require(maxAttempts > 0)
     val now = LocalDateTime.now()
-
     dslRW
       .insertInto(
         work,
@@ -143,38 +138,18 @@ class DedupDao(
         work.PRIORITY,
         work.CREATED_DATE,
         work.LAST_MODIFIED_DATE,
-      ).values(
-        id,
-        libraryId,
-        type.name,
-        targetKey,
-        DedupWorkState.WAITING.name,
-        1L,
-        0L,
-        notBefore,
-        0,
-        maxAttempts,
-        priority,
-        now,
-        now,
-      ).onDuplicateKeyUpdate()
+      ).values(id, libraryId, type.name, targetKey, DedupWorkState.WAITING.name, 1L, 0L, notBefore, 0, maxAttempts, priority, now, now)
+      .onDuplicateKeyUpdate()
       .set(work.DESIRED_REVISION, work.DESIRED_REVISION.plus(1L))
-      .set(
-        work.STATE,
-        DSL
-          .`when`(work.STATE.eq(DedupWorkState.RUNNING.name), DedupWorkState.RUNNING.name)
-          .otherwise(DedupWorkState.WAITING.name),
-      ).set(work.NOT_BEFORE, notBefore)
+      .set(work.STATE, DSL.`when`(work.STATE.eq(DedupWorkState.RUNNING.name), DedupWorkState.RUNNING.name).otherwise(DedupWorkState.WAITING.name))
+      .set(work.NOT_BEFORE, notBefore)
       .set(work.NEXT_RETRY_AT, null as LocalDateTime?)
-      .set(
-        work.ATTEMPT_COUNT,
-        DSL.`when`(work.STATE.eq(DedupWorkState.RUNNING.name), work.ATTEMPT_COUNT).otherwise(0),
-      ).set(work.MAX_ATTEMPTS, maxAttempts)
+      .set(work.ATTEMPT_COUNT, DSL.`when`(work.STATE.eq(DedupWorkState.RUNNING.name), work.ATTEMPT_COUNT).otherwise(0))
+      .set(work.MAX_ATTEMPTS, maxAttempts)
       .set(work.PRIORITY, DSL.greatest(work.PRIORITY, DSL.inline(priority)))
       .set(work.COMPLETED_DATE, null as LocalDateTime?)
       .set(work.LAST_MODIFIED_DATE, now)
       .execute()
-
     return requireNotNull(findWorkByNaturalKey(libraryId, type, targetKey))
   }
 
@@ -186,8 +161,7 @@ class DedupDao(
     allowedTypes: Set<DedupWorkType>?,
     now: LocalDateTime,
   ): DedupWork? {
-    require(!leaseDuration.isNegative && !leaseDuration.isZero) { "Lease duration must be positive" }
-
+    require(!leaseDuration.isNegative && !leaseDuration.isZero)
     repeat(3) {
       val record =
         dslRW
@@ -201,24 +175,21 @@ class DedupDao(
           .orderBy(work.PRIORITY.desc(), work.CREATED_DATE, work.ID)
           .limit(1)
           .fetchOne() ?: return null
-
-      val leaseToken = UUID.randomUUID().toString()
+      val token = UUID.randomUUID().toString()
       val updated =
         dslRW
           .update(work)
           .set(work.STATE, DedupWorkState.RUNNING.name)
           .set(work.LEASE_OWNER, owner)
-          .set(work.LEASE_TOKEN, leaseToken)
+          .set(work.LEASE_TOKEN, token)
           .set(work.LEASE_UNTIL, now.plus(leaseDuration))
           .set(work.LAST_MODIFIED_DATE, now)
           .where(work.ID.eq(record.id))
           .and(work.STATE.eq(record.state))
           .and(work.LEASE_TOKEN.isNull)
           .execute()
-
       if (updated == 1) return findWorkById(record.id!!)
     }
-
     return null
   }
 
@@ -228,16 +199,12 @@ class DedupDao(
     completedRevision: Long,
     now: LocalDateTime,
   ): Boolean {
-    val pendingState =
-      DSL
-        .`when`(work.NOT_BEFORE.gt(now), DedupWorkState.WAITING.name)
-        .otherwise(DedupWorkState.PENDING.name)
-    val hasNewerRevision = work.DESIRED_REVISION.gt(completedRevision)
-
+    val newer = work.DESIRED_REVISION.gt(completedRevision)
+    val pending = DSL.`when`(work.NOT_BEFORE.gt(now), DedupWorkState.WAITING.name).otherwise(DedupWorkState.PENDING.name)
     return dslRW
       .update(work)
       .set(work.COMPLETED_REVISION, completedRevision)
-      .set(work.STATE, DSL.`when`(hasNewerRevision, pendingState).otherwise(DedupWorkState.SUCCEEDED.name))
+      .set(work.STATE, DSL.`when`(newer, pending).otherwise(DedupWorkState.SUCCEEDED.name))
       .set(work.LEASE_OWNER, null as String?)
       .set(work.LEASE_TOKEN, null as String?)
       .set(work.LEASE_UNTIL, null as LocalDateTime?)
@@ -245,12 +212,11 @@ class DedupDao(
       .set(work.NEXT_RETRY_AT, null as LocalDateTime?)
       .set(work.LAST_ERROR_CODE, null as String?)
       .set(work.LAST_ERROR, null as String?)
-      .set(work.COMPLETED_DATE, DSL.`when`(hasNewerRevision, null as LocalDateTime?).otherwise(now))
+      .set(work.COMPLETED_DATE, DSL.`when`(newer, null as LocalDateTime?).otherwise(now))
       .set(work.LAST_MODIFIED_DATE, now)
       .where(work.ID.eq(workId))
       .and(work.STATE.eq(DedupWorkState.RUNNING.name))
       .and(work.LEASE_TOKEN.eq(leaseToken))
-      .and(work.COMPLETED_REVISION.lt(completedRevision))
       .execute() == 1
   }
 
@@ -270,27 +236,14 @@ class DedupDao(
         .and(work.STATE.eq(DedupWorkState.RUNNING.name))
         .and(work.LEASE_TOKEN.eq(leaseToken))
         .fetchOne() ?: return false
-
-    val newerRevisionPending = current.desiredRevision!! > attemptedRevision
-    val attempts = if (newerRevisionPending) 0 else current.attemptCount!! + 1
-    val terminal = !newerRevisionPending && attempts >= current.maxAttempts!!
-    val retryAt =
-      if (newerRevisionPending || terminal) {
-        null
-      } else {
-        val exponent = min(attempts - 1, 10)
-        now.plusSeconds(min(3_600L, 5L * (1L shl exponent)))
-      }
-
+    val newer = current.desiredRevision!! > attemptedRevision
+    val attempts = if (newer) 0 else current.attemptCount!! + 1
+    val terminal = !newer && attempts >= current.maxAttempts!!
+    val retryAt = if (newer || terminal) null else now.plusSeconds(min(3_600L, 5L * (1L shl min(attempts - 1, 10))))
     return dslRW
       .update(work)
-      .set(
-        work.STATE,
-        when {
-          terminal -> DedupWorkState.FAILED_REVIEW.name
-          else -> DedupWorkState.WAITING.name
-        },
-      ).set(work.LEASE_OWNER, null as String?)
+      .set(work.STATE, if (terminal) DedupWorkState.FAILED_REVIEW.name else DedupWorkState.WAITING.name)
+      .set(work.LEASE_OWNER, null as String?)
       .set(work.LEASE_TOKEN, null as String?)
       .set(work.LEASE_UNTIL, null as LocalDateTime?)
       .set(work.ATTEMPT_COUNT, attempts)
@@ -448,16 +401,14 @@ class DedupDao(
     libraryId: String,
     activeBookIds: Set<String>,
   ): Int {
-    val staleIds =
+    val stale =
       dslRO
         .select(feature.BOOK_ID)
         .from(feature)
         .where(feature.LIBRARY_ID.eq(libraryId))
         .fetch(feature.BOOK_ID)
         .filterNot(activeBookIds::contains)
-    return staleIds.chunked(500).sumOf { ids ->
-      dslRW.deleteFrom(feature).where(feature.BOOK_ID.`in`(ids)).execute()
-    }
+    return stale.chunked(500).sumOf { dslRW.deleteFrom(feature).where(feature.BOOK_ID.`in`(it)).execute() }
   }
 
   override fun findPageFeatures(
@@ -472,15 +423,7 @@ class DedupDao(
       .and(pageFeature.FEATURE_SCHEMA_VERSION.eq(featureSchemaVersion))
       .orderBy(pageFeature.PAGE_NUMBER)
       .fetch {
-        DedupPageFeature(
-          bookId = it.bookId!!,
-          sourceContentGeneration = it.sourceContentGeneration!!,
-          featureSchemaVersion = it.featureSchemaVersion!!,
-          pageNumber = it.pageNumber!!,
-          exactHash = it.exactHash,
-          perceptualHash = it.perceptualHash,
-          quality = it.quality,
-        )
+        DedupPageFeature(it.bookId!!, it.sourceContentGeneration!!, it.featureSchemaVersion!!, it.pageNumber!!, it.exactHash, it.perceptualHash, it.quality)
       }
 
   @Transactional
@@ -502,123 +445,44 @@ class DedupDao(
           pageFeature.EXACT_HASH,
           pageFeature.PERCEPTUAL_HASH,
           pageFeature.QUALITY,
-        ).values(
-          bookId,
-          sourceContentGeneration,
-          featureSchemaVersion,
-          value.pageNumber,
-          value.exactHash,
-          value.perceptualHash,
-          value.quality,
-        ).execute()
+        ).values(bookId, sourceContentGeneration, featureSchemaVersion, value.pageNumber, value.exactHash, value.perceptualHash, value.quality)
+        .execute()
     }
   }
 
-  @Transactional
-  override fun replaceReviewCases(
-    libraryId: String,
-    origin: DedupReviewCaseOrigin,
-    candidates: Collection<DedupReviewCaseCandidate>,
-    now: LocalDateTime,
-  ) {
-    require(candidates.all { it.libraryId == libraryId && it.origin == origin })
-
-    val existing = findReviewCases(libraryId, origin).associateBy { it.id }
-    val incomingIds = candidates.map { it.id }.toSet()
-    val removedIds = existing.keys - incomingIds
-    if (removedIds.isNotEmpty()) {
-      dslRW.deleteFrom(reviewMember).where(reviewMember.CASE_ID.`in`(removedIds)).execute()
-      dslRW.deleteFrom(reviewCase).where(reviewCase.ID.`in`(removedIds)).execute()
-    }
-
-    candidates.forEach { candidate -> upsertReviewCaseCandidate(candidate, existing[candidate.id], now) }
-
-    val relations = candidates.flatMap { it.relations }
-    if (origin == DedupReviewCaseOrigin.EXACT_FILE) {
-      val relationIds = relations.map { it.id }.toSet()
-      val delete =
-        dslRW
-          .deleteFrom(relation)
-          .where(relation.LIBRARY_ID.eq(libraryId))
-          .and(relation.RELATION_TYPE.eq(DedupRelationType.EXACT_FILE.name))
-      if (relationIds.isNotEmpty()) delete.and(relation.ID.notIn(relationIds)).execute() else delete.execute()
-    } else if (origin == DedupReviewCaseOrigin.COVER_SIMILARITY) {
-      val relationIds = relations.map { it.id }.toSet()
-      val delete =
-        dslRW
-          .deleteFrom(relation)
-          .where(relation.LIBRARY_ID.eq(libraryId))
-          .and(relation.RELATION_TYPE.eq(DedupRelationType.VISUALLY_SIMILAR.name))
-      if (relationIds.isNotEmpty()) delete.and(relation.ID.notIn(relationIds)).execute() else delete.execute()
-    }
-    relations.forEach(::upsertRelation)
+  override fun findRelation(
+    firstBookId: String,
+    secondBookId: String,
+  ): DedupRelation? {
+    val (low, high) = canonicalPair(firstBookId, secondBookId)
+    return dslRO
+      .selectFrom(relation)
+      .where(relation.BOOK_LOW_ID.eq(low))
+      .and(relation.BOOK_HIGH_ID.eq(high))
+      .fetchOne()
+      ?.toRelation()
   }
 
-  @Transactional
-  override fun saveReviewCase(
-    candidate: DedupReviewCaseCandidate,
-    now: LocalDateTime,
-  ) {
-    upsertReviewCaseCandidate(candidate, findReviewCase(candidate.id), now)
-    candidate.relations.forEach(::upsertRelation)
+  override fun findRelations(libraryId: String): List<DedupRelation> =
+    dslRO
+      .selectFrom(relation)
+      .where(relation.LIBRARY_ID.eq(libraryId))
+      .orderBy(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
+      .fetch()
+      .map { it.toRelation() }
+
+  override fun findRelationsForBooks(bookIds: Set<String>): List<DedupRelation> {
+    if (bookIds.isEmpty()) return emptyList()
+    return dslRO
+      .selectFrom(relation)
+      .where(relation.BOOK_LOW_ID.`in`(bookIds))
+      .and(relation.BOOK_HIGH_ID.`in`(bookIds))
+      .orderBy(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
+      .fetch()
+      .map { it.toRelation() }
   }
 
-  private fun upsertReviewCaseCandidate(
-    candidate: DedupReviewCaseCandidate,
-    previous: DedupReviewCase?,
-    now: LocalDateTime,
-  ) {
-    val relationChanged =
-      candidate.relations.any { incoming ->
-        val current = findRelation(incoming.bookLowId, incoming.bookHighId)
-        current == null ||
-          current.type != incoming.type ||
-          current.lowContentGeneration != incoming.lowContentGeneration ||
-          current.highContentGeneration != incoming.highContentGeneration ||
-          current.lowMetadataGeneration != incoming.lowMetadataGeneration ||
-          current.highMetadataGeneration != incoming.highMetadataGeneration ||
-          (
-            incoming.type == DedupRelationType.VISUALLY_SIMILAR &&
-              (
-                current.lowCoverGeneration != incoming.lowCoverGeneration ||
-                  current.highCoverGeneration != incoming.highCoverGeneration
-              )
-          )
-      }
-    val changed = previous == null || previous.memberBookIds != candidate.memberBookIds || relationChanged
-    if (!changed) return
-    val revision = (previous?.revision ?: 0L) + 1L
-    val createdDate = previous?.createdDate ?: now
-    dslRW
-      .insertInto(
-        reviewCase,
-        reviewCase.ID,
-        reviewCase.LIBRARY_ID,
-        reviewCase.REVISION,
-        reviewCase.STATUS,
-        reviewCase.ORIGIN,
-        reviewCase.CREATED_DATE,
-        reviewCase.LAST_MODIFIED_DATE,
-      ).values(
-        candidate.id,
-        candidate.libraryId,
-        revision,
-        DedupReviewCaseStatus.REVIEW_REQUIRED.name,
-        candidate.origin.name,
-        createdDate,
-        now,
-      ).onDuplicateKeyUpdate()
-      .set(reviewCase.REVISION, revision)
-      .set(reviewCase.STATUS, DedupReviewCaseStatus.REVIEW_REQUIRED.name)
-      .set(reviewCase.SUGGESTED_KEEPER_BOOK_ID, null as String?)
-      .set(reviewCase.LAST_MODIFIED_DATE, now)
-      .execute()
-
-    dslRW.deleteFrom(reviewMember).where(reviewMember.CASE_ID.eq(candidate.id)).execute()
-    candidate.memberBookIds.forEach { bookId -> dslRW.insertInto(reviewMember).values(candidate.id, bookId).execute() }
-  }
-
-  private fun upsertRelation(value: DedupRelation) {
+  override fun saveRelation(value: DedupRelation) {
     dslRW
       .insertInto(
         relation,
@@ -643,6 +507,7 @@ class DedupDao(
         relation.UNMATCHED_PREFIX_COUNT,
         relation.UNMATCHED_SUFFIX_COUNT,
         relation.UNMATCHED_INTERNAL_COUNT,
+        relation.CONFIDENCE,
         relation.EVIDENCE_JSON,
         relation.FEATURE_SCHEMA_VERSION,
         relation.CLASSIFIER_RULE_VERSION,
@@ -664,13 +529,14 @@ class DedupDao(
         value.containedBookId,
         value.containerBookId,
         value.coverDistance,
-        value.coverageLeft?.toFloat(),
-        value.coverageRight?.toFloat(),
-        value.orderConsistency?.toFloat(),
+        value.coverageLeft,
+        value.coverageRight,
+        value.orderConsistency,
         value.longestMatchedRun,
         value.unmatchedPrefixCount,
         value.unmatchedSuffixCount,
         value.unmatchedInternalCount,
+        value.confidence,
         value.evidenceJson,
         value.featureSchemaVersion,
         value.classifierRuleVersion,
@@ -678,6 +544,8 @@ class DedupDao(
         value.createdDate,
         value.lastModifiedDate,
       ).onDuplicateKeyUpdate()
+      .set(relation.ID, value.id)
+      .set(relation.LIBRARY_ID, value.libraryId)
       .set(relation.LOW_CONTENT_GENERATION, value.lowContentGeneration)
       .set(relation.HIGH_CONTENT_GENERATION, value.highContentGeneration)
       .set(relation.LOW_COVER_GENERATION, value.lowCoverGeneration)
@@ -695,6 +563,7 @@ class DedupDao(
       .set(relation.UNMATCHED_PREFIX_COUNT, value.unmatchedPrefixCount)
       .set(relation.UNMATCHED_SUFFIX_COUNT, value.unmatchedSuffixCount)
       .set(relation.UNMATCHED_INTERNAL_COUNT, value.unmatchedInternalCount)
+      .set(relation.CONFIDENCE, value.confidence?.toFloat())
       .set(relation.EVIDENCE_JSON, value.evidenceJson)
       .set(relation.FEATURE_SCHEMA_VERSION, value.featureSchemaVersion)
       .set(relation.CLASSIFIER_RULE_VERSION, value.classifierRuleVersion)
@@ -703,519 +572,561 @@ class DedupDao(
       .execute()
   }
 
-  override fun findReviewCase(caseId: String): DedupReviewCase? =
-    dslRO.selectFrom(reviewCase).where(reviewCase.ID.eq(caseId)).fetchOne()?.let { record ->
-      record.toDomain(findCaseMembers(setOf(caseId))[caseId].orEmpty())
-    }
-
-  override fun findRelation(
-    firstBookId: String,
-    secondBookId: String,
-  ): DedupRelation? {
-    val (low, high) = listOf(firstBookId, secondBookId).sorted()
-    return dslRO
-      .selectFrom(relation)
-      .where(relation.BOOK_LOW_ID.eq(low))
-      .and(relation.BOOK_HIGH_ID.eq(high))
-      .fetchOne()
-      ?.let {
-        DedupRelation(
-          id = it.id!!,
-          libraryId = it.libraryId!!,
-          bookLowId = it.bookLowId!!,
-          bookHighId = it.bookHighId!!,
-          lowContentGeneration = it.lowContentGeneration!!,
-          highContentGeneration = it.highContentGeneration!!,
-          lowCoverGeneration = it.lowCoverGeneration!!,
-          highCoverGeneration = it.highCoverGeneration!!,
-          lowMetadataGeneration = it.lowMetadataGeneration!!,
-          highMetadataGeneration = it.highMetadataGeneration!!,
-          type = DedupRelationType.valueOf(it.relationType!!),
-          containedBookId = it.containedBookId,
-          containerBookId = it.containerBookId,
-          coverDistance = it.coverDistance,
-          coverageLeft = it.coverageLeft?.toDouble(),
-          coverageRight = it.coverageRight?.toDouble(),
-          orderConsistency = it.orderConsistency?.toDouble(),
-          longestMatchedRun = it.longestMatchedRun,
-          unmatchedPrefixCount = it.unmatchedPrefixCount,
-          unmatchedSuffixCount = it.unmatchedSuffixCount,
-          unmatchedInternalCount = it.unmatchedInternalCount,
-          status =
-            org.gotson.komga.domain.model.DedupRelationStatus
-              .valueOf(it.status!!),
-          evidenceJson = it.evidenceJson!!,
-          featureSchemaVersion = it.featureSchemaVersion!!,
-          classifierRuleVersion = it.classifierRuleVersion!!,
-          createdDate = it.createdDate!!,
-          lastModifiedDate = it.lastModifiedDate!!,
-        )
-      }
-  }
-
-  override fun setReviewCaseKeeper(
-    caseId: String,
-    expectedRevision: Long,
-    bookId: String,
-    now: LocalDateTime,
-  ): Boolean =
-    dslRW
-      .update(reviewCase)
-      .set(reviewCase.SUGGESTED_KEEPER_BOOK_ID, bookId)
-      .set(reviewCase.REVISION, reviewCase.REVISION.plus(1L))
-      .set(reviewCase.LAST_MODIFIED_DATE, now)
-      .where(reviewCase.ID.eq(caseId))
-      .and(reviewCase.REVISION.eq(expectedRevision))
-      .andExists(
-        DSL
-          .selectOne()
-          .from(reviewMember)
-          .where(reviewMember.CASE_ID.eq(caseId))
-          .and(reviewMember.BOOK_ID.eq(bookId)),
-      ).execute() == 1
-
   @Transactional
-  override fun applyOverride(
-    caseId: String,
-    expectedRevision: Long,
-    override: DedupOverride,
-    newStatus: DedupReviewCaseStatus,
+  override fun replaceExactRelations(
+    libraryId: String,
+    relations: Collection<DedupRelation>,
     now: LocalDateTime,
-  ): Boolean {
-    val updated =
-      dslRW
-        .update(reviewCase)
-        .set(reviewCase.STATUS, newStatus.name)
-        .set(reviewCase.REVISION, reviewCase.REVISION.plus(1L))
-        .set(reviewCase.LAST_MODIFIED_DATE, now)
-        .where(reviewCase.ID.eq(caseId))
-        .and(reviewCase.REVISION.eq(expectedRevision))
-        .execute()
-    if (updated != 1) return false
-
-    dslRW
-      .insertInto(
-        this.override,
-        this.override.ID,
-        this.override.TYPE,
-        this.override.BOOK_LOW_ID,
-        this.override.BOOK_HIGH_ID,
-        this.override.BOOK_ID,
-        this.override.LOW_CONTENT_GENERATION,
-        this.override.HIGH_CONTENT_GENERATION,
-        this.override.LOW_COVER_GENERATION,
-        this.override.HIGH_COVER_GENERATION,
-        this.override.ACTOR_ID,
-        this.override.REASON,
-        this.override.CREATED_DATE,
-      ).values(
-        override.id,
-        override.type.name,
-        override.bookLowId,
-        override.bookHighId,
-        override.bookId,
-        override.lowContentGeneration,
-        override.highContentGeneration,
-        override.lowCoverGeneration,
-        override.highCoverGeneration,
-        override.actorId,
-        override.reason,
-        override.createdDate,
-      ).execute()
-    return true
-  }
-
-  override fun findProtectedBookIds(bookIds: Set<String>): Set<String> =
-    if (bookIds.isEmpty()) {
-      emptySet()
-    } else {
-      dslRO
-        .select(this.override.BOOK_ID)
-        .from(this.override)
-        .where(this.override.TYPE.eq(DedupOverrideType.PROTECTED.name))
-        .and(this.override.BOOK_ID.`in`(bookIds))
-        .fetchSet(this.override.BOOK_ID)
-        .filterNotNull()
-        .toSet()
-    }
-
-  override fun findReviewCases(
-    libraryId: String?,
-    origin: DedupReviewCaseOrigin?,
-  ): List<DedupReviewCase> {
-    val records =
-      dslRO
-        .selectFrom(reviewCase)
-        .where(libraryId?.let { reviewCase.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
-        .and(origin?.let { reviewCase.ORIGIN.eq(it.name) } ?: DSL.noCondition())
-        .orderBy(reviewCase.LAST_MODIFIED_DATE.desc(), reviewCase.ID)
-        .fetch()
-    val members = findCaseMembers(records.mapNotNull { it.id }.toSet())
-    return records.map { it.toDomain(members[it.id].orEmpty()) }
-  }
-
-  private fun findCaseMembers(caseIds: Set<String>): Map<String, Set<String>> =
-    if (caseIds.isEmpty()) {
-      emptyMap()
-    } else {
-      dslRO
-        .select(reviewMember.CASE_ID, reviewMember.BOOK_ID)
-        .from(reviewMember)
-        .where(reviewMember.CASE_ID.`in`(caseIds))
-        .fetchGroups(reviewMember.CASE_ID, reviewMember.BOOK_ID)
-        .mapValues { it.value.toSet() }
-    }
-
-  @Transactional
-  override fun insertDecision(
-    decision: DedupDecision,
-    items: Collection<DedupDecisionItem>,
   ) {
-    require(items.isNotEmpty()) { "A dedup decision must contain at least one removal item" }
-    require(items.all { it.decisionId == decision.id }) { "Decision items must belong to the decision" }
+    val currentIds = relations.map { it.id }.toSet()
+    var update =
+      dslRW
+        .update(relation)
+        .set(relation.STATUS, DedupRelationStatus.STALE.name)
+        .set(relation.LAST_MODIFIED_DATE, now)
+        .where(relation.LIBRARY_ID.eq(libraryId))
+        .and(relation.RELATION_TYPE.eq(DedupRelationType.EXACT_FILE.name))
+    if (currentIds.isNotEmpty()) update = update.and(relation.ID.notIn(currentIds))
+    update.execute()
+    relations.forEach(::saveRelation)
+  }
+
+  @Transactional
+  override fun replaceCoverRelations(
+    libraryId: String,
+    relations: Collection<DedupRelation>,
+    now: LocalDateTime,
+  ) {
+    val pairs = relations.map { it.bookLowId to it.bookHighId }.toSet()
+    dslRW
+      .select(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
+      .from(relation)
+      .where(relation.LIBRARY_ID.eq(libraryId))
+      .and(relation.COVER_DISTANCE.isNotNull)
+      .fetch()
+      .map { it.value1() to it.value2() }
+      .filterNot(pairs::contains)
+      .forEach { (low, high) ->
+        dslRW
+          .update(relation)
+          .set(relation.COVER_DISTANCE, null as Int?)
+          .set(relation.LOW_COVER_GENERATION, "")
+          .set(relation.HIGH_COVER_GENERATION, "")
+          .set(relation.LAST_MODIFIED_DATE, now)
+          .where(relation.BOOK_LOW_ID.eq(low))
+          .and(relation.BOOK_HIGH_ID.eq(high))
+          .execute()
+      }
+    relations.forEach(::saveRelation)
+  }
+
+  override fun findCluster(clusterId: String): DedupClusterWithMembers? {
+    val value =
+      dslRO
+        .selectFrom(cluster)
+        .where(cluster.ID.eq(clusterId))
+        .fetchOne()
+        ?.toCluster() ?: return null
+    return DedupClusterWithMembers(value, findClusterMembers(setOf(clusterId))[clusterId].orEmpty())
+  }
+
+  override fun findAllClusters(libraryId: String?): List<DedupClusterWithMembers> {
+    val values =
+      dslRO
+        .selectFrom(cluster)
+        .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
+        .orderBy(cluster.CREATED_DATE, cluster.ID)
+        .fetch()
+        .map { it.toCluster() }
+    val members = findClusterMembers(values.map { it.id }.toSet())
+    return values.map { DedupClusterWithMembers(it, members[it.id].orEmpty()) }
+  }
+
+  override fun findClusters(
+    libraryId: String?,
+    status: DedupClusterStatus?,
+    reviewable: Boolean?,
+    offset: Int,
+    limit: Int,
+  ): List<DedupClusterWithMembers> {
+    require(offset >= 0 && limit in 1..100)
+    val values =
+      dslRO
+        .selectFrom(cluster)
+        .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
+        .and(status?.let { cluster.STATUS.eq(it.name) } ?: DSL.noCondition())
+        .and(reviewable?.let { cluster.REVIEWABLE.eq(it) } ?: DSL.noCondition())
+        .and(cluster.SUPERSEDED_BY.isNull)
+        .orderBy(cluster.LAST_MODIFIED_DATE.desc(), cluster.ID)
+        .offset(offset)
+        .limit(limit)
+        .fetch()
+        .map { it.toCluster() }
+    val members = findClusterMembers(values.map { it.id }.toSet())
+    return values.map { DedupClusterWithMembers(it, members[it.id].orEmpty()) }
+  }
+
+  override fun countClusters(
+    libraryId: String?,
+    status: DedupClusterStatus?,
+    reviewable: Boolean?,
+  ): Long =
+    dslRO
+      .selectCount()
+      .from(cluster)
+      .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
+      .and(status?.let { cluster.STATUS.eq(it.name) } ?: DSL.noCondition())
+      .and(reviewable?.let { cluster.REVIEWABLE.eq(it) } ?: DSL.noCondition())
+      .and(cluster.SUPERSEDED_BY.isNull)
+      .fetchOne(0, Long::class.java) ?: 0L
+
+  override fun countClustersByStatus(): Map<DedupClusterStatus, Int> =
+    dslRO
+      .select(cluster.STATUS, DSL.count())
+      .from(cluster)
+      .where(cluster.SUPERSEDED_BY.isNull)
+      .groupBy(cluster.STATUS)
+      .fetch()
+      .associate { DedupClusterStatus.valueOf(it.value1()) to it.value2() }
+
+  override fun lockLibraryForClusterRebuild(libraryId: String) {
+    check(
+      dslRW
+        .update(settings)
+        .set(settings.LAST_MODIFIED_DATE, settings.LAST_MODIFIED_DATE)
+        .where(settings.LIBRARY_ID.eq(libraryId))
+        .execute() == 1,
+    ) { "Dedup Library settings disappeared during cluster rebuild" }
+  }
+
+  @Transactional
+  override fun saveCluster(
+    value: DedupCluster,
+    members: Collection<DedupClusterMember>,
+  ) {
     dslRW
       .insertInto(
-        this.decision,
-        this.decision.ID,
-        this.decision.REVIEW_CASE_ID,
-        this.decision.PLAN_REVISION,
-        this.decision.MODE,
-        this.decision.KEEPER_BOOK_ID,
-        this.decision.KEEPER_SNAPSHOT_JSON,
-        this.decision.PLAN_JSON,
-        this.decision.EVIDENCE_JSON,
-        this.decision.ELIGIBILITY_JSON,
-        this.decision.CLASSIFIER_RULE_VERSION,
-        this.decision.MANUAL_CONFIRMATION_JSON,
-        this.decision.STATE,
-        this.decision.ACTOR_ID,
-        this.decision.EXECUTION_TOKEN,
-        this.decision.LEASE_UNTIL,
-        this.decision.RESULT_JSON,
-        this.decision.GORSE_SYNC_STATE,
-        this.decision.REMOTE_CONFIRMATION_STATE,
-        this.decision.APPROVED_DATE,
-        this.decision.EXECUTED_DATE,
-        this.decision.COMPLETED_DATE,
-        this.decision.CREATED_DATE,
-        this.decision.LAST_MODIFIED_DATE,
+        cluster,
+        cluster.ID,
+        cluster.LIBRARY_ID,
+        cluster.REVISION,
+        cluster.STATUS,
+        cluster.REVIEWABLE,
+        cluster.ANCHOR_BOOK_ID,
+        cluster.TOPOLOGY_FINGERPRINT,
+        cluster.EVIDENCE_FINGERPRINT,
+        cluster.STATE_FINGERPRINT,
+        cluster.PROCESSED_REVISION,
+        cluster.LAST_RESOLUTION_ID,
+        cluster.REOPEN_REASON,
+        cluster.SUPERSEDED_BY,
+        cluster.CREATED_DATE,
+        cluster.LAST_MODIFIED_DATE,
+        cluster.PROCESSED_DATE,
       ).values(
-        decision.id,
-        decision.reviewCaseId,
-        decision.planRevision,
-        decision.mode.name,
-        decision.keeperBookId,
-        decision.keeperSnapshotJson,
-        decision.planJson,
-        decision.evidenceJson,
-        decision.eligibilityJson,
-        decision.classifierRuleVersion,
-        decision.manualConfirmationJson,
-        decision.state.name,
-        decision.actorId,
-        decision.executionToken,
-        decision.leaseUntil,
-        decision.resultJson,
-        decision.gorseSyncState,
-        decision.remoteConfirmationState,
-        decision.approvedDate,
-        decision.executedDate,
-        decision.completedDate,
-        decision.createdDate,
-        decision.lastModifiedDate,
-      ).execute()
-
-    items.forEach { item ->
+        value.id,
+        value.libraryId,
+        value.revision,
+        value.status.name,
+        value.reviewable,
+        value.anchorBookId,
+        value.topologyFingerprint,
+        value.evidenceFingerprint,
+        value.stateFingerprint,
+        value.processedRevision,
+        value.lastResolutionId,
+        value.reopenReason,
+        value.supersededBy,
+        value.createdDate,
+        value.lastModifiedDate,
+        value.processedDate,
+      ).onDuplicateKeyUpdate()
+      .set(cluster.LIBRARY_ID, value.libraryId)
+      .set(cluster.REVISION, value.revision)
+      .set(cluster.STATUS, value.status.name)
+      .set(cluster.REVIEWABLE, value.reviewable)
+      .set(cluster.ANCHOR_BOOK_ID, value.anchorBookId)
+      .set(cluster.TOPOLOGY_FINGERPRINT, value.topologyFingerprint)
+      .set(cluster.EVIDENCE_FINGERPRINT, value.evidenceFingerprint)
+      .set(cluster.STATE_FINGERPRINT, value.stateFingerprint)
+      .set(cluster.PROCESSED_REVISION, value.processedRevision)
+      .set(cluster.LAST_RESOLUTION_ID, value.lastResolutionId)
+      .set(cluster.REOPEN_REASON, value.reopenReason)
+      .set(cluster.SUPERSEDED_BY, value.supersededBy)
+      .set(cluster.LAST_MODIFIED_DATE, value.lastModifiedDate)
+      .set(cluster.PROCESSED_DATE, value.processedDate)
+      .execute()
+    val supplied = members.map { it.bookId }.toSet()
+    dslRW
+      .select(clusterMember.BOOK_ID)
+      .from(clusterMember)
+      .where(clusterMember.CLUSTER_ID.eq(value.id))
+      .fetch(clusterMember.BOOK_ID)
+      .filterNot(supplied::contains)
+      .forEach { bookId ->
+        dslRW
+          .update(clusterMember)
+          .set(clusterMember.PRESENT, false)
+          .set(clusterMember.LAST_MODIFIED_DATE, value.lastModifiedDate)
+          .where(clusterMember.CLUSTER_ID.eq(value.id))
+          .and(clusterMember.BOOK_ID.eq(bookId))
+          .execute()
+      }
+    members.forEach { member ->
       dslRW
         .insertInto(
-          decisionItem,
-          decisionItem.ID,
-          decisionItem.DECISION_ID,
-          decisionItem.BOOK_ID,
-          decisionItem.SERIES_ID,
-          decisionItem.LIBRARY_ID,
-          decisionItem.TITLE_SNAPSHOT,
-          decisionItem.PATH_SNAPSHOT,
-          decisionItem.EXPECTED_PATH,
-          decisionItem.EXPECTED_SIZE,
-          decisionItem.EXPECTED_MTIME,
-          decisionItem.EXPECTED_ARCHIVE_HASH,
-          decisionItem.SOURCE_CONTENT_GENERATION,
-          decisionItem.SERIES_SCOPE_REVISION,
-          decisionItem.STATE_REVISION,
-          decisionItem.ACKNOWLEDGED_REASONS_JSON,
-          decisionItem.DIRECT_RELATION_ID,
-          decisionItem.DIRECT_RELATION_GENERATIONS,
-          decisionItem.STATE,
-          decisionItem.ATTEMPT_COUNT,
-          decisionItem.RESULT_CODE,
-          decisionItem.RESULT_JSON,
-          decisionItem.LAST_ERROR,
-          decisionItem.STABILITY_NOT_BEFORE,
-          decisionItem.DELETED_DATE,
-          decisionItem.CREATED_DATE,
-          decisionItem.LAST_MODIFIED_DATE,
+          clusterMember,
+          clusterMember.CLUSTER_ID,
+          clusterMember.BOOK_ID,
+          clusterMember.PRESENT,
+          clusterMember.SOURCE_CONTENT_GENERATION,
+          clusterMember.SOURCE_COVER_GENERATION,
+          clusterMember.SOURCE_METADATA_GENERATION,
+          clusterMember.SERIES_SCOPE_REVISION,
+          clusterMember.CREATED_DATE,
+          clusterMember.LAST_MODIFIED_DATE,
         ).values(
-          item.id,
-          item.decisionId,
-          item.bookId,
-          item.seriesId,
-          item.libraryId,
-          item.titleSnapshot,
-          item.pathSnapshot,
-          item.expectedPath,
-          item.expectedSize,
-          item.expectedMtime,
-          item.expectedArchiveHash,
-          item.sourceContentGeneration,
-          item.seriesScopeRevision,
-          item.stateRevision,
-          item.acknowledgedReasonsJson,
-          item.directRelationId,
-          item.directRelationGenerations,
-          item.state.name,
-          item.attemptCount,
-          item.resultCode,
-          item.resultJson,
-          item.lastError,
-          item.stabilityNotBefore,
-          item.deletedDate,
-          item.createdDate,
-          item.lastModifiedDate,
-        ).execute()
+          member.clusterId,
+          member.bookId,
+          member.present,
+          member.sourceContentGeneration,
+          member.sourceCoverGeneration,
+          member.sourceMetadataGeneration,
+          member.seriesScopeRevision,
+          member.createdDate,
+          member.lastModifiedDate,
+        ).onDuplicateKeyUpdate()
+        .set(clusterMember.PRESENT, member.present)
+        .set(clusterMember.SOURCE_CONTENT_GENERATION, member.sourceContentGeneration)
+        .set(clusterMember.SOURCE_COVER_GENERATION, member.sourceCoverGeneration)
+        .set(clusterMember.SOURCE_METADATA_GENERATION, member.sourceMetadataGeneration)
+        .set(clusterMember.SERIES_SCOPE_REVISION, member.seriesScopeRevision)
+        .set(clusterMember.LAST_MODIFIED_DATE, member.lastModifiedDate)
+        .execute()
     }
   }
 
-  override fun findDecision(decisionId: String): DedupDecision? =
-    dslRO.selectFrom(decision).where(decision.ID.eq(decisionId)).fetchOne()?.let {
-      DedupDecision(
-        id = it.id!!,
-        reviewCaseId = it.reviewCaseId,
-        planRevision = it.planRevision!!,
-        mode = DedupDecisionMode.valueOf(it.mode!!),
-        keeperBookId = it.keeperBookId!!,
-        keeperSnapshotJson = it.keeperSnapshotJson!!,
-        planJson = it.planJson!!,
-        evidenceJson = it.evidenceJson!!,
-        eligibilityJson = it.eligibilityJson!!,
-        classifierRuleVersion = it.classifierRuleVersion!!,
-        manualConfirmationJson = it.manualConfirmationJson,
-        state = DedupDecisionState.valueOf(it.state!!),
-        actorId = it.actorId!!,
-        executionToken = it.executionToken,
-        leaseUntil = it.leaseUntil,
-        resultJson = it.resultJson!!,
-        gorseSyncState = it.gorseSyncState!!,
-        remoteConfirmationState = it.remoteConfirmationState!!,
-        approvedDate = it.approvedDate,
-        executedDate = it.executedDate,
-        completedDate = it.completedDate,
-        createdDate = it.createdDate!!,
-        lastModifiedDate = it.lastModifiedDate!!,
-      )
-    }
+  @Transactional
+  override fun markClusterSuperseded(
+    clusterId: String,
+    supersededBy: String,
+    now: LocalDateTime,
+  ) {
+    dslRW
+      .update(cluster)
+      .set(cluster.SUPERSEDED_BY, supersededBy)
+      .set(cluster.REVIEWABLE, false)
+      .set(cluster.LAST_MODIFIED_DATE, now)
+      .where(cluster.ID.eq(clusterId))
+      .and(cluster.SUPERSEDED_BY.isNull)
+      .execute()
+    dslRW
+      .update(clusterMember)
+      .set(clusterMember.PRESENT, false)
+      .set(clusterMember.LAST_MODIFIED_DATE, now)
+      .where(clusterMember.CLUSTER_ID.eq(clusterId))
+      .execute()
+  }
 
-  override fun findAllDecisions(): List<DedupDecision> =
-    dslRO
-      .select(decision.ID)
-      .from(decision)
-      .orderBy(decision.CREATED_DATE.desc(), decision.ID.desc())
-      .fetch(decision.ID)
-      .mapNotNull(::findDecision)
-
-  override fun findDecisionItems(decisionId: String): List<DedupDecisionItem> =
-    dslRO
-      .selectFrom(decisionItem)
-      .where(decisionItem.DECISION_ID.eq(decisionId))
-      .orderBy(decisionItem.CREATED_DATE, decisionItem.ID)
-      .fetch { it ->
-        DedupDecisionItem(
-          id = it.id!!,
-          decisionId = it.decisionId!!,
-          bookId = it.bookId!!,
-          seriesId = it.seriesId!!,
-          libraryId = it.libraryId!!,
-          titleSnapshot = it.titleSnapshot!!,
-          pathSnapshot = it.pathSnapshot!!,
-          expectedPath = it.expectedPath!!,
-          expectedSize = it.expectedSize!!,
-          expectedMtime = it.expectedMtime!!,
-          expectedArchiveHash = it.expectedArchiveHash!!,
-          sourceContentGeneration = it.sourceContentGeneration!!,
-          seriesScopeRevision = it.seriesScopeRevision!!,
-          stateRevision = it.stateRevision!!,
-          acknowledgedReasonsJson = it.acknowledgedReasonsJson!!,
-          directRelationId = it.directRelationId!!,
-          directRelationGenerations = it.directRelationGenerations!!,
-          state = DedupDecisionItemState.valueOf(it.state!!),
-          attemptCount = it.attemptCount!!,
-          resultCode = it.resultCode,
-          resultJson = it.resultJson,
-          lastError = it.lastError,
-          stabilityNotBefore = it.stabilityNotBefore,
-          deletedDate = it.deletedDate,
-          createdDate = it.createdDate!!,
-          lastModifiedDate = it.lastModifiedDate!!,
-        )
-      }
-
-  override fun findDecisionItem(itemId: String): DedupDecisionItem? =
-    dslRO.select(decisionItem.DECISION_ID).from(decisionItem).where(decisionItem.ID.eq(itemId)).fetchOne(decisionItem.DECISION_ID)?.let { decisionId ->
-      findDecisionItems(decisionId).firstOrNull { it.id == itemId }
-    }
-
-  override fun findDecisionsByStates(states: Set<DedupDecisionState>): List<DedupDecision> =
-    if (states.isEmpty()) {
-      emptyList()
-    } else {
-      dslRO
-        .select(decision.ID)
-        .from(decision)
-        .where(decision.STATE.`in`(states.map { it.name }))
-        .orderBy(decision.LAST_MODIFIED_DATE, decision.ID)
-        .fetch(decision.ID)
-        .mapNotNull(::findDecision)
-    }
-
-  override fun hasActiveDecisionForBooks(bookIds: Set<String>): Boolean =
-    bookIds.isNotEmpty() &&
-      dslRO.fetchExists(
-        DSL
-          .selectOne()
-          .from(decisionItem)
-          .join(decision)
-          .on(decision.ID.eq(decisionItem.DECISION_ID))
-          .where(decisionItem.BOOK_ID.`in`(bookIds))
-          .and(
-            decision.STATE.notIn(
-              DedupDecisionState.COMPLETED.name,
-              DedupDecisionState.ABORTED.name,
-              DedupDecisionState.FAILED.name,
-              DedupDecisionState.REAPPROVAL_REQUIRED.name,
-            ),
-          ),
-      )
-
-  override fun countDecisionStates(): Map<DedupDecisionState, Int> =
-    dslRO
-      .select(decision.STATE, DSL.count())
-      .from(decision)
-      .groupBy(decision.STATE)
-      .fetch()
-      .associate { DedupDecisionState.valueOf(it.value1()) to it.value2() }
-
-  override fun countDecisionItemStates(): Map<DedupDecisionItemState, Int> =
-    dslRO
-      .select(decisionItem.STATE, DSL.count())
-      .from(decisionItem)
-      .groupBy(decisionItem.STATE)
-      .fetch()
-      .associate { DedupDecisionItemState.valueOf(it.value1()) to it.value2() }
-
-  override fun countGorseSyncStates(): Map<String, Int> =
-    dslRO
-      .select(gorseSync.STATE, DSL.count())
-      .from(gorseSync)
-      .groupBy(gorseSync.STATE)
-      .fetch()
-      .associate { it.value1() to it.value2() }
-
-  override fun claimDecision(
-    decisionId: String,
-    expectedStates: Set<DedupDecisionState>,
-    newState: DedupDecisionState,
-    executionToken: String,
-    leaseUntil: LocalDateTime,
+  override fun claimCluster(
+    clusterId: String,
+    expectedRevision: Long,
+    stateFingerprint: String,
     now: LocalDateTime,
   ): Boolean =
     dslRW
-      .update(decision)
-      .set(decision.STATE, newState.name)
-      .set(decision.EXECUTION_TOKEN, executionToken)
-      .set(decision.LEASE_UNTIL, leaseUntil)
-      .set(decision.LAST_MODIFIED_DATE, now)
-      .where(decision.ID.eq(decisionId))
-      .and(decision.STATE.`in`(expectedStates.map { it.name }))
-      .and(decision.EXECUTION_TOKEN.isNull.or(decision.LEASE_UNTIL.lt(now)))
+      .update(cluster)
+      .set(cluster.STATUS, DedupClusterStatus.PROCESSING.name)
+      .set(cluster.LAST_MODIFIED_DATE, now)
+      .where(cluster.ID.eq(clusterId))
+      .and(cluster.REVISION.eq(expectedRevision))
+      .and(cluster.STATE_FINGERPRINT.eq(stateFingerprint))
+      .and(cluster.STATUS.eq(DedupClusterStatus.UNPROCESSED.name))
+      .and(cluster.REVIEWABLE.eq(true))
+      .and(cluster.SUPERSEDED_BY.isNull)
       .execute() == 1
 
-  override fun updateDecisionState(
-    decisionId: String,
-    executionToken: String,
-    expectedStates: Set<DedupDecisionState>,
-    newState: DedupDecisionState,
-    resultJson: String,
-    releaseLease: Boolean,
+  override fun updateClusterState(
+    clusterId: String,
+    expectedStatuses: Set<DedupClusterStatus>,
+    newStatus: DedupClusterStatus,
+    lastResolutionId: String?,
+    reopenReason: String?,
     now: LocalDateTime,
   ): Boolean {
-    val update =
-      dslRW
-        .update(decision)
-        .set(decision.STATE, newState.name)
-        .set(decision.RESULT_JSON, resultJson)
-        .set(decision.LAST_MODIFIED_DATE, now)
-    if (newState == DedupDecisionState.PURGING) update.set(decision.EXECUTED_DATE, DSL.coalesce(decision.EXECUTED_DATE, now))
-    if (newState == DedupDecisionState.COMPLETED) update.set(decision.COMPLETED_DATE, now)
-    if (releaseLease) {
-      update.set(decision.EXECUTION_TOKEN, null as String?)
-      update.set(decision.LEASE_UNTIL, null as LocalDateTime?)
-    }
-    return update
-      .where(decision.ID.eq(decisionId))
-      .and(decision.STATE.`in`(expectedStates.map { it.name }))
-      .and(decision.EXECUTION_TOKEN.eq(executionToken))
-      .execute() == 1
+    var update = dslRW.update(cluster).set(cluster.STATUS, newStatus.name).set(cluster.LAST_MODIFIED_DATE, now)
+    if (lastResolutionId != null) update = update.set(cluster.LAST_RESOLUTION_ID, lastResolutionId)
+    if (reopenReason != null) update = update.set(cluster.REOPEN_REASON, reopenReason)
+    return update.where(cluster.ID.eq(clusterId)).and(cluster.STATUS.`in`(expectedStatuses.map(DedupClusterStatus::name))).execute() == 1
   }
 
-  override fun updateDecisionItem(
-    itemId: String,
-    decisionId: String,
-    executionToken: String,
-    expectedStates: Set<DedupDecisionItemState>,
-    newState: DedupDecisionItemState,
+  override fun insertResolution(
+    value: DedupResolution,
+    members: Collection<DedupResolutionMember>,
+  ) {
+    dslRW.transaction { configuration ->
+      val tx = DSL.using(configuration)
+      tx
+        .insertInto(
+          resolution,
+          resolution.ID,
+          resolution.CLUSTER_ID,
+          resolution.CLUSTER_REVISION,
+          resolution.MODE,
+          resolution.PLAN_REVISION,
+          resolution.PLAN_JSON,
+          resolution.EVIDENCE_JSON,
+          resolution.ELIGIBILITY_JSON,
+          resolution.RULE_VERSION,
+          resolution.STATE,
+          resolution.ACTOR_ID,
+          resolution.RESULT_JSON,
+          resolution.LEASE_TOKEN,
+          resolution.LEASE_UNTIL,
+          resolution.CREATED_DATE,
+          resolution.LAST_MODIFIED_DATE,
+          resolution.COMPLETED_DATE,
+        ).values(
+          value.id,
+          value.clusterId,
+          value.clusterRevision,
+          value.mode.name,
+          value.planRevision,
+          value.planJson,
+          value.evidenceJson,
+          value.eligibilityJson,
+          value.ruleVersion,
+          value.state.name,
+          value.actorId,
+          value.resultJson,
+          value.leaseToken,
+          value.leaseUntil,
+          value.createdDate,
+          value.lastModifiedDate,
+          value.completedDate,
+        ).execute()
+      members.forEach { member ->
+        tx
+          .insertInto(
+            resolutionMember,
+            resolutionMember.RESOLUTION_ID,
+            resolutionMember.BOOK_ID,
+            resolutionMember.SERIES_ID,
+            resolutionMember.LIBRARY_ID,
+            resolutionMember.ACTION,
+            resolutionMember.KEEPER_BOOK_ID,
+            resolutionMember.TITLE_SNAPSHOT,
+            resolutionMember.PATH_SNAPSHOT,
+            resolutionMember.SOURCE_GENERATIONS_JSON,
+            resolutionMember.LOCAL_STATE_SNAPSHOT_JSON,
+            resolutionMember.DIRECT_RELATION_ID,
+            resolutionMember.DIRECT_RELATION_SNAPSHOT_JSON,
+            resolutionMember.EXPECTED_PATH,
+            resolutionMember.EXPECTED_SIZE,
+            resolutionMember.EXPECTED_MTIME,
+            resolutionMember.EXPECTED_ARCHIVE_HASH,
+            resolutionMember.STATE,
+            resolutionMember.RESULT_CODE,
+            resolutionMember.RESULT_JSON,
+            resolutionMember.LAST_ERROR,
+            resolutionMember.CREATED_DATE,
+            resolutionMember.LAST_MODIFIED_DATE,
+          ).values(
+            member.resolutionId,
+            member.bookId,
+            member.seriesId,
+            member.libraryId,
+            member.action.name,
+            member.keeperBookId,
+            member.titleSnapshot,
+            member.pathSnapshot,
+            member.sourceGenerationsJson,
+            member.localStateSnapshotJson,
+            member.directRelationId,
+            member.directRelationSnapshotJson,
+            member.expectedPath,
+            member.expectedSize,
+            member.expectedMtime,
+            member.expectedArchiveHash,
+            member.state.name,
+            member.resultCode,
+            member.resultJson,
+            member.lastError,
+            member.createdDate,
+            member.lastModifiedDate,
+          ).execute()
+      }
+    }
+  }
+
+  override fun findResolution(resolutionId: String): DedupResolution? =
+    dslRO
+      .selectFrom(resolution)
+      .where(resolution.ID.eq(resolutionId))
+      .fetchOne()
+      ?.toResolution()
+
+  override fun findResolutions(
+    offset: Int,
+    limit: Int,
+  ): List<DedupResolution> =
+    dslRO
+      .selectFrom(resolution)
+      .orderBy(resolution.CREATED_DATE.desc(), resolution.ID)
+      .offset(offset)
+      .limit(limit)
+      .fetch()
+      .map { it.toResolution() }
+
+  override fun countResolutions(): Long = dslRO.selectCount().from(resolution).fetchOne(0, Long::class.java) ?: 0L
+
+  override fun countResolutionsByState(): Map<DedupResolutionState, Int> =
+    dslRO
+      .select(resolution.STATE, DSL.count())
+      .from(resolution)
+      .groupBy(resolution.STATE)
+      .fetch()
+      .associate { DedupResolutionState.valueOf(it.value1()) to it.value2() }
+
+  override fun findResolutionMembers(resolutionId: String): List<DedupResolutionMember> =
+    dslRO
+      .selectFrom(resolutionMember)
+      .where(resolutionMember.RESOLUTION_ID.eq(resolutionId))
+      .orderBy(resolutionMember.BOOK_ID)
+      .fetch()
+      .map { it.toResolutionMember() }
+
+  override fun hasActiveResolutionForBooks(bookIds: Set<String>): Boolean {
+    if (bookIds.isEmpty()) return false
+    return dslRO.fetchExists(
+      dslRO
+        .selectOne()
+        .from(resolutionMember)
+        .join(resolution)
+        .on(resolution.ID.eq(resolutionMember.RESOLUTION_ID))
+        .where(resolutionMember.BOOK_ID.`in`(bookIds))
+        .and(resolution.STATE.eq(DedupResolutionState.PROCESSING.name)),
+    )
+  }
+
+  override fun updateResolution(
+    resolutionId: String,
+    expectedStates: Set<DedupResolutionState>,
+    state: DedupResolutionState,
+    resultJson: String,
+    completedDate: LocalDateTime?,
+    leaseToken: String?,
+    leaseUntil: LocalDateTime?,
+    now: LocalDateTime,
+  ): Boolean {
+    var update =
+      dslRW
+        .update(resolution)
+        .set(resolution.STATE, state.name)
+        .set(resolution.RESULT_JSON, resultJson)
+        .set(resolution.LAST_MODIFIED_DATE, now)
+        .set(resolution.COMPLETED_DATE, completedDate)
+    if (leaseToken != null) update = update.set(resolution.LEASE_TOKEN, leaseToken)
+    if (leaseUntil != null) update = update.set(resolution.LEASE_UNTIL, leaseUntil)
+    return update.where(resolution.ID.eq(resolutionId)).and(resolution.STATE.`in`(expectedStates.map(DedupResolutionState::name))).execute() == 1
+  }
+
+  override fun updateResolutionMember(
+    resolutionId: String,
+    bookId: String,
+    expectedStates: Set<DedupResolutionMemberState>,
+    state: DedupResolutionMemberState,
+    expectedPath: String?,
+    expectedSize: Long?,
+    expectedMtime: LocalDateTime?,
+    expectedArchiveHash: String?,
     resultCode: String?,
     resultJson: String?,
     lastError: String?,
-    stabilityNotBefore: LocalDateTime?,
-    deletedDate: LocalDateTime?,
-    incrementAttempt: Boolean,
     now: LocalDateTime,
   ): Boolean {
-    val update =
+    var update =
       dslRW
-        .update(decisionItem)
-        .set(decisionItem.STATE, newState.name)
-        .set(decisionItem.RESULT_CODE, resultCode)
-        .set(decisionItem.RESULT_JSON, resultJson)
-        .set(decisionItem.LAST_ERROR, lastError?.take(500))
-        .set(decisionItem.STABILITY_NOT_BEFORE, stabilityNotBefore)
-        .set(decisionItem.DELETED_DATE, deletedDate)
-        .set(decisionItem.LAST_MODIFIED_DATE, now)
-    if (incrementAttempt) update.set(decisionItem.ATTEMPT_COUNT, decisionItem.ATTEMPT_COUNT.plus(1))
+        .update(resolutionMember)
+        .set(resolutionMember.STATE, state.name)
+        .set(resolutionMember.RESULT_CODE, resultCode)
+        .set(resolutionMember.RESULT_JSON, resultJson)
+        .set(resolutionMember.LAST_ERROR, lastError?.take(500))
+        .set(resolutionMember.LAST_MODIFIED_DATE, now)
+    if (expectedPath != null) update = update.set(resolutionMember.EXPECTED_PATH, expectedPath)
+    if (expectedSize != null) update = update.set(resolutionMember.EXPECTED_SIZE, expectedSize)
+    if (expectedMtime != null) update = update.set(resolutionMember.EXPECTED_MTIME, expectedMtime)
+    if (expectedArchiveHash != null) update = update.set(resolutionMember.EXPECTED_ARCHIVE_HASH, expectedArchiveHash)
     return update
-      .where(decisionItem.ID.eq(itemId))
-      .and(decisionItem.DECISION_ID.eq(decisionId))
-      .and(decisionItem.STATE.`in`(expectedStates.map { it.name }))
-      .andExists(
-        DSL
-          .selectOne()
-          .from(decision)
-          .where(decision.ID.eq(decisionId))
-          .and(decision.EXECUTION_TOKEN.eq(executionToken)),
-      ).execute() == 1
+      .where(resolutionMember.RESOLUTION_ID.eq(resolutionId))
+      .and(resolutionMember.BOOK_ID.eq(bookId))
+      .and(resolutionMember.STATE.`in`(expectedStates.map(DedupResolutionMemberState::name)))
+      .execute() == 1
   }
 
-  override fun releaseExpiredDecisionLeases(now: LocalDateTime): Int =
-    dslRW
-      .update(decision)
-      .set(decision.STATE, DedupDecisionState.NEEDS_ATTENTION.name)
-      .set(decision.EXECUTION_TOKEN, null as String?)
-      .set(decision.LEASE_UNTIL, null as LocalDateTime?)
-      .set(decision.RESULT_JSON, "{\"code\":\"LEASE_EXPIRED\"}")
-      .set(decision.LAST_MODIFIED_DATE, now)
-      .where(decision.STATE.`in`(DedupDecisionState.REVALIDATING.name, DedupDecisionState.PURGING.name))
-      .and(decision.LEASE_UNTIL.lt(now))
-      .execute()
+  @Transactional
+  override fun releaseExpiredResolutionLeases(now: LocalDateTime): Int {
+    val orphaned =
+      dslRW
+        .update(cluster)
+        .set(cluster.STATUS, DedupClusterStatus.NEEDS_ATTENTION.name)
+        .set(cluster.REOPEN_REASON, "PROCESSING_LEASE_EXPIRED")
+        .set(cluster.LAST_MODIFIED_DATE, now)
+        .where(cluster.STATUS.eq(DedupClusterStatus.PROCESSING.name))
+        .and(cluster.LAST_MODIFIED_DATE.lt(now.minusMinutes(30)))
+        .andNotExists(
+          dslRW
+            .selectOne()
+            .from(resolution)
+            .where(resolution.CLUSTER_ID.eq(cluster.ID))
+            .and(resolution.STATE.eq(DedupResolutionState.PROCESSING.name)),
+        ).execute()
+    val expired =
+      dslRW
+        .select(resolution.ID, resolution.CLUSTER_ID)
+        .from(resolution)
+        .where(resolution.STATE.eq(DedupResolutionState.PROCESSING.name))
+        .and(resolution.LEASE_UNTIL.lt(now))
+        .fetch()
+    if (expired.isEmpty()) return orphaned
+    expired.forEach { value ->
+      dslRW
+        .update(cluster)
+        .set(cluster.STATUS, DedupClusterStatus.NEEDS_ATTENTION.name)
+        .set(cluster.REOPEN_REASON, "PROCESSING_LEASE_EXPIRED")
+        .set(cluster.LAST_MODIFIED_DATE, now)
+        .where(cluster.ID.eq(value.value2()))
+        .and(cluster.LAST_RESOLUTION_ID.eq(value.value1()))
+        .and(cluster.STATUS.`in`(DedupClusterStatus.PROCESSING.name, DedupClusterStatus.PROCESSED.name))
+        .execute()
+    }
+    return orphaned +
+      expired.sumOf { value ->
+        val partial =
+          dslRW.fetchExists(
+            dslRW
+              .selectOne()
+              .from(resolutionMember)
+              .where(resolutionMember.RESOLUTION_ID.eq(value.value1()))
+              .and(
+                resolutionMember.STATE.`in`(
+                  DedupResolutionMemberState.DELETED.name,
+                  DedupResolutionMemberState.KOMGA_SAVED.name,
+                  DedupResolutionMemberState.GORSE_CONFIRMED.name,
+                  DedupResolutionMemberState.COMPLETED.name,
+                ),
+              ),
+          )
+        dslRW
+          .update(resolution)
+          .set(resolution.STATE, if (partial) DedupResolutionState.PARTIALLY_COMPLETED.name else DedupResolutionState.NEEDS_ATTENTION.name)
+          .set(resolution.RESULT_JSON, "{\"code\":\"PROCESSING_LEASE_EXPIRED\",\"partial\":$partial}")
+          .set(resolution.LAST_MODIFIED_DATE, now)
+          .where(resolution.ID.eq(value.value1()))
+          .and(resolution.STATE.eq(DedupResolutionState.PROCESSING.name))
+          .execute()
+      }
+  }
 
   override fun enqueueGorseSync(
     seriesId: String,
@@ -1238,7 +1149,6 @@ class DedupDao(
       .set(gorseSync.LIBRARY_ID, libraryId)
       .set(gorseSync.DESIRED_HIDDEN, desiredHidden)
       .set(gorseSync.STATE, "PENDING")
-      .set(gorseSync.ATTEMPT_COUNT, 0)
       .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
       .set(gorseSync.LAST_ERROR, null as String?)
       .set(gorseSync.COMPLETED_DATE, null as LocalDateTime?)
@@ -1248,24 +1158,31 @@ class DedupDao(
 
   @Transactional
   override fun findPendingGorseSync(now: LocalDateTime): DedupGorseSync? {
-    val record =
-      dslRW
-        .selectFrom(gorseSync)
-        .where(gorseSync.STATE.eq("PENDING"))
-        .and(gorseSync.NEXT_RETRY_AT.isNull.or(gorseSync.NEXT_RETRY_AT.le(now)))
-        .orderBy(gorseSync.LAST_MODIFIED_DATE, gorseSync.SERIES_ID)
-        .limit(1)
-        .fetchOne() ?: return null
-    if (dslRW
-        .update(gorseSync)
-        .set(gorseSync.STATE, "RUNNING")
-        .set(gorseSync.LAST_MODIFIED_DATE, now)
-        .where(gorseSync.SERIES_ID.eq(record.seriesId))
-        .and(gorseSync.STATE.eq("PENDING"))
-        .execute() != 1
-    )
-      return null
-    return record.toDomain().copy(state = "RUNNING", lastModifiedDate = now)
+    repeat(3) {
+      val candidate =
+        dslRW
+          .selectFrom(gorseSync)
+          .where(
+            gorseSync.STATE
+              .`in`("PENDING", "FAILED_REVIEW")
+              .and(gorseSync.NEXT_RETRY_AT.isNull.or(gorseSync.NEXT_RETRY_AT.le(now)))
+              .or(gorseSync.STATE.eq("RUNNING").and(gorseSync.LAST_MODIFIED_DATE.le(now.minusMinutes(10)))),
+          ).orderBy(gorseSync.LAST_MODIFIED_DATE)
+          .limit(1)
+          .fetchOne() ?: return null
+      val updated =
+        dslRW
+          .update(gorseSync)
+          .set(gorseSync.STATE, "RUNNING")
+          .set(gorseSync.LAST_MODIFIED_DATE, now)
+          .where(gorseSync.SERIES_ID.eq(candidate.seriesId))
+          .and(gorseSync.STATE.eq(candidate.state))
+          .and(gorseSync.DESIRED_HIDDEN.eq(candidate.desiredHidden))
+          .and(gorseSync.LAST_MODIFIED_DATE.eq(candidate.lastModifiedDate))
+          .execute()
+      if (updated == 1) return findGorseSync(candidate.seriesId!!)
+    }
+    return null
   }
 
   override fun findGorseSync(seriesId: String): DedupGorseSync? =
@@ -1273,64 +1190,60 @@ class DedupDao(
       .selectFrom(gorseSync)
       .where(gorseSync.SERIES_ID.eq(seriesId))
       .fetchOne()
-      ?.toDomain()
+      ?.toGorseSync()
 
   override fun completeGorseSync(
     seriesId: String,
+    expectedHidden: Boolean,
     now: LocalDateTime,
   ): Boolean =
     dslRW
       .update(gorseSync)
       .set(gorseSync.STATE, "SUCCEEDED")
-      .set(gorseSync.ATTEMPT_COUNT, 0)
       .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
       .set(gorseSync.LAST_ERROR, null as String?)
       .set(gorseSync.COMPLETED_DATE, now)
       .set(gorseSync.LAST_MODIFIED_DATE, now)
       .where(gorseSync.SERIES_ID.eq(seriesId))
-      .and(gorseSync.STATE.eq("RUNNING"))
+      .and(gorseSync.DESIRED_HIDDEN.eq(expectedHidden))
+      .and(gorseSync.STATE.`in`("PENDING", "RUNNING"))
       .execute() == 1
 
-  @Transactional
   override fun failGorseSync(
     seriesId: String,
+    expectedHidden: Boolean,
     error: String,
     now: LocalDateTime,
-  ): Boolean {
-    val current =
-      dslRW
-        .selectFrom(gorseSync)
-        .where(gorseSync.SERIES_ID.eq(seriesId))
-        .and(gorseSync.STATE.eq("RUNNING"))
-        .fetchOne() ?: return false
-    val attempts = current.attemptCount!! + 1
-    val terminal = attempts >= 8
-    val retryAt = if (terminal) null else now.plusSeconds(min(3_600L, 5L * (1L shl min(attempts - 1, 10))))
-    return dslRW
+  ): Boolean =
+    dslRW
       .update(gorseSync)
-      .set(gorseSync.STATE, if (terminal) "FAILED_REVIEW" else "PENDING")
-      .set(gorseSync.ATTEMPT_COUNT, attempts)
-      .set(gorseSync.NEXT_RETRY_AT, retryAt)
+      .set(gorseSync.STATE, "FAILED_REVIEW")
+      .set(gorseSync.ATTEMPT_COUNT, gorseSync.ATTEMPT_COUNT.plus(1))
+      .set(gorseSync.NEXT_RETRY_AT, now.plusSeconds(30))
       .set(gorseSync.LAST_ERROR, error.take(500))
       .set(gorseSync.LAST_MODIFIED_DATE, now)
       .where(gorseSync.SERIES_ID.eq(seriesId))
-      .and(gorseSync.STATE.eq("RUNNING"))
+      .and(gorseSync.DESIRED_HIDDEN.eq(expectedHidden))
+      .and(gorseSync.STATE.`in`("PENDING", "RUNNING"))
       .execute() == 1
-  }
 
-  @Transactional
-  override fun deleteAllDedupData() {
-    dslRW.deleteFrom(gorseSync).execute()
-    dslRW.deleteFrom(decisionItem).execute()
-    dslRW.deleteFrom(decision).execute()
-    dslRW.deleteFrom(override).execute()
-    dslRW.deleteFrom(reviewMember).execute()
-    dslRW.deleteFrom(reviewCase).execute()
-    dslRW.deleteFrom(relation).execute()
-    dslRW.deleteFrom(pageFeature).execute()
-    dslRW.deleteFrom(feature).execute()
-    dslRW.deleteFrom(work).execute()
-    dslRW.deleteFrom(settings).execute()
+  override fun countGorseSyncStates(): Map<String, Int> =
+    dslRO
+      .select(gorseSync.STATE, DSL.count())
+      .from(gorseSync)
+      .groupBy(gorseSync.STATE)
+      .fetch()
+      .associate { it.value1() to it.value2() }
+
+  private fun findClusterMembers(clusterIds: Set<String>): Map<String, List<DedupClusterMember>> {
+    if (clusterIds.isEmpty()) return emptyMap()
+    return dslRO
+      .selectFrom(clusterMember)
+      .where(clusterMember.CLUSTER_ID.`in`(clusterIds))
+      .orderBy(clusterMember.CLUSTER_ID, clusterMember.BOOK_ID)
+      .fetch()
+      .map { it.toClusterMember() }
+      .groupBy { it.clusterId }
   }
 
   private fun DedupLibrarySettingsRecord.toDomain() =
@@ -1342,7 +1255,6 @@ class DedupDao(
       batchSize = batchSize!!,
       maxDurationSeconds = maxDurationSeconds!!,
       quietPeriodSeconds = quietPeriodSeconds!!,
-      completionStabilitySeconds = completionStabilitySeconds!!,
       coverCandidateDistance = coverCandidateDistance!!,
       coverTopK = coverTopK!!,
       createdDate = createdDate!!,
@@ -1351,72 +1263,176 @@ class DedupDao(
 
   private fun DedupWorkRecord.toDomain() =
     DedupWork(
-      id = id!!,
-      libraryId = libraryId!!,
-      type = DedupWorkType.valueOf(type!!),
-      targetKey = targetKey!!,
-      state = DedupWorkState.valueOf(state!!),
-      desiredRevision = desiredRevision!!,
-      completedRevision = completedRevision!!,
-      notBefore = notBefore!!,
-      nextRetryAt = nextRetryAt,
-      leaseOwner = leaseOwner,
-      leaseToken = leaseToken,
-      leaseUntil = leaseUntil,
-      attemptCount = attemptCount!!,
-      maxAttempts = maxAttempts!!,
-      lastErrorCode = lastErrorCode,
-      lastError = lastError,
-      priority = priority!!,
-      createdDate = createdDate!!,
-      lastModifiedDate = lastModifiedDate!!,
-      completedDate = completedDate,
+      id!!,
+      libraryId!!,
+      DedupWorkType.valueOf(type!!),
+      targetKey!!,
+      DedupWorkState.valueOf(state!!),
+      desiredRevision!!,
+      completedRevision!!,
+      notBefore!!,
+      nextRetryAt,
+      leaseOwner,
+      leaseToken,
+      leaseUntil,
+      attemptCount!!,
+      maxAttempts!!,
+      lastErrorCode,
+      lastError,
+      priority!!,
+      createdDate!!,
+      lastModifiedDate!!,
+      completedDate,
     )
 
   private fun DedupFeatureRecord.toDomain() =
     DedupFeature(
-      bookId = bookId!!,
-      seriesId = seriesId!!,
-      libraryId = libraryId!!,
-      sourceContentGeneration = sourceContentGeneration!!,
-      sourceCoverGeneration = sourceCoverGeneration!!,
-      sourceMetadataGeneration = sourceMetadataGeneration!!,
-      seriesScopeRevision = seriesScopeRevision!!,
-      featureSchemaVersion = featureSchemaVersion!!,
-      coverState = DedupFeatureState.valueOf(coverState!!),
-      pageState = DedupFeatureState.valueOf(pageState!!),
-      coverSource = coverSource,
-      coverHash = coverHash,
-      coverQuality = coverQuality,
-      pageCount = pageCount,
-      analyzedDate = analyzedDate,
-      lastModifiedDate = lastModifiedDate!!,
+      bookId!!,
+      seriesId!!,
+      libraryId!!,
+      sourceContentGeneration!!,
+      sourceCoverGeneration!!,
+      sourceMetadataGeneration!!,
+      seriesScopeRevision!!,
+      featureSchemaVersion!!,
+      DedupFeatureState.valueOf(coverState!!),
+      DedupFeatureState.valueOf(pageState!!),
+      coverSource,
+      coverHash,
+      coverQuality,
+      pageCount,
+      analyzedDate,
+      lastModifiedDate!!,
     )
 
-  private fun org.gotson.komga.jooq.main.tables.records.DedupGorseSyncRecord.toDomain() =
+  private fun org.gotson.komga.jooq.main.tables.records.DedupRelationRecord.toRelation() =
+    DedupRelation(
+      id!!,
+      libraryId!!,
+      bookLowId!!,
+      bookHighId!!,
+      lowContentGeneration!!,
+      highContentGeneration!!,
+      lowCoverGeneration!!,
+      highCoverGeneration!!,
+      lowMetadataGeneration!!,
+      highMetadataGeneration!!,
+      DedupRelationType.valueOf(relationType!!),
+      coverDistance,
+      containedBookId,
+      containerBookId,
+      coverageLeft?.toDouble(),
+      coverageRight?.toDouble(),
+      orderConsistency?.toDouble(),
+      longestMatchedRun,
+      unmatchedPrefixCount,
+      unmatchedSuffixCount,
+      unmatchedInternalCount,
+      confidence?.toDouble(),
+      DedupRelationStatus.valueOf(status!!),
+      evidenceJson!!,
+      featureSchemaVersion!!,
+      classifierRuleVersion!!,
+      createdDate!!,
+      lastModifiedDate!!,
+    )
+
+  private fun org.gotson.komga.jooq.main.tables.records.DedupClusterRecord.toCluster() =
+    DedupCluster(
+      id!!,
+      libraryId!!,
+      revision!!,
+      DedupClusterStatus.valueOf(status!!),
+      reviewable!!,
+      anchorBookId!!,
+      topologyFingerprint!!,
+      evidenceFingerprint!!,
+      stateFingerprint!!,
+      processedRevision,
+      lastResolutionId,
+      reopenReason,
+      supersededBy,
+      createdDate!!,
+      lastModifiedDate!!,
+      processedDate,
+    )
+
+  private fun org.gotson.komga.jooq.main.tables.records.DedupClusterMemberRecord.toClusterMember() =
+    DedupClusterMember(
+      clusterId!!,
+      bookId!!,
+      present!!,
+      sourceContentGeneration!!,
+      sourceCoverGeneration!!,
+      sourceMetadataGeneration!!,
+      seriesScopeRevision!!,
+      createdDate!!,
+      lastModifiedDate!!,
+    )
+
+  private fun org.gotson.komga.jooq.main.tables.records.DedupResolutionRecord.toResolution() =
+    DedupResolution(
+      id!!,
+      clusterId!!,
+      clusterRevision!!,
+      DedupResolutionMode.valueOf(mode!!),
+      planRevision!!,
+      planJson!!,
+      evidenceJson!!,
+      eligibilityJson!!,
+      ruleVersion!!,
+      DedupResolutionState.valueOf(state!!),
+      actorId!!,
+      resultJson!!,
+      leaseToken!!,
+      leaseUntil!!,
+      createdDate!!,
+      lastModifiedDate!!,
+      completedDate,
+    )
+
+  private fun org.gotson.komga.jooq.main.tables.records.DedupResolutionMemberRecord.toResolutionMember() =
+    DedupResolutionMember(
+      resolutionId!!,
+      bookId!!,
+      seriesId!!,
+      libraryId!!,
+      DedupResolutionAction.valueOf(action!!),
+      keeperBookId,
+      titleSnapshot!!,
+      pathSnapshot!!,
+      sourceGenerationsJson!!,
+      localStateSnapshotJson!!,
+      directRelationId,
+      directRelationSnapshotJson,
+      expectedPath,
+      expectedSize,
+      expectedMtime,
+      expectedArchiveHash,
+      DedupResolutionMemberState.valueOf(state!!),
+      resultCode,
+      resultJson,
+      lastError,
+      createdDate!!,
+      lastModifiedDate!!,
+    )
+
+  private fun org.gotson.komga.jooq.main.tables.records.DedupGorseSyncRecord.toGorseSync() =
     DedupGorseSync(
-      seriesId = seriesId!!,
-      libraryId = libraryId!!,
-      desiredHidden = desiredHidden!!,
-      state = state!!,
-      attemptCount = attemptCount!!,
-      nextRetryAt = nextRetryAt,
-      lastError = lastError,
-      createdDate = createdDate!!,
-      lastModifiedDate = lastModifiedDate!!,
-      completedDate = completedDate,
+      seriesId!!,
+      libraryId!!,
+      desiredHidden!!,
+      state!!,
+      attemptCount!!,
+      nextRetryAt,
+      lastError,
+      createdDate!!,
+      lastModifiedDate!!,
+      completedDate,
     )
 
-  private fun org.gotson.komga.jooq.main.tables.records.DedupReviewCaseRecord.toDomain(memberIds: Set<String>) =
-    DedupReviewCase(
-      id = id!!,
-      libraryId = libraryId!!,
-      revision = revision!!,
-      status = DedupReviewCaseStatus.valueOf(status!!),
-      suggestedKeeperBookId = suggestedKeeperBookId,
-      origin = DedupReviewCaseOrigin.valueOf(origin!!),
-      memberBookIds = memberIds,
-      createdDate = createdDate!!,
-      lastModifiedDate = lastModifiedDate!!,
-    )
+  private fun canonicalPair(
+    first: String,
+    second: String,
+  ): Pair<String, String> = if (first < second) first to second else second to first
 }

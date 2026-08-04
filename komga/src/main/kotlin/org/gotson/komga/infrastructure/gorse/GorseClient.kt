@@ -58,6 +58,16 @@ class GorseClient(
       .block()
   }
 
+  fun getItemChecked(itemId: String): GorseItem =
+    requireNotNull(
+      buildClient()
+        .get()
+        .uri("/api/item/$itemId")
+        .retrieve()
+        .bodyToMono(GorseItem::class.java)
+        .block(),
+    ) { "Gorse returned an empty Item response for $itemId" }
+
   fun updateItem(
     itemId: String,
     item: GorseItem,

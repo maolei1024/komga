@@ -5,7 +5,6 @@ import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupPageFeature
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
-import org.gotson.komga.domain.model.DedupReviewCaseCandidate
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.MediaRepository
@@ -30,13 +29,18 @@ class DedupDeepVerificationLifecycle(
     const val CLASSIFIER_RULE_VERSION = 2
   }
 
-  fun verifyCase(caseId: String) {
-    val reviewCase = dedupRepository.findReviewCase(caseId) ?: return
-    val memberIds = reviewCase.memberBookIds.sorted()
-    require(memberIds.size == 2) { "Deep verification requires a pairwise review case" }
+  fun verifyRelation(
+    firstBookId: String,
+    secondBookId: String,
+  ) {
+    val memberIds = listOf(firstBookId, secondBookId).sorted()
+    require(memberIds[0] != memberIds[1]) { "Deep verification requires two different Books" }
+    val lowIdentity = requireNotNull(coverLifecycle.currentSourceIdentity(memberIds[0]))
+    val highIdentity = requireNotNull(coverLifecycle.currentSourceIdentity(memberIds[1]))
+    require(lowIdentity.libraryId == highIdentity.libraryId) { "Deep verification Books must be in one Library" }
     val currentRelation = dedupRepository.findRelation(memberIds[0], memberIds[1])
     if (currentRelation?.type == DedupRelationType.EXACT_FILE) return
-    val settings = requireNotNull(dedupRepository.findLibrarySettings(reviewCase.libraryId))
+    val settings = requireNotNull(dedupRepository.findLibrarySettings(lowIdentity.libraryId))
     val deadline = LocalDateTime.now().plusSeconds(settings.maxDurationSeconds.toLong())
     val left = loadPageFeatures(memberIds[0], deadline)
     val right = loadPageFeatures(memberIds[1], deadline)
@@ -53,7 +57,7 @@ class DedupDeepVerificationLifecycle(
     val relation =
       DedupRelation(
         id = currentRelation?.id ?: "verified-${memberIds[0]}-${memberIds[1]}",
-        libraryId = reviewCase.libraryId,
+        libraryId = lowIdentity.libraryId,
         bookLowId = memberIds[0],
         bookHighId = memberIds[1],
         lowContentGeneration = lowGeneration,
@@ -96,16 +100,7 @@ class DedupDeepVerificationLifecycle(
         createdDate = currentRelation?.createdDate ?: now,
         lastModifiedDate = now,
       )
-    dedupRepository.saveReviewCase(
-      DedupReviewCaseCandidate(
-        id = reviewCase.id,
-        libraryId = reviewCase.libraryId,
-        origin = reviewCase.origin,
-        memberBookIds = reviewCase.memberBookIds,
-        relations = listOf(relation),
-      ),
-      now,
-    )
+    dedupRepository.saveRelation(relation)
   }
 
   private fun loadPageFeatures(

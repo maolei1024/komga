@@ -5,13 +5,13 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.application.tasks.DEFAULT_PRIORITY
 import org.gotson.komga.application.tasks.TaskEmitter
 import org.gotson.komga.domain.model.DedupLibrarySettings
-import org.gotson.komga.domain.model.DedupReviewCase
-import org.gotson.komga.domain.model.DedupReviewCaseOrigin
+import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupWork
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
 import org.gotson.komga.domain.model.Library
 import org.gotson.komga.domain.persistence.DedupRepository
+import org.gotson.komga.domain.persistence.DedupResolutionRepository
 import org.gotson.komga.infrastructure.gorse.GorseDesiredStateLifecycle
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -19,31 +19,36 @@ import java.time.LocalDateTime
 
 private val logger = KotlinLogging.logger {}
 
-data class DedupCaseVerificationRequest(
-  val caseId: String,
+data class DedupClusterVerificationRequest(
+  val clusterId: String,
   val expectedRevision: Long,
 )
 
-data class DedupCaseVerificationResult(
-  val caseId: String,
-  val status: DedupCaseVerificationStatus,
+data class DedupClusterVerificationResult(
+  val clusterId: String,
+  val status: DedupClusterVerificationStatus,
+  val memberCount: Int = 0,
+  val pairCount: Int = 0,
+  val queuedPairs: Int = 0,
+  val skippedPairs: Int = 0,
+  val failedPairs: Int = 0,
 )
 
-enum class DedupCaseVerificationStatus {
+enum class DedupClusterVerificationStatus {
   QUEUED,
-  SKIPPED_EXACT_FILE,
   STALE,
   NOT_FOUND,
-  UNSUPPORTED_CASE,
+  NO_ELIGIBLE_PAIR,
 }
 
 @Service
 class DedupWorkLifecycle(
   private val dedupRepository: DedupRepository,
+  private val resolutionRepository: DedupResolutionRepository,
   private val exactDuplicateLifecycle: DedupExactDuplicateLifecycle,
   private val coverLifecycle: DedupCoverLifecycle,
   private val deepVerificationLifecycle: DedupDeepVerificationLifecycle,
-  private val decisionLifecycle: DedupDecisionLifecycle,
+  private val clusterLifecycle: DedupClusterLifecycle,
   private val taskEmitter: TaskEmitter,
   private val gorseDesiredStateLifecycle: GorseDesiredStateLifecycle,
 ) {
@@ -63,70 +68,41 @@ class DedupWorkLifecycle(
     val settings = dedupRepository.findLibrarySettings(libraryId) ?: return null
     if (!settings.enabled) return null
     val notBefore = if (bypassQuietPeriod) changedAt else changedAt.plusSeconds(settings.quietPeriodSeconds.toLong())
-    val work =
-      dedupRepository.enqueueWork(
-        id = TsidCreator.getTsid256().toString(),
-        libraryId = libraryId,
-        type = DedupWorkType.RECONCILE_EXACT_DUPLICATES,
-        notBefore = notBefore,
-        priority = priority,
-      )
+    val value = dedupRepository.enqueueWork(TsidCreator.getTsid256().toString(), libraryId, DedupWorkType.RECONCILE_EXACT_DUPLICATES, notBefore = notBefore, priority = priority)
     taskEmitter.drainDedupQueue(libraryId, priority)
-    return work
+    return value
   }
 
   fun drain(libraryId: String) {
     val settings = dedupRepository.findLibrarySettings(libraryId) ?: return
     val allowedTypes =
-      if (settings.enabled && !settings.paused) {
-        null
-      } else {
-        setOf(DedupWorkType.APPLY_DECISION_ITEM, DedupWorkType.VERIFY_DELETION)
-      }
-
+      if (settings.enabled && !settings.paused) null else setOf(DedupWorkType.VERIFY_RELATION, DedupWorkType.REBUILD_CLUSTERS)
     val started = LocalDateTime.now()
     var processed = 0
     while (processed < settings.batchSize && Duration.between(started, LocalDateTime.now()).seconds < settings.maxDurationSeconds) {
-      val work =
-        dedupRepository.claimNextWork(
-          owner = Thread.currentThread().name,
-          leaseDuration = leaseDuration,
-          libraryId = libraryId,
-          allowedTypes = allowedTypes,
-        ) ?: break
+      val work = dedupRepository.claimNextWork(Thread.currentThread().name, leaseDuration, libraryId, allowedTypes) ?: break
       process(work)
       processed++
     }
   }
 
-  fun reconcileAtStartup() {
-    reconcileScheduled()
-  }
+  fun reconcileAtStartup() = reconcileScheduled()
 
   fun reconcileScheduled(now: LocalDateTime = LocalDateTime.now()) {
     dedupRepository.releaseExpiredLeases(now)
-    decisionLifecycle.reconcile(now)
+    resolutionRepository.releaseExpiredResolutionLeases(now)
     gorseDesiredStateLifecycle.reconcile()
-    val workByLibrary =
-      dedupRepository
-        .findAllWork()
-        .filter { it.type == DedupWorkType.RECONCILE_EXACT_DUPLICATES }
-        .associateBy { it.libraryId }
-
-    dedupRepository
-      .findAllLibrarySettings()
-      .filter { it.enabled && !it.paused }
-      .forEach { settings ->
-        val existing = workByLibrary[settings.libraryId]
-        when {
-          existing == null -> requestExactReconciliation(settings.libraryId, now, bypassQuietPeriod = true)
-          existing.state in setOf(DedupWorkState.WAITING, DedupWorkState.PENDING) -> taskEmitter.drainDedupQueue(settings.libraryId)
-          existing.state == DedupWorkState.SUCCEEDED &&
-            (existing.completedDate == null || !existing.completedDate.plus(settings.scanInterval.toDuration()).isAfter(now)) ->
-            requestExactReconciliation(settings.libraryId, now, bypassQuietPeriod = true)
-        }
+    val reconciliation = dedupRepository.findAllWork().filter { it.type == DedupWorkType.RECONCILE_EXACT_DUPLICATES }.associateBy { it.libraryId }
+    dedupRepository.findAllLibrarySettings().filter { it.enabled && !it.paused }.forEach { settings ->
+      val existing = reconciliation[settings.libraryId]
+      when {
+        existing == null -> requestExactReconciliation(settings.libraryId, now, bypassQuietPeriod = true)
+        existing.state in setOf(DedupWorkState.WAITING, DedupWorkState.PENDING) -> taskEmitter.drainDedupQueue(settings.libraryId)
+        existing.state == DedupWorkState.SUCCEEDED &&
+          (existing.completedDate == null || !existing.completedDate.plus(settings.scanInterval.toDuration()).isAfter(now)) ->
+          requestExactReconciliation(settings.libraryId, now, bypassQuietPeriod = true)
       }
-
+    }
     dedupRepository
       .findAllWork()
       .filter { it.state in setOf(DedupWorkState.WAITING, DedupWorkState.PENDING) && !it.notBefore.isAfter(now) && (it.nextRetryAt == null || !it.nextRetryAt.isAfter(now)) }
@@ -142,44 +118,72 @@ class DedupWorkLifecycle(
     return true
   }
 
-  fun requestCaseVerification(caseId: String): DedupWork? {
-    val reviewCase = dedupRepository.findReviewCase(caseId) ?: return null
-    val work = enqueueCaseVerification(reviewCase)
-    taskEmitter.drainDedupQueue(reviewCase.libraryId, 6)
-    return work
+  fun requestClusterVerification(
+    clusterId: String,
+    expectedRevision: Long,
+  ): DedupClusterVerificationResult {
+    val result = enqueueClusterVerification(DedupClusterVerificationRequest(clusterId, expectedRevision))
+    val cluster = dedupRepository.findCluster(clusterId)
+    if (result.queuedPairs > 0 && cluster != null) taskEmitter.drainDedupQueue(cluster.cluster.libraryId, 6)
+    return result
   }
 
-  fun requestCaseVerifications(requests: List<DedupCaseVerificationRequest>): List<DedupCaseVerificationResult> {
-    val queuedLibraries = mutableSetOf<String>()
+  fun requestClusterVerifications(requests: List<DedupClusterVerificationRequest>): List<DedupClusterVerificationResult> {
+    val libraries = mutableSetOf<String>()
     val results =
       requests.map { request ->
-        val reviewCase = dedupRepository.findReviewCase(request.caseId)
-        val status =
-          when {
-            reviewCase == null -> DedupCaseVerificationStatus.NOT_FOUND
-            reviewCase.revision != request.expectedRevision -> DedupCaseVerificationStatus.STALE
-            reviewCase.origin == DedupReviewCaseOrigin.EXACT_FILE -> DedupCaseVerificationStatus.SKIPPED_EXACT_FILE
-            reviewCase.memberBookIds.size != 2 -> DedupCaseVerificationStatus.UNSUPPORTED_CASE
-            else -> {
-              enqueueCaseVerification(reviewCase)
-              queuedLibraries += reviewCase.libraryId
-              DedupCaseVerificationStatus.QUEUED
-            }
-          }
-        DedupCaseVerificationResult(request.caseId, status)
+        enqueueClusterVerification(request).also { result ->
+          if (result.queuedPairs > 0)
+            dedupRepository
+              .findCluster(request.clusterId)
+              ?.cluster
+              ?.libraryId
+              ?.let(libraries::add)
+        }
       }
-    queuedLibraries.forEach { libraryId -> taskEmitter.drainDedupQueue(libraryId, 6) }
+    libraries.forEach { taskEmitter.drainDedupQueue(it, 6) }
     return results
   }
 
-  private fun enqueueCaseVerification(reviewCase: DedupReviewCase): DedupWork =
-    dedupRepository.enqueueWork(
-      id = TsidCreator.getTsid256().toString(),
-      libraryId = reviewCase.libraryId,
-      type = DedupWorkType.VERIFY_RELATION,
-      targetKey = reviewCase.id,
-      priority = 6,
-    )
+  private fun enqueueClusterVerification(request: DedupClusterVerificationRequest): DedupClusterVerificationResult {
+    val value =
+      dedupRepository.findCluster(request.clusterId)
+        ?: return DedupClusterVerificationResult(request.clusterId, DedupClusterVerificationStatus.NOT_FOUND)
+    val memberIds =
+      value.members
+        .filter { it.present }
+        .map { it.bookId }
+        .sorted()
+    if (value.cluster.revision != request.expectedRevision || !value.cluster.reviewable) {
+      return DedupClusterVerificationResult(request.clusterId, DedupClusterVerificationStatus.STALE, memberIds.size)
+    }
+    val pairs = memberIds.flatMapIndexed { index, left -> memberIds.drop(index + 1).map { right -> left to right } }
+    var queued = 0
+    var skipped = 0
+    var failed = 0
+    pairs.forEach { (left, right) ->
+      val relation = dedupRepository.findRelation(left, right)
+      if (relation?.type == DedupRelationType.EXACT_FILE) {
+        skipped++
+      } else {
+        runCatching {
+          dedupRepository.enqueueWork(
+            id = TsidCreator.getTsid256().toString(),
+            libraryId = value.cluster.libraryId,
+            type = DedupWorkType.VERIFY_RELATION,
+            targetKey = "$left|$right",
+            priority = 6,
+          )
+        }.onSuccess { queued++ }.onFailure { failed++ }
+      }
+    }
+    val status = if (queued == 0) DedupClusterVerificationStatus.NO_ELIGIBLE_PAIR else DedupClusterVerificationStatus.QUEUED
+    return DedupClusterVerificationResult(request.clusterId, status, memberIds.size, pairs.size, queued, skipped, failed)
+  }
+
+  private fun enqueueClusterRebuild(libraryId: String) {
+    dedupRepository.enqueueWork(TsidCreator.getTsid256().toString(), libraryId, DedupWorkType.REBUILD_CLUSTERS, priority = -1)
+  }
 
   private fun process(work: DedupWork) {
     val leaseToken = requireNotNull(work.leaseToken)
@@ -187,40 +191,34 @@ class DedupWorkLifecycle(
       when (work.type) {
         DedupWorkType.RECONCILE_EXACT_DUPLICATES -> {
           exactDuplicateLifecycle.reconcileLibrary(work.libraryId)
+          enqueueClusterRebuild(work.libraryId)
           coverLifecycle.findDirtyBookIds(work.libraryId).forEach { bookId ->
-            dedupRepository.enqueueWork(
-              id = TsidCreator.getTsid256().toString(),
-              libraryId = work.libraryId,
-              type = DedupWorkType.COMPUTE_COVER,
-              targetKey = bookId,
-              priority = 2,
-            )
+            dedupRepository.enqueueWork(TsidCreator.getTsid256().toString(), work.libraryId, DedupWorkType.COMPUTE_COVER, bookId, priority = 2)
           }
-          dedupRepository.enqueueWork(
-            id = TsidCreator.getTsid256().toString(),
-            libraryId = work.libraryId,
-            type = DedupWorkType.FIND_COVER_NEIGHBORS,
-            priority = 0,
-          )
+          dedupRepository.enqueueWork(TsidCreator.getTsid256().toString(), work.libraryId, DedupWorkType.FIND_COVER_NEIGHBORS)
         }
-
         DedupWorkType.COMPUTE_COVER -> coverLifecycle.computeCover(work.targetKey)
-        DedupWorkType.FIND_COVER_NEIGHBORS -> coverLifecycle.rebuildCandidates(work.libraryId)
-        DedupWorkType.VERIFY_RELATION -> deepVerificationLifecycle.verifyCase(work.targetKey)
-        DedupWorkType.APPLY_DECISION_ITEM -> decisionLifecycle.applyDecision(work.targetKey)
-        DedupWorkType.VERIFY_DELETION -> decisionLifecycle.verifyDeletion(work.targetKey)
+        DedupWorkType.FIND_COVER_NEIGHBORS -> {
+          coverLifecycle.rebuildCandidates(work.libraryId)
+          enqueueClusterRebuild(work.libraryId)
+        }
+        DedupWorkType.VERIFY_RELATION -> {
+          val ids = work.targetKey.split('|')
+          require(ids.size == 2 && ids[0] < ids[1]) { "Invalid relation work target" }
+          deepVerificationLifecycle.verifyRelation(ids[0], ids[1])
+          enqueueClusterRebuild(work.libraryId)
+        }
+        DedupWorkType.REBUILD_CLUSTERS -> clusterLifecycle.rebuildLibrary(work.libraryId)
       }
-      check(dedupRepository.completeWork(work.id, leaseToken, work.desiredRevision)) {
-        "Dedup work lease changed before completion"
-      }
+      check(dedupRepository.completeWork(work.id, leaseToken, work.desiredRevision)) { "Dedup work lease changed before completion" }
     } catch (exception: Exception) {
       logger.error(exception) { "Dedup work ${work.id} (${work.type}) failed" }
       dedupRepository.failWork(
-        workId = work.id,
-        leaseToken = leaseToken,
-        attemptedRevision = work.desiredRevision,
-        errorCode = exception.javaClass.simpleName.uppercase(),
-        sanitizedError = exception.message?.replace(Regex("[\\r\\n]+"), " ") ?: exception.javaClass.simpleName,
+        work.id,
+        leaseToken,
+        work.desiredRevision,
+        exception.javaClass.simpleName.uppercase(),
+        exception.message?.replace(Regex("[\\r\\n]+"), " ") ?: exception.javaClass.simpleName,
       )
     }
   }

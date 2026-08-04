@@ -77,6 +77,7 @@ class DedupPhysicalBookDeletionLifecycle(
     if (!path.isCbz()) return unavailable(book, path, "Expected path is not a CBZ archive")
     if (!Files.isRegularFile(path)) return unavailable(book, path, "Expected path is not a regular file")
     if (!Files.isReadable(path)) return unavailable(book, path, "Book path is not readable")
+    if (!isWritable(path)) return unavailable(book, path, "Book path is not writable")
     val attributes = runCatching { Files.readAttributes(path, BasicFileAttributes::class.java) }.getOrElse { return unavailable(book, path, it.message ?: "Book stat is unavailable") }
     val liveMtime = attributes.lastModified()
     return if (book.fileSize <= 0 || book.fileSize != attributes.size() || !book.fileLastModified.sameStoredTime(liveMtime)) {
@@ -104,6 +105,7 @@ class DedupPhysicalBookDeletionLifecycle(
   fun deleteVerifiedBook(
     book: Book,
     expected: DedupStrongFileIdentity,
+    onPathAbsent: () -> Unit = {},
   ): DedupPhysicalDeletionResult {
     val path = book.path.toAbsolutePath().normalize()
     if (path.toString() != expected.path) return conflict(DedupDeletionResultCode.GENERATION_MISMATCH, "Book path changed")
@@ -125,15 +127,28 @@ class DedupPhysicalBookDeletionLifecycle(
     return try {
       Files.delete(path)
       if (Files.exists(path)) return conflict(DedupDeletionResultCode.DELETE_FAILED, "Path still exists after unlink")
+      onPathAbsent()
       bookLifecycle.softDeleteMany(listOf(book))
       DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETED, pathAbsent = true, databaseSoftDeleted = true)
     } catch (exception: Exception) {
+      val pathAbsent = Files.notExists(path)
       DedupPhysicalDeletionResult(
-        DedupDeletionResultCode.DELETE_FAILED,
-        pathAbsent = Files.notExists(path),
+        if (pathAbsent) DedupDeletionResultCode.KOMGA_NOT_SAVED else DedupDeletionResultCode.DELETE_FAILED,
+        pathAbsent = pathAbsent,
         databaseSoftDeleted = false,
         detail = exception.message?.take(500),
       )
+    }
+  }
+
+  fun confirmPathAbsentAndSoftDelete(book: Book): DedupPhysicalDeletionResult {
+    val path = book.path.toAbsolutePath().normalize()
+    if (!Files.notExists(path)) return conflict(DedupDeletionResultCode.REAPPEARED_DIFFERENT_HASH, "Expected path reappeared or cannot be confirmed absent")
+    return try {
+      if (book.deletedDate == null) bookLifecycle.softDeleteMany(listOf(book))
+      DedupPhysicalDeletionResult(DedupDeletionResultCode.ALREADY_DELETED_BY_THIS_RESOLUTION, pathAbsent = true, databaseSoftDeleted = true)
+    } catch (exception: Exception) {
+      DedupPhysicalDeletionResult(DedupDeletionResultCode.KOMGA_NOT_SAVED, pathAbsent = true, databaseSoftDeleted = false, detail = exception.message?.take(500))
     }
   }
 

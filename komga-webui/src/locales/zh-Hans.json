@@ -685,214 +685,6 @@
     "title": "重复文件",
     "url": "网址"
   },
-  "dedup_management": {
-    "actions": {
-      "accept": "采用建议方案",
-      "accept_blocked": "采用建议方案（{count} 项阻断）",
-      "alt_edition": "标记不同 Edition",
-      "book_analysis_requested": "已提交 {count} 个 Book 的重新分析",
-      "custom": "自定义处理",
-      "compare_pages": "对比页面",
-      "keeper_saved": "已保存保留者",
-      "override_saved": "已保存审核判断",
-      "protect": "保护",
-      "reanalysis_requested": "已提交重新分析",
-      "reanalyze": "重新分析",
-      "reverify": "重新深度验证",
-      "refresh": "刷新",
-      "retry_decision": "安全重试",
-      "scan": "立即扫描",
-      "set_keeper": "设为保留者",
-      "unrelated": "标记不相关",
-      "verification_requested": "已提交深度验证",
-      "verify_now": "立即深度验证",
-      "verify_page": "深度验证当前页（{count}）"
-    },
-    "blocker_count": "{count} 项阻断",
-    "bulk_verify": {
-      "body": "将为当前页的 {count} 个视觉候选提交页面级深度验证。缺失或过期的特征需要读取两端 CBZ 的全部页面，远程挂载可能产生较多 I/O。",
-      "confirm": "提交 {count} 项验证",
-      "result": "深度验证已处理：入队 {queued}，跳过 {skipped}，已变化 {stale}，失败 {failed}",
-      "snapshot": "当前页快照",
-      "title": "立即深度验证当前页"
-    },
-    "case_count": "{count} 个审核 case",
-    "cover_distance": "封面距离 {distance}/256",
-    "eligibility": {
-      "actions": {
-        "ANALYZE_BOOK": "重新分析受影响的 Book",
-        "CHECK_SOURCE_FILE": "检查源文件路径、挂载和读取权限",
-        "OPEN_PAGE_COMPARISON": "打开页面对比",
-        "PROTECT_MEMBER": "检查成员保护设置",
-        "REANALYZE_CASE": "重新深度验证",
-        "RUN_DEEP_VERIFICATION": "立即深度验证",
-        "SELECT_STATEFUL_COPY_AS_KEEPER": "将包含用户状态的副本设为保留者",
-        "SET_KEEPER": "在成员列表中选择唯一保留者",
-        "VIEW_TASK": "查看任务状态"
-      },
-      "actual": "实际值",
-      "effects": {
-        "BLOCK_MANUAL": "阻断自定义处理",
-        "BLOCK_SUGGESTED": "阻断建议方案",
-        "CONFIRM_MANUAL": "自定义处理需确认",
-        "CONFIRM_SUGGESTED": "建议方案需确认",
-        "WARNING": "仅警告"
-      },
-      "next_action": "建议操作",
-      "page_ranges": "相关页面范围",
-      "threshold": "要求",
-      "title": "处理资格"
-    },
-    "decision": {
-      "acknowledge_title": "逐项确认当前风险",
-      "approve_and_execute": "批准并执行",
-      "custom_title": "批准自定义处理",
-      "irreversible_acknowledgement": "我理解列出的 CBZ 将被永久删除，且本功能无法恢复。",
-      "irreversible_body": "系统只删除明确列出的 CBZ，但每项删除均不可恢复。多文件计划按逐项 saga 执行，可能只完成一部分。",
-      "irreversible_title": "永久物理删除",
-      "keeper": "保留的 Book",
-      "partial_warning": "执行前和每项删除前都会重验 generation、直接关系、本地状态、实时 stat 与完整 archive hash。后续冲突会停止剩余项，已完成项无法回滚；Drive 与 Gorse 确认单独显示。",
-      "queued": "决策 {id} 已批准并入队",
-      "retry_queued": "已提交决策恢复，将重新执行全部强校验",
-      "remove_members": "将删除的 CBZ",
-      "suggested_title": "批准建议方案"
-    },
-    "empty": {
-      "body": "当前筛选条件下没有已知候选。这表示已启用扫描的已知积压已清空，不代表换封面的重复内容一定不存在。",
-      "title": "没有已知候选"
-    },
-    "evidence": {
-      "coverage_left": "左侧覆盖率",
-      "coverage_right": "右侧覆盖率",
-      "longest_run": "最长连续有序匹配",
-      "not_analyzed": "尚未进行页面级深度验证。当前关系只基于封面候选证据。",
-      "unmatched": "未匹配页"
-    },
-    "errors": {
-      "analyze_book": "无法提交 Book 重新分析",
-      "cases": "无法加载审核 case",
-      "case_changed": "审核 case 已变化，已重新加载当前数据",
-      "decision": "证据、状态或文件身份已变化，服务器未接受该决策",
-      "decisions": "无法加载决策审计记录",
-      "page_comparison": "无法加载当前页面证据",
-      "save": "无法保存重复内容设置",
-      "scan": "无法提交扫描",
-      "settings": "无法加载重复内容设置",
-      "status": "无法加载重复内容状态",
-      "verify": "无法提交页面级深度验证"
-    },
-    "filters": {
-      "library": "媒体库",
-      "source": "候选来源"
-    },
-    "intervals": {
-      "DAILY": "每天",
-      "EVERY_12H": "每 12 小时",
-      "EVERY_6H": "每 6 小时",
-      "HOURLY": "每小时",
-      "WEEKLY": "每周"
-    },
-    "members": "个成员",
-    "keeper": "保留者",
-    "out_of_scope": "超出 MVP 范围（Series 有 {count} 个 active Book）",
-    "pages": "页",
-    "page_comparison": {
-      "exact": "精确匹配",
-      "no_evidence": "当前没有页面特征，请先执行深度验证。",
-      "perceptual": "视觉匹配",
-      "title": "当前 generation 页面对比",
-      "unmatched": "未匹配"
-    },
-    "ready": "可处理",
-    "reasons": {
-      "ANALYSIS_INCOMPLETE": "当前分析阶段尚未开放删除",
-      "ALT_EDITION": "现有证据可能属于不同 Edition",
-      "ANCILLARY_UNCONFIRMED": "未匹配页尚未被确认是附属页",
-      "COVER_ONLY": "目前只验证了封面相似",
-      "COLLECTION_PRESENT": "待删除 Series 位于 Collection 中",
-      "DELETION_IN_PROGRESS": "已有成员属于活动删除决策",
-      "DIRECT_KEEPER_RELATION_MISSING": "每个待删除成员都必须有指向保留者的当前直接关系",
-      "EDITION_UNCERTAIN": "无法仅凭视觉证据确认 Edition",
-      "EXTERNAL_STATE_NOT_VERIFIED": "无法完整验证外部阅读器状态",
-      "GORSE_STATE_UNKNOWN": "Gorse 反馈状态未知",
-      "FEATURE_STALE": "关系与当前源 generation 不一致",
-      "LOW_CONFIDENCE": "该分类器尚未校准到可用于建议删除",
-      "MVP_SCOPE_CURRENT": "所有成员都是当前单 active Book 的 CBZ Series",
-      "NEAR_CONTAINED_IN": "疑似被包含的副本仍有未匹配页",
-      "NO_KEEPER": "采用建议方案前必须选择唯一保留者",
-      "NO_LOCAL_STATE": "待删除成员没有可验证的本地用户状态",
-      "NOT_CONTENT_DUPLICATE": "该 pair 已被判断为非正文副本",
-      "OUT_OF_SCOPE_MULTI_BOOK_SERIES": "Series 并非恰好只有一个 active Book",
-      "PARTIAL_OVERLAP": "页面序列只有部分重合",
-      "PLAN_CHANGED": "保留者或待删除集合已变化",
-      "PROTECTED": "该 Book 已被显式保护"
-      ,"READLIST_PRESENT": "待删除 Book 位于 ReadList 中"
-      ,"READ_PROGRESS_PRESENT": "一个或多个用户在待删除 Book 上有阅读进度"
-      ,"SOURCE_FILE_STAT_STALE": "源文件的大小或修改时间与 Komga 记录不一致"
-      ,"SOURCE_FILE_UNAVAILABLE": "源 CBZ 路径不可读或不是普通文件"
-      ,"STRONG_FILE_IDENTITY_UNAVAILABLE": "必须具有可读的当前路径和强 archive 身份"
-      ,"USER_THUMBNAIL_OR_LOCKED_METADATA": "待删除 Book 或 Series 有用户封面或锁定 metadata"
-    },
-    "relations": {
-      "EXACT_FILE": "文件完全相同",
-      "EXACT_PAGE_SEQUENCE": "页面序列完全相同",
-      "CONTAINED_IN": "有方向包含",
-      "NEAR_CONTAINED_IN": "近似包含",
-      "PARTIAL_OVERLAP": "部分重合",
-      "ALT_EDITION": "不同 Edition",
-      "EDITION_UNCERTAIN": "Edition 不确定",
-      "SAME_EDITION_VARIANT": "同 Edition 变体",
-      "UNRELATED": "不相关",
-      "VISUALLY_SIMILAR": "视觉相似"
-    },
-    "scan_requested": "已为 {count} 个媒体库提交扫描",
-    "settings": {
-      "batch_size": "每轮 Book 数",
-      "calibration_notice": "封面距离只用于发现候选，绝不授权删除。请使用目标媒体库的人工标注样本校准阈值。",
-      "cover_distance": "封面候选距离",
-      "enabled": "启用",
-      "interval": "扫描间隔",
-      "max_duration": "最长运行时间",
-      "paused": "暂停",
-      "quiet_period": "静默期",
-      "saved": "重复内容设置已保存",
-      "stability_period": "完成稳定期",
-      "top_k": "每个 Book 最大邻居数"
-    },
-    "status": {
-      "failed": "需要处理",
-      "pending": "待处理工作",
-      "review_cases": "审核 case",
-      "running": "运行中"
-    },
-    "subtitle": "持续增量分析 CBZ 相似性、审核版本化证据，并通过可恢复的逐文件 saga 执行不可逆决策。",
-    "tabs": {
-      "cases": "疑似 case",
-      "settings": "设置",
-      "tasks": "任务状态"
-    },
-    "tasks": {
-      "audit_title": "最近决策审计",
-      "failed_help": "需要人工处理的工作会保留在主数据库。修复原因后，可通过重试 API 重新提交。",
-      "gorse": "Gorse {state}",
-      "no_decisions": "尚未批准任何删除决策。",
-      "subtitle": "这里展示主数据库中的持久状态；Komga 通用 Task 队列只负责唤醒。",
-      "title": "持久工作队列"
-    },
-    "title": "重复内容管理",
-    "validation": {
-      "hash_distance": "请输入 0 到 256 之间的距离",
-      "non_negative": "请输入零或正数",
-      "positive": "请输入大于零的数"
-    },
-    "work_states": {
-      "FAILED_REVIEW": "需要处理",
-      "PENDING": "待处理",
-      "RUNNING": "运行中",
-      "SUCCEEDED": "已完成",
-      "WAITING": "等待中"
-    }
-  },
   "enums": {
     "copy_mode": {
       "HARDLINK": "硬链接/复制文件",
@@ -1268,6 +1060,110 @@
       "japanese": "Gojūon（日语）"
     },
     "tooltip_oauth2_auto_login": "需要单个 OAuth2 提供商，并启用“隐藏登录字段”"
+  },
+  "dedup": {
+    "title": "重复簇核验",
+    "subtitle": "核验由封面候选关系连接出的重复簇，比较直接证据，并明确选择每一本保留或删除。",
+    "scanNow": "立即扫描",
+    "scanQueued": "已为 {count} 个媒体库加入扫描队列",
+    "scanSettings": "扫描设置",
+    "scanInterval": "扫描间隔",
+    "enabled": "启用",
+    "coverDistance": "封面距离",
+    "topK": "Top-K 邻居",
+    "noLibraries": "当前没有可配置重复扫描的媒体库。",
+    "pendingWork": "待处理工作",
+    "statusFilter": "状态",
+    "libraryFilter": "媒体库",
+    "evidenceFilter": "证据成熟度",
+    "clusterCount": "{count} 个重复簇 | {count} 个重复簇",
+    "memberCount": "{count} 个成员 | {count} 个成员",
+    "pageCount": "{count} 页 | {count} 页",
+    "pageCountUnknown": "页数未知",
+    "verifiedProgress": "已核验 {verified}/{total} 对",
+    "planCounts": "保留 {keep}，删除 {remove}",
+    "noSafeSuggestion": "没有安全的自动删除建议",
+    "untitledCluster": "未命名重复簇",
+    "emptyTitle": "没有符合筛选条件的重复簇",
+    "emptyBody": "可以调整筛选，或先为媒体库启用重复核验并执行扫描。",
+    "verifyCurrentPage": "立即深度验证当前页（{count}）",
+    "confirmBulkVerify": "为冻结的 {clusters} 个重复簇、{books} 本书和 {pairs} 对关系加入深度验证队列？这可能完整读取远程 CBZ 的所有页面。",
+    "bulkQueuedResult": "簇排队 {clusters}；关系排队 {queued}；跳过 {skipped}；过期 {stale}",
+    "settingsSaved": "重复扫描设置已保存",
+    "dialogTitle": "重复簇核验",
+    "membersAndActions": "成员与处理方案",
+    "evidence": "直接证据",
+    "eligibility": "安全条件与风险确认",
+    "keep": "保留",
+    "delete": "删除",
+    "keeperForDelete": "由哪一本保留",
+    "outOfScope": "不在当前安全处理范围",
+    "relationMatrix": "Book 关系对",
+    "unverified": "尚未验证",
+    "selectPairHint": "选择一对 Book 以查看关系指标和页面序列。",
+    "suggestedPlan": "建议方案",
+    "verifyNow": "深度验证",
+    "useSuggestion": "采用建议方案",
+    "submitCustom": "提交自定义方案",
+    "retryIncomplete": "重试未完成步骤",
+    "verificationQueued": "已加入深度验证队列",
+    "confirmSuggested": "采用建议方案并永久删除 {count} 个文件？",
+    "confirmCustom": "提交自定义方案并永久删除 {count} 个文件？",
+    "confirmKeepAll": "本次不删除文件，保留全部成员并把当前簇标记为已处理？",
+    "acknowledgeRisk": "我已核对并接受此直接关系的“{type}”风险",
+    "acknowledgeLocalState": "我已核对并接受删除“{book}”，它包含“{state}”本地状态",
+    "resolutionResult": "处理结果",
+    "book": "Book",
+    "action": "动作",
+    "stepState": "步骤状态",
+    "result": "结果",
+    "seriesResults": "逐 Series 的 Gorse 结果",
+    "series": "Series",
+    "expectedHidden": "预期隐藏",
+    "hidden": "隐藏",
+    "visible": "可见",
+    "actual": "实际值",
+    "threshold": "阈值",
+    "unknownError": "重复簇请求失败。",
+    "status": {
+      "UNPROCESSED": "未处理", "PROCESSING": "处理中", "PROCESSED": "已处理", "NEEDS_ATTENTION": "需要注意"
+    },
+    "resolutionState": {
+      "PROCESSING": "处理中", "PROCESSED": "已处理", "NEEDS_ATTENTION": "需要注意", "PARTIALLY_COMPLETED": "部分完成"
+    },
+    "gorseState": {"CONFIRMED": "已确认", "NOT_APPLICABLE": "不适用", "FAILED": "失败"},
+    "actionValue": {"KEEP": "保留", "DELETE": "删除"},
+    "maturity": {"COVER_ONLY": "仅封面候选", "PARTIAL": "部分深度验证", "COMPLETE": "全部深度验证"},
+    "interval": {"HOURLY": "每小时", "EVERY_6H": "每 6 小时", "EVERY_12H": "每 12 小时", "DAILY": "每天", "WEEKLY": "每周"},
+    "metric": {
+      "coverDistance": "封面距离", "coverageLeft": "左侧覆盖率", "coverageRight": "右侧覆盖率",
+      "orderConsistency": "顺序一致性", "longestMatchedRun": "最长连续匹配", "unmatchedPrefix": "未匹配前缀",
+      "unmatchedSuffix": "未匹配后缀", "unmatchedInternal": "内部未匹配页"
+    },
+    "relation": {
+      "EXACT_FILE": "完全相同文件", "EXACT_PAGE_SEQUENCE": "完全相同页面序列", "SAME_EDITION_VARIANT": "同版本变体",
+      "CONTAINED_IN": "页面序列包含", "NEAR_CONTAINED_IN": "近似包含", "PARTIAL_OVERLAP": "部分重叠",
+      "ALT_EDITION": "不同版本", "EDITION_UNCERTAIN": "版本不确定", "VISUALLY_SIMILAR": "视觉相似", "UNRELATED": "内容不相关"
+    },
+    "localState": {
+      "READ_PROGRESS_PRESENT": "有阅读进度", "READLIST_PRESENT": "在 ReadList 中", "COLLECTION_PRESENT": "在 Collection 中",
+      "USER_THUMBNAIL_OR_LOCKED_METADATA": "有自定义封面或锁定元数据"
+    },
+    "reopen": {
+      "CLUSTERS_MERGED": "候选拓扑变化后重复簇已合并", "CLUSTER_SPLIT": "候选拓扑变化后重复簇已拆分",
+      "TOPOLOGY_CHANGED": "成员或候选拓扑已变化", "EVIDENCE_CHANGED": "直接证据已变化",
+      "LOCAL_STATE_CHANGED": "本地用户状态已变化", "PROCESSING_LEASE_EXPIRED": "上一次处理被中断",
+      "PREFLIGHT_FAILED": "执行前校验失败", "GORSE_FAILED": "Gorse 状态确认失败", "FINALIZE_CONFLICT": "最终状态保存冲突"
+    },
+    "reason": {
+      "CLUSTER_NOT_UNPROCESSED": "当前簇不能创建新的处理方案。",
+      "CLUSTER_REVISION_STALE": "成员或源 generation 已变化。",
+      "MEMBER_RESOLUTION_ACTIVE": "已有处理请求占用其中的成员。",
+      "STATE_REVISION_CHANGED": "当前 revision 之后本地用户状态发生了变化。",
+      "DELETE_FILE_UNAVAILABLE": "待删除文件不可用、stat 过期或不可写。",
+      "LOCAL_STATE_WOULD_BE_DISCARDED": "建议方案会丢弃受保护的本地用户状态。",
+      "PROCESSING_PRECHECK_PASSED": "当前处理前提已通过。"
+    }
   },
   "updates": {
     "available": "有可用更新",

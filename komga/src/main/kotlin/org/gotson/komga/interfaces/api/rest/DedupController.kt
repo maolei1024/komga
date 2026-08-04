@@ -1,58 +1,73 @@
 package org.gotson.komga.interfaces.api.rest
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.github.f4b6a3.tsid.TsidCreator
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.gotson.komga.domain.model.DedupClusterStatus
+import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupLibrarySettings
-import org.gotson.komga.domain.model.DedupOverride
-import org.gotson.komga.domain.model.DedupOverrideType
-import org.gotson.komga.domain.model.DedupReviewCase
-import org.gotson.komga.domain.model.DedupReviewCaseOrigin
-import org.gotson.komga.domain.model.DedupReviewCaseStatus
+import org.gotson.komga.domain.model.DedupRelation
+import org.gotson.komga.domain.model.DedupRelationStatus
+import org.gotson.komga.domain.model.DedupRelationType
+import org.gotson.komga.domain.model.DedupResolution
+import org.gotson.komga.domain.model.DedupResolutionPlan
+import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.Library
 import org.gotson.komga.domain.persistence.BookRepository
-import org.gotson.komga.domain.persistence.DedupDecisionRepository
 import org.gotson.komga.domain.persistence.DedupRepository
+import org.gotson.komga.domain.persistence.DedupResolutionRepository
 import org.gotson.komga.domain.persistence.LibraryRepository
-import org.gotson.komga.domain.service.DedupCaseVerificationRequest
-import org.gotson.komga.domain.service.DedupCaseVerificationStatus
+import org.gotson.komga.domain.service.DedupClusterVerificationRequest
+import org.gotson.komga.domain.service.DedupClusterVerificationStatus
 import org.gotson.komga.domain.service.DedupCoverLifecycle
-import org.gotson.komga.domain.service.DedupDecisionLifecycle
-import org.gotson.komga.domain.service.DedupDecisionValidationException
-import org.gotson.komga.domain.service.DedupEligibilityPolicy
+import org.gotson.komga.domain.service.DedupCustomMemberSelection
+import org.gotson.komga.domain.service.DedupDeepVerificationLifecycle
+import org.gotson.komga.domain.service.DedupLocalStateLifecycle
+import org.gotson.komga.domain.service.DedupResolutionExecutionException
+import org.gotson.komga.domain.service.DedupResolutionLifecycle
+import org.gotson.komga.domain.service.DedupResolutionValidationException
+import org.gotson.komga.domain.service.DedupSuggestionPlanner
 import org.gotson.komga.domain.service.DedupWorkLifecycle
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.persistence.BookDtoRepository
 import org.gotson.komga.interfaces.api.rest.dto.DedupBulkVerificationRequestDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupBulkVerificationResultDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupCaseVerificationResultDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupCustomDecisionRequestDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupDecisionDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupDecisionItemDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupKeeperUpdateDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupClusterCoverMemberDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupClusterDetailDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupClusterMemberDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupClusterSummaryDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupClusterVerificationResultDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupConflictDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupCustomResolutionRequestDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupEvidenceMaturity
 import org.gotson.komga.interfaces.api.rest.dto.DedupLibrarySelectionDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupLibrarySettingsDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupOverrideRequestDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupPageComparisonDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupPageEvidenceDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupReviewCaseDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupReviewCaseMemberDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupPlanDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupPlanMemberDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupRelationDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupResolutionDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupResolutionMemberDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupResolutionSummaryDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupScanResultDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupSettingsDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupSettingsUpdateDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupSingleVerificationRequestDto
 import org.gotson.komga.interfaces.api.rest.dto.DedupStatusDto
-import org.gotson.komga.interfaces.api.rest.dto.DedupSuggestedDecisionRequestDto
+import org.gotson.komga.interfaces.api.rest.dto.DedupSuggestedResolutionRequestDto
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -71,49 +86,41 @@ import java.time.LocalDateTime
 @Tag(name = "dedup")
 class DedupController(
   private val dedupRepository: DedupRepository,
-  private val dedupWorkLifecycle: DedupWorkLifecycle,
+  private val resolutionRepository: DedupResolutionRepository,
+  private val workLifecycle: DedupWorkLifecycle,
+  private val resolutionLifecycle: DedupResolutionLifecycle,
+  private val suggestionPlanner: DedupSuggestionPlanner,
+  private val localStateLifecycle: DedupLocalStateLifecycle,
+  private val coverLifecycle: DedupCoverLifecycle,
   private val libraryRepository: LibraryRepository,
   private val bookRepository: BookRepository,
   private val bookDtoRepository: BookDtoRepository,
-  private val eligibilityPolicy: DedupEligibilityPolicy,
-  private val decisionLifecycle: DedupDecisionLifecycle,
-  private val decisionRepository: DedupDecisionRepository,
   private val objectMapper: ObjectMapper,
-  private val coverLifecycle: DedupCoverLifecycle,
 ) {
   @GetMapping("settings")
-  @Operation(summary = "Retrieve duplicate-content management settings")
-  fun getSettings(): DedupSettingsDto =
-    DedupSettingsDto(
-      libraryRepository
-        .findAll()
-        .sortedBy { it.name }
-        .map { library -> DedupLibrarySettingsDto(dedupRepository.findLibrarySettings(library.id) ?: DedupLibrarySettings(library.id)) },
-    )
+  fun getSettings(): DedupSettingsDto = DedupSettingsDto(libraryRepository.findAll().sortedBy { it.name }.map { DedupLibrarySettingsDto(dedupRepository.findLibrarySettings(it.id) ?: DedupLibrarySettings(it.id)) })
 
   @PutMapping("settings")
-  @Operation(summary = "Update duplicate-content management settings")
   fun updateSettings(
     @Valid @RequestBody update: DedupSettingsUpdateDto,
   ): DedupSettingsDto {
     update.libraries.forEach { value ->
       if (libraryRepository.findByIdOrNull(value.libraryId) == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "Library not found")
       if (value.scanInterval == Library.ScanInterval.DISABLED) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Use enabled=false instead of DISABLED")
-      val existing = dedupRepository.findLibrarySettings(value.libraryId)
-      dedupWorkLifecycle.saveSettings(
+      val current = dedupRepository.findLibrarySettings(value.libraryId)
+      workLifecycle.saveSettings(
         DedupLibrarySettings(
-          libraryId = value.libraryId,
-          enabled = value.enabled,
-          paused = value.paused,
-          scanInterval = value.scanInterval,
-          batchSize = value.batchSize,
-          maxDurationSeconds = value.maxDurationSeconds,
-          quietPeriodSeconds = value.quietPeriodSeconds,
-          completionStabilitySeconds = value.completionStabilitySeconds,
-          coverCandidateDistance = value.coverCandidateDistance,
-          coverTopK = value.coverTopK,
-          createdDate = existing?.createdDate ?: LocalDateTime.now(),
-          lastModifiedDate = LocalDateTime.now(),
+          value.libraryId,
+          value.enabled,
+          value.paused,
+          value.scanInterval,
+          value.batchSize,
+          value.maxDurationSeconds,
+          value.quietPeriodSeconds,
+          value.coverCandidateDistance,
+          value.coverTopK,
+          current?.createdDate ?: LocalDateTime.now(),
+          LocalDateTime.now(),
         ),
       )
     }
@@ -121,389 +128,357 @@ class DedupController(
   }
 
   @GetMapping("status")
-  @Operation(summary = "Retrieve duplicate-content work status")
   fun getStatus(): DedupStatusDto {
     val settings = dedupRepository.findAllLibrarySettings()
-    val cases = dedupRepository.findReviewCases()
-    val workCounts = dedupRepository.countWorkByState()
-    val decisionCounts = decisionRepository.countDecisionStates()
-    val itemCounts = decisionRepository.countDecisionItemStates()
+    val work = dedupRepository.countWorkByState()
+    val clusters = dedupRepository.countClustersByStatus()
+    val resolutions = resolutionRepository.countResolutionsByState()
     return DedupStatusDto(
-      work = DedupWorkState.entries.associate { it.name to (workCounts[it] ?: 0) },
-      decisions =
-        org.gotson.komga.domain.model.DedupDecisionState.entries
-          .associate { it.name to (decisionCounts[it] ?: 0) },
-      decisionItems =
-        org.gotson.komga.domain.model.DedupDecisionItemState.entries
-          .associate { it.name to (itemCounts[it] ?: 0) },
-      gorseSync = decisionRepository.countGorseSyncStates(),
+      work = DedupWorkState.entries.associate { it.name to (work[it] ?: 0) },
+      clusters = DedupClusterStatus.entries.associate { it.name to (clusters[it] ?: 0) },
+      resolutions = DedupResolutionState.entries.associate { it.name to (resolutions[it] ?: 0) },
+      gorseSync = dedupRepository.countGorseSyncStates(),
       enabledLibraries = settings.count { it.enabled },
       pausedLibraries = settings.count { it.enabled && it.paused },
-      reviewCases = cases.size,
-      exactFileCases = cases.count { it.origin == DedupReviewCaseOrigin.EXACT_FILE },
     )
   }
 
   @PostMapping("scans")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  @Operation(summary = "Request an incremental duplicate-content scan")
   fun requestScan(
     @RequestBody request: DedupLibrarySelectionDto,
   ): DedupScanResultDto {
     val configured = dedupRepository.findAllLibrarySettings().filter { it.enabled && !it.paused }
     val selected = if (request.libraryIds.isEmpty()) configured else configured.filter { it.libraryId in request.libraryIds }
-    selected.forEach { dedupWorkLifecycle.requestExactReconciliation(it.libraryId, bypassQuietPeriod = true) }
+    selected.forEach { workLifecycle.requestExactReconciliation(it.libraryId, bypassQuietPeriod = true) }
     return DedupScanResultDto(selected.size)
   }
 
   @PostMapping("scans/pause")
-  @Operation(summary = "Pause duplicate-content scans")
   fun pause(
     @RequestBody request: DedupLibrarySelectionDto,
   ): DedupSettingsDto = setPaused(request, true)
 
   @PostMapping("scans/resume")
-  @Operation(summary = "Resume duplicate-content scans")
   fun resume(
     @RequestBody request: DedupLibrarySelectionDto,
   ): DedupSettingsDto = setPaused(request, false)
 
   @PostMapping("work/{workId}/retry")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  @Operation(summary = "Retry failed duplicate-content work")
   fun retryWork(
     @PathVariable workId: String,
   ) {
-    if (!dedupWorkLifecycle.retry(workId)) throw ResponseStatusException(HttpStatus.CONFLICT, "Work is not retryable")
+    if (!workLifecycle.retry(workId)) throw ResponseStatusException(HttpStatus.CONFLICT, "Work is not retryable")
   }
 
-  @GetMapping("cases")
-  @Operation(summary = "List duplicate-content review cases")
-  fun getCases(
+  @GetMapping("clusters")
+  @Operation(summary = "List persistent duplicate clusters")
+  fun getClusters(
     @AuthenticationPrincipal principal: KomgaPrincipal,
     @RequestParam(name = "library_id", required = false) libraryId: String? = null,
-    @RequestParam(name = "origin", required = false) origin: DedupReviewCaseOrigin? = null,
+    @RequestParam(name = "status", required = false) status: DedupClusterStatus? = null,
+    @RequestParam(name = "evidence", required = false) evidence: DedupEvidenceMaturity? = null,
     page: Pageable,
-  ): Page<DedupReviewCaseDto> {
-    val all = dedupRepository.findReviewCases(libraryId, origin)
-    val from = if (page.isPaged) page.offset.toInt().coerceAtMost(all.size) else 0
-    val to = if (page.isPaged) (from + page.pageSize).coerceAtMost(all.size) else all.size
-    val content = all.subList(from, to).map { it.toDto(principal.user.id) }
-    val responsePage = if (page.isPaged) page else PageRequest.of(0, maxOf(all.size, 20))
-    return PageImpl(content, responsePage, all.size.toLong())
+  ): Page<DedupClusterSummaryDto> {
+    validatePage(page)
+    val all =
+      dedupRepository
+        .findAllClusters(libraryId)
+        .filter { it.cluster.supersededBy == null && it.cluster.reviewable && (status == null || it.cluster.status == status) }
+        .map { it to it.toSummary(principal.user.id) }
+        .filter { evidence == null || it.second.evidenceMaturity == evidence }
+        .sortedWith(compareByDescending<Pair<DedupClusterWithMembers, DedupClusterSummaryDto>> { it.first.cluster.lastModifiedDate }.thenBy { it.first.cluster.id })
+    val from = page.offset.toInt().coerceAtMost(all.size)
+    val to = (from + page.pageSize).coerceAtMost(all.size)
+    return PageImpl(all.subList(from, to).map { it.second }, page, all.size.toLong())
   }
 
-  @GetMapping("cases/{caseId}")
-  @Operation(summary = "Retrieve a duplicate-content review case")
-  fun getCase(
+  @GetMapping("clusters/{clusterId}")
+  fun getCluster(
     @AuthenticationPrincipal principal: KomgaPrincipal,
-    @PathVariable caseId: String,
-  ): DedupReviewCaseDto =
-    dedupRepository.findReviewCase(caseId)?.toDto(principal.user.id)
-      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    @PathVariable clusterId: String,
+  ): DedupClusterDetailDto = dedupRepository.findCluster(clusterId)?.toDetail(principal.user.id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
 
-  @GetMapping("cases/{caseId}/pages")
-  @Operation(summary = "Retrieve current-generation page evidence for a pairwise review case")
-  fun getPageComparison(
-    @PathVariable caseId: String,
+  @GetMapping("clusters/{clusterId}/pages")
+  fun getPages(
+    @PathVariable clusterId: String,
+    @RequestParam(name = "left_book_id") leftBookId: String,
+    @RequestParam(name = "right_book_id") rightBookId: String,
   ): DedupPageComparisonDto {
-    val reviewCase = dedupRepository.findReviewCase(caseId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-    val ids = reviewCase.memberBookIds.sorted()
-    if (ids.size != 2) throw ResponseStatusException(HttpStatus.CONFLICT, "Page comparison requires a pairwise case")
-    val relation = dedupRepository.findRelation(ids[0], ids[1]) ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Current relation is unavailable")
+    if (leftBookId == rightBookId) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Two different Books are required")
+    val value = dedupRepository.findCluster(clusterId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    val ids =
+      value.members
+        .filter { it.present }
+        .map { it.bookId }
+        .toSet()
+    if (leftBookId !in ids || rightBookId !in ids) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Both Books must be present cluster members")
+    val relation =
+      value.currentRelations().firstOrNull { setOf(it.bookLowId, it.bookHighId) == setOf(leftBookId, rightBookId) }
+        ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Current relation is unavailable")
+    val (low, high) = listOf(leftBookId, rightBookId).sorted()
     val evidence = runCatching { objectMapper.readTree(relation.evidenceJson) }.getOrNull()
-    val matches =
-      evidence
-        ?.path("matches")
-        ?.associate { node ->
-          (node.path("leftPage").asInt() to node.path("rightPage").asInt()) to node.path("exact").asBoolean()
-        }.orEmpty()
-    val reverse = matches.entries.associate { (pages, exact) -> (pages.second to pages.first) to exact }
+    val matches = evidence?.path("matches")?.associate { (it.path("leftPage").asInt() to it.path("rightPage").asInt()) to it.path("exact").asBoolean() }.orEmpty()
     val pages =
-      ids.associateWith { bookId ->
+      listOf(low, high).associateWith { bookId ->
         val identity = coverLifecycle.currentSourceIdentity(bookId)
-        val features =
-          identity
-            ?.let {
-              dedupRepository.findPageFeatures(bookId, it.contentGeneration, org.gotson.komga.domain.service.DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION)
-            }.orEmpty()
-        features.map { page ->
-          val pair =
-            if (bookId == ids[0]) {
-              matches.entries.firstOrNull { it.key.first == page.pageNumber }?.let { it.key.second to it.value }
-            } else {
-              reverse.entries.firstOrNull { it.key.first == page.pageNumber }?.let { it.key.second to it.value }
-            }
+        val features = identity?.let { dedupRepository.findPageFeatures(bookId, it.contentGeneration, DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION) }.orEmpty()
+        features.map { pageFeature ->
+          val match =
+            if (bookId == low)
+              matches.entries.firstOrNull { it.key.first == pageFeature.pageNumber }?.let { it.key.second to it.value }
+            else
+              matches.entries.firstOrNull { it.key.second == pageFeature.pageNumber }?.let { it.key.first to it.value }
           DedupPageEvidenceDto(
-            bookId = bookId,
-            pageNumber = page.pageNumber,
-            matchedBookId = pair?.let { if (bookId == ids[0]) ids[1] else ids[0] },
-            matchedPageNumber = pair?.first,
-            exactMatch = pair?.second,
-            thumbnailUrl = "/api/v1/books/$bookId/pages/${page.pageNumber}/thumbnail",
+            bookId,
+            pageFeature.pageNumber,
+            match?.let { if (bookId == low) high else low },
+            match?.first,
+            match?.second,
+            "/api/v1/books/$bookId/pages/${pageFeature.pageNumber}/thumbnail",
           )
         }
       }
-    return DedupPageComparisonDto(relation.type.name, pages)
+    return DedupPageComparisonDto(low, high, relation.type, pages)
   }
 
-  @PutMapping("cases/{caseId}/keeper")
-  @Operation(summary = "Select the keeper for a duplicate-content review case")
-  fun setKeeper(
-    @AuthenticationPrincipal principal: KomgaPrincipal,
-    @PathVariable caseId: String,
-    @Valid @RequestBody update: DedupKeeperUpdateDto,
-  ): DedupReviewCaseDto {
-    val current = dedupRepository.findReviewCase(caseId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-    if (update.bookId !in current.memberBookIds) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Keeper must be a case member")
-    if (!dedupRepository.setReviewCaseKeeper(caseId, update.expectedRevision, update.bookId)) {
-      throw ResponseStatusException(HttpStatus.CONFLICT, "Review case changed")
-    }
-    return dedupRepository.findReviewCase(caseId)!!.toDto(principal.user.id)
-  }
-
-  @PostMapping("cases/{caseId}/overrides")
-  @Operation(summary = "Record a version-bound duplicate-content override")
-  fun addOverride(
-    @AuthenticationPrincipal principal: KomgaPrincipal,
-    @PathVariable caseId: String,
-    @Valid @RequestBody request: DedupOverrideRequestDto,
-  ): DedupReviewCaseDto {
-    val current = dedupRepository.findReviewCase(caseId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-    val type =
-      try {
-        DedupOverrideType.valueOf(request.type)
-      } catch (_: IllegalArgumentException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported override type")
-      }
-    val memberIds = current.memberBookIds.sorted()
-    val relation = memberIds.takeIf { it.size == 2 }?.let { dedupRepository.findRelation(it[0], it[1]) }
-    if (type != DedupOverrideType.PROTECTED && relation?.type?.name == "EXACT_FILE") {
-      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Exact-file identity cannot be dismissed as an edition override")
-    }
-    val override =
-      if (type == DedupOverrideType.PROTECTED) {
-        val bookId = request.bookId ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Protected override requires a book")
-        if (bookId !in current.memberBookIds) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Protected book must be a case member")
-        DedupOverride(
-          id = TsidCreator.getTsid256().toString(),
-          type = type,
-          bookId = bookId,
-          actorId = principal.user.id,
-          reason = request.reason,
-        )
-      } else {
-        if (memberIds.size != 2 || relation == null) throw ResponseStatusException(HttpStatus.CONFLICT, "A current direct relation is required")
-        DedupOverride(
-          id = TsidCreator.getTsid256().toString(),
-          type = type,
-          bookLowId = memberIds[0],
-          bookHighId = memberIds[1],
-          lowContentGeneration = relation.lowContentGeneration,
-          highContentGeneration = relation.highContentGeneration,
-          lowCoverGeneration = relation.lowCoverGeneration,
-          highCoverGeneration = relation.highCoverGeneration,
-          actorId = principal.user.id,
-          reason = request.reason,
-        )
-      }
-    val newStatus = if (type == DedupOverrideType.PROTECTED) current.status else DedupReviewCaseStatus.IGNORED
-    if (!dedupRepository.applyOverride(caseId, request.expectedRevision, override, newStatus)) {
-      throw ResponseStatusException(HttpStatus.CONFLICT, "Review case changed")
-    }
-    return dedupRepository.findReviewCase(caseId)!!.toDto(principal.user.id)
-  }
-
-  @PostMapping("cases/{caseId}/verify")
+  @PostMapping("clusters/{clusterId}/verify")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  @Operation(summary = "Reanalyze a duplicate-content review case")
-  fun reanalyzeCase(
-    @PathVariable caseId: String,
-  ) {
-    if (dedupWorkLifecycle.requestCaseVerification(caseId) == null) throw ResponseStatusException(HttpStatus.NOT_FOUND)
-  }
+  fun verifyCluster(
+    @PathVariable clusterId: String,
+    @Valid @RequestBody request: DedupSingleVerificationRequestDto,
+  ): DedupClusterVerificationResultDto = workLifecycle.requestClusterVerification(clusterId, request.expectedRevision).toDto()
 
-  @PostMapping("cases/verify")
+  @PostMapping("clusters/verify")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  @Operation(summary = "Queue deep verification for a page of duplicate-content review cases")
-  fun verifyCases(
+  fun verifyClusters(
     @Valid @RequestBody request: DedupBulkVerificationRequestDto,
   ): DedupBulkVerificationResultDto {
-    val caseIds = request.cases.map { it.caseId }
-    if (caseIds.distinct().size != request.cases.size) {
-      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate case IDs are not allowed")
-    }
-    val results =
-      dedupWorkLifecycle.requestCaseVerifications(
-        request.cases.map { DedupCaseVerificationRequest(it.caseId, it.expectedRevision) },
-      )
+    val ids = request.clusters.map { it.clusterId }
+    if (ids.distinct().size != ids.size) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate cluster IDs are not allowed")
+    val results = workLifecycle.requestClusterVerifications(request.clusters.map { DedupClusterVerificationRequest(it.clusterId, it.expectedRevision) })
     return DedupBulkVerificationResultDto(
-      requested = results.size,
-      queued = results.count { it.status == DedupCaseVerificationStatus.QUEUED },
-      skipped = results.count { it.status == DedupCaseVerificationStatus.SKIPPED_EXACT_FILE },
-      stale = results.count { it.status == DedupCaseVerificationStatus.STALE },
-      failed = results.count { it.status in setOf(DedupCaseVerificationStatus.NOT_FOUND, DedupCaseVerificationStatus.UNSUPPORTED_CASE) },
-      results = results.map { DedupCaseVerificationResultDto(it.caseId, it.status.name) },
+      results.size,
+      results.count { it.status == DedupClusterVerificationStatus.QUEUED },
+      results.count { it.status == DedupClusterVerificationStatus.STALE },
+      results.count { it.status in setOf(DedupClusterVerificationStatus.NOT_FOUND, DedupClusterVerificationStatus.NO_ELIGIBLE_PAIR) },
+      results.sumOf { it.queuedPairs },
+      results.sumOf { it.skippedPairs },
+      results.sumOf { it.failedPairs },
+      results.map { it.toDto() },
     )
   }
 
-  @PostMapping("cases/{caseId}/decisions/suggest")
+  @PostMapping("clusters/{clusterId}/resolutions/suggested")
   @ResponseStatus(HttpStatus.CREATED)
-  @Operation(summary = "Create an immutable approved suggested dedup decision")
-  fun createSuggestedDecision(
+  fun createSuggested(
     @AuthenticationPrincipal principal: KomgaPrincipal,
-    @PathVariable caseId: String,
-    @Valid @RequestBody request: DedupSuggestedDecisionRequestDto,
-  ): DedupDecisionDto =
-    decisionCall {
-      decisionLifecycle
-        .createSuggested(caseId, request.expectedRevision, request.stateRevision, principal.user.id)
-        .toDto()
-    }
+    @PathVariable clusterId: String,
+    @Valid @RequestBody request: DedupSuggestedResolutionRequestDto,
+  ): DedupResolutionDto = resolutionLifecycle.createSuggested(clusterId, request.expectedRevision, request.stateRevision, request.planRevision, principal.user.id).toDto()
 
-  @PostMapping("cases/{caseId}/decisions/custom")
+  @PostMapping("clusters/{clusterId}/resolutions/custom")
   @ResponseStatus(HttpStatus.CREATED)
-  @Operation(summary = "Create an immutable approved custom dedup decision")
-  fun createCustomDecision(
+  fun createCustom(
     @AuthenticationPrincipal principal: KomgaPrincipal,
-    @PathVariable caseId: String,
-    @Valid @RequestBody request: DedupCustomDecisionRequestDto,
-  ): DedupDecisionDto =
-    decisionCall {
-      decisionLifecycle
-        .createManual(
-          caseId,
-          request.expectedRevision,
-          request.keeperBookId,
-          request.removeBookIds,
-          request.stateRevision,
-          request.acknowledgedReasonCodes,
-          principal.user.id,
-        ).toDto()
-    }
+    @PathVariable clusterId: String,
+    @Valid @RequestBody request: DedupCustomResolutionRequestDto,
+  ): DedupResolutionDto {
+    if (request.acknowledgedReasonCodes.distinct().size != request.acknowledgedReasonCodes.size) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate reason codes are not allowed")
+    return resolutionLifecycle
+      .createCustom(
+        clusterId,
+        request.expectedRevision,
+        request.stateRevision,
+        request.members.map { DedupCustomMemberSelection(it.bookId, it.action, it.keeperBookId) },
+        request.acknowledgedReasonCodes.toSet(),
+        principal.user.id,
+      ).toDto()
+  }
 
-  @PostMapping("decisions/{decisionId}/execute")
-  @ResponseStatus(HttpStatus.ACCEPTED)
-  @Operation(summary = "Execute an approved dedup decision through the dedicated Book deletion saga")
-  fun executeDecision(
-    @PathVariable decisionId: String,
-  ): DedupDecisionDto = decisionCall { decisionLifecycle.requestExecution(decisionId).toDto() }
+  @PostMapping("resolutions/{resolutionId}/retry")
+  @ResponseStatus(HttpStatus.CREATED)
+  fun retryResolution(
+    @PathVariable resolutionId: String,
+  ): DedupResolutionDto = resolutionLifecycle.retry(resolutionId).toDto()
 
-  @GetMapping("decisions/{decisionId}")
-  @Operation(summary = "Retrieve a dedup decision and its per-Book saga results")
-  fun getDecision(
-    @PathVariable decisionId: String,
-  ): DedupDecisionDto =
-    decisionRepository.findDecision(decisionId)?.toDto()
-      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  @GetMapping("resolutions/{resolutionId}")
+  fun getResolution(
+    @PathVariable resolutionId: String,
+  ): DedupResolutionDto = resolutionRepository.findResolution(resolutionId)?.toDto() ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
 
-  @GetMapping("decisions")
-  @Operation(summary = "List immutable dedup decision audit records")
-  fun getDecisions(page: Pageable): Page<DedupDecisionDto> {
-    val all = decisionRepository.findAllDecisions()
-    val from = if (page.isPaged) page.offset.toInt().coerceAtMost(all.size) else 0
-    val to = if (page.isPaged) (from + page.pageSize).coerceAtMost(all.size) else all.size
-    val responsePage = if (page.isPaged) page else PageRequest.of(0, maxOf(all.size, 20))
-    return PageImpl(all.subList(from, to).map { it.toDto() }, responsePage, all.size.toLong())
+  @GetMapping("resolutions")
+  fun getResolutions(page: Pageable): Page<DedupResolutionDto> {
+    validatePage(page)
+    return PageImpl(resolutionRepository.findResolutions(page.offset.toInt(), page.pageSize).map { it.toDto() }, page, resolutionRepository.countResolutions())
+  }
+
+  @ExceptionHandler(DedupResolutionValidationException::class)
+  fun handleValidation(exception: DedupResolutionValidationException): ResponseEntity<DedupConflictDto> = ResponseEntity.status(HttpStatus.CONFLICT).body(DedupConflictDto(exception.code, exception.message ?: exception.code, null, null, false, null))
+
+  @ExceptionHandler(DedupResolutionExecutionException::class)
+  fun handleExecution(exception: DedupResolutionExecutionException): ResponseEntity<DedupConflictDto> {
+    val resolution = exception.resolutionId?.let(resolutionRepository::findResolution)
+    val clusterState = resolution?.let { dedupRepository.findCluster(it.clusterId)?.cluster?.status }
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(
+      DedupConflictDto(
+        exception.code,
+        exception.message ?: exception.code,
+        exception.resolutionId,
+        clusterState,
+        exception.partial,
+        resolution?.toDto(),
+      ),
+    )
   }
 
   private fun setPaused(
     request: DedupLibrarySelectionDto,
     paused: Boolean,
   ): DedupSettingsDto {
-    val settings = dedupRepository.findAllLibrarySettings()
-    val selected = if (request.libraryIds.isEmpty()) settings else settings.filter { it.libraryId in request.libraryIds }
-    selected.forEach { dedupWorkLifecycle.saveSettings(it.copy(paused = paused, lastModifiedDate = LocalDateTime.now())) }
+    val all = dedupRepository.findAllLibrarySettings()
+    val selected = if (request.libraryIds.isEmpty()) all else all.filter { it.libraryId in request.libraryIds }
+    selected.forEach { workLifecycle.saveSettings(it.copy(paused = paused, lastModifiedDate = LocalDateTime.now())) }
     return getSettings()
   }
 
-  private fun DedupReviewCase.toDto(userId: String): DedupReviewCaseDto {
-    val books = memberBookIds.mapNotNull(bookRepository::findByIdOrNull)
-    val activeBySeries =
-      if (books.isEmpty()) emptyMap() else bookRepository.findAllBySeriesIds(books.map { it.seriesId }.toSet()).filter { it.deletedDate == null }.groupBy { it.seriesId }
-    val members =
-      memberBookIds
-        .sorted()
-        .map { bookId ->
-          val book = books.firstOrNull { it.id == bookId }
-          val activeCount = book?.let { activeBySeries[it.seriesId].orEmpty().size } ?: 0
-          DedupReviewCaseMemberDto(
-            book = bookDtoRepository.findByIdOrNull(bookId, userId),
-            bookId = bookId,
-            activeBookCountInSeries = activeCount,
-            inMvpScope = book != null && book.deletedDate == null && activeCount == 1,
-          )
-        }
-    val directRelation = memberBookIds.takeIf { it.size == 2 }?.toList()?.let { dedupRepository.findRelation(it[0], it[1]) }
-    val eligibility = eligibilityPolicy.evaluate(this)
-
-    return DedupReviewCaseDto(
-      id = id,
-      libraryId = libraryId,
-      revision = revision,
-      status = status,
-      origin = origin,
-      relationType = directRelation?.type?.name ?: if (origin == DedupReviewCaseOrigin.EXACT_FILE) "EXACT_FILE" else "VISUALLY_SIMILAR",
-      coverDistance = directRelation?.coverDistance,
-      coverageLeft = directRelation?.coverageLeft,
-      coverageRight = directRelation?.coverageRight,
-      longestMatchedRun = directRelation?.longestMatchedRun,
-      unmatchedPrefixCount = directRelation?.unmatchedPrefixCount,
-      unmatchedSuffixCount = directRelation?.unmatchedSuffixCount,
-      unmatchedInternalCount = directRelation?.unmatchedInternalCount,
-      suggestedKeeperBookId = suggestedKeeperBookId,
-      members = members,
-      eligibility = eligibility,
-      created = createdDate,
-      lastModified = lastModifiedDate,
+  private fun DedupClusterWithMembers.toSummary(userId: String): DedupClusterSummaryDto {
+    val present = members.filter { it.present }
+    val ids = present.map { it.bookId }.toSet()
+    val relations = currentRelations()
+    val total = ids.size * (ids.size - 1) / 2
+    val verified = relations.count { it.status == DedupRelationStatus.VERIFIED && it.type != DedupRelationType.VISUALLY_SIMILAR }
+    val maturity =
+      when {
+        verified == 0 -> DedupEvidenceMaturity.COVER_ONLY
+        verified >= total -> DedupEvidenceMaturity.COMPLETE
+        else -> DedupEvidenceMaturity.PARTIAL
+      }
+    val suggestion = suggestionPlanner.evaluate(this)
+    return DedupClusterSummaryDto(
+      cluster.id,
+      cluster.libraryId,
+      cluster.revision,
+      cluster.status,
+      cluster.reviewable,
+      ids.size,
+      present.take(4).map { member -> DedupClusterCoverMemberDto(member.bookId, bookRepository.findByIdOrNull(member.bookId)?.name, "/api/v1/books/${member.bookId}/thumbnail") },
+      verified,
+      total,
+      maturity,
+      suggestion.eligibility.suggestionPlanAvailable,
+      suggestion.eligibility.suggestedPlanEligible,
+      suggestion.plan?.keepCount ?: ids.size,
+      suggestion.plan?.deleteCount ?: 0,
+      cluster.reopenReason,
+      cluster.lastModifiedDate,
+      cluster.processedDate,
     )
   }
 
-  private fun org.gotson.komga.domain.model.DedupDecision.toDto(): DedupDecisionDto =
-    decisionRepository.findDecisionItems(id).let { decisionItems ->
-      val syncStates = decisionItems.mapNotNull { decisionRepository.findGorseSync(it.seriesId)?.state }
-      DedupDecisionDto(
-        id = id,
-        reviewCaseId = reviewCaseId,
-        planRevision = planRevision,
-        mode = mode,
-        keeperBookId = keeperBookId,
-        state = state,
-        items =
-          decisionItems.map { item ->
-            DedupDecisionItemDto(
-              id = item.id,
-              bookId = item.bookId,
-              seriesId = item.seriesId,
-              title = item.titleSnapshot,
-              path = item.pathSnapshot,
-              expectedSize = item.expectedSize,
-              expectedArchiveHash = item.expectedArchiveHash,
-              state = item.state,
-              attemptCount = item.attemptCount,
-              resultCode = item.resultCode,
-              result = item.resultJson?.let { runCatching { objectMapper.readTree(it) }.getOrNull() },
-              stabilityNotBefore = item.stabilityNotBefore,
-            )
-          },
-        result = runCatching { objectMapper.readTree(resultJson) }.getOrNull(),
-        gorseSyncState =
-          when {
-            syncStates.isNotEmpty() && syncStates.all { it == "SUCCEEDED" } -> "SUCCEEDED"
-            syncStates.any { it == "FAILED_REVIEW" } -> "FAILED_REVIEW"
-            else -> gorseSyncState
-          },
-        remoteConfirmationState = remoteConfirmationState,
-        approved = approvedDate,
-        executed = executedDate,
-        completed = completedDate,
-      )
-    }
+  private fun DedupClusterWithMembers.toDetail(userId: String): DedupClusterDetailDto {
+    val suggestion = suggestionPlanner.evaluate(this)
+    val present = members.filter { it.present }
+    val books = present.mapNotNull { bookRepository.findByIdOrNull(it.bookId) }
+    val activeBySeries = if (books.isEmpty()) emptyMap() else bookRepository.findAllBySeriesIds(books.map { it.seriesId }.toSet()).filter { it.deletedDate == null }.groupBy { it.seriesId }
+    val memberDtos =
+      present.sortedBy { it.bookId }.map { member ->
+        val book = books.firstOrNull { it.id == member.bookId }
+        val state = suggestion.localStates[member.bookId] ?: localStateLifecycle.snapshot(member.bookId)
+        val activeCount = book?.let { activeBySeries[it.seriesId].orEmpty().size } ?: 0
+        DedupClusterMemberDto(
+          member.bookId,
+          book?.seriesId,
+          bookDtoRepository.findByIdOrNull(member.bookId, userId),
+          book?.name,
+          book?.path?.toString(),
+          book?.fileSize,
+          coverLifecycle.currentSourceIdentity(member.bookId)?.pageCount,
+          activeCount,
+          book != null && book.deletedDate == null && activeCount == 1,
+          state.reasonCodes,
+          state.details,
+          "/api/v1/books/${member.bookId}/thumbnail",
+        )
+      }
+    val relationDtos = currentRelations().map { it.toDto() }
+    val last = cluster.lastResolutionId?.let(resolutionRepository::findResolution)?.let { DedupResolutionSummaryDto(it.id, it.mode, it.state, it.createdDate, it.completedDate) }
+    return DedupClusterDetailDto(toSummary(userId), cluster.stateFingerprint, memberDtos, relationDtos, suggestion.plan?.toDto(), suggestion.eligibility, last)
+  }
 
-  private fun <T> decisionCall(block: () -> T): T =
-    try {
-      block()
-    } catch (exception: DedupDecisionValidationException) {
-      throw ResponseStatusException(HttpStatus.CONFLICT, "${exception.code}: ${exception.message}")
+  private fun DedupClusterWithMembers.currentRelations(): List<DedupRelation> {
+    val byId = members.filter { it.present }.associateBy { it.bookId }
+    return dedupRepository.findRelationsForBooks(byId.keys).filter { value ->
+      val low = byId[value.bookLowId] ?: return@filter false
+      val high = byId[value.bookHighId] ?: return@filter false
+      value.status !in setOf(DedupRelationStatus.STALE, DedupRelationStatus.REJECTED, DedupRelationStatus.FAILED_REVIEW) &&
+        value.lowContentGeneration == low.sourceContentGeneration && value.highContentGeneration == high.sourceContentGeneration
     }
+  }
+
+  private fun DedupRelation.toDto() =
+    DedupRelationDto(
+      id,
+      bookLowId,
+      bookHighId,
+      type,
+      status,
+      coverDistance,
+      containedBookId,
+      containerBookId,
+      coverageLeft,
+      coverageRight,
+      orderConsistency,
+      longestMatchedRun,
+      unmatchedPrefixCount,
+      unmatchedSuffixCount,
+      unmatchedInternalCount,
+      confidence,
+      runCatching { objectMapper.readTree(evidenceJson) }.getOrNull(),
+    )
+
+  private fun DedupResolutionPlan.toDto() =
+    DedupPlanDto(
+      revision,
+      keepCount,
+      deleteCount,
+      members.map { DedupPlanMemberDto(it.bookId, it.action, it.keeperBookId, it.directRelationId) },
+    )
+
+  private fun DedupResolution.toDto(): DedupResolutionDto =
+    DedupResolutionDto(
+      id,
+      clusterId,
+      clusterRevision,
+      mode,
+      planRevision,
+      state,
+      resolutionRepository.findResolutionMembers(id).map {
+        DedupResolutionMemberDto(
+          it.bookId,
+          it.seriesId,
+          it.action,
+          it.keeperBookId,
+          it.titleSnapshot,
+          it.pathSnapshot,
+          it.expectedSize,
+          it.expectedArchiveHash,
+          it.state,
+          it.resultCode,
+          it.resultJson?.let { json -> runCatching { objectMapper.readTree(json) }.getOrNull() },
+          it.lastError,
+        )
+      },
+      runCatching { objectMapper.readTree(resultJson) }.getOrNull(),
+      createdDate,
+      lastModifiedDate,
+      completedDate,
+    )
+
+  private fun org.gotson.komga.domain.service.DedupClusterVerificationResult.toDto() = DedupClusterVerificationResultDto(clusterId, status.name, memberCount, pairCount, queuedPairs, skippedPairs, failedPairs)
+
+  private fun validatePage(page: Pageable) {
+    if (!page.isPaged || page.pageSize !in 1..100 || page.pageNumber < 0) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Page size must be between 1 and 100")
+  }
 }

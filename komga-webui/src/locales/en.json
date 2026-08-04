@@ -685,214 +685,6 @@
     "title": "Duplicate Files",
     "url": "URL"
   },
-  "dedup_management": {
-    "actions": {
-      "accept": "Use suggested plan",
-      "accept_blocked": "Use suggested plan ({count} blockers)",
-      "alt_edition": "Different edition",
-      "book_analysis_requested": "Analysis requested for {count} books",
-      "custom": "Custom handling",
-      "compare_pages": "Compare pages",
-      "keeper_saved": "Keeper selection saved",
-      "override_saved": "Review decision saved",
-      "protect": "Protect",
-      "reanalysis_requested": "Reanalysis requested",
-      "reanalyze": "Reanalyze",
-      "reverify": "Run deep verification again",
-      "refresh": "Refresh",
-      "retry_decision": "Retry safely",
-      "scan": "Scan now",
-      "set_keeper": "Set as keeper",
-      "unrelated": "Not related",
-      "verification_requested": "Deep verification requested",
-      "verify_now": "Run deep verification now",
-      "verify_page": "Verify current page ({count})"
-    },
-    "blocker_count": "{count} blockers",
-    "bulk_verify": {
-      "body": "Queue page-level deep verification for {count} visual candidates on this page. Missing or stale features require reading every page from both CBZ files and may generate substantial remote-mount I/O.",
-      "confirm": "Queue {count} verifications",
-      "result": "Deep verification processed: {queued} queued, {skipped} skipped, {stale} stale, {failed} failed",
-      "snapshot": "Current page snapshot",
-      "title": "Verify the current page now"
-    },
-    "case_count": "{count} review cases",
-    "cover_distance": "Cover distance {distance}/256",
-    "eligibility": {
-      "actions": {
-        "ANALYZE_BOOK": "Analyze the affected books again",
-        "CHECK_SOURCE_FILE": "Check the source path, mount, and read permissions",
-        "OPEN_PAGE_COMPARISON": "Open page comparison",
-        "PROTECT_MEMBER": "Review member protection",
-        "REANALYZE_CASE": "Run deep verification again",
-        "RUN_DEEP_VERIFICATION": "Run deep verification now",
-        "SELECT_STATEFUL_COPY_AS_KEEPER": "Keep the copy that contains user state",
-        "SET_KEEPER": "Select one keeper in the member list",
-        "VIEW_TASK": "View task status"
-      },
-      "actual": "Actual",
-      "effects": {
-        "BLOCK_MANUAL": "Blocks custom handling",
-        "BLOCK_SUGGESTED": "Blocks suggested plan",
-        "CONFIRM_MANUAL": "Custom handling requires confirmation",
-        "CONFIRM_SUGGESTED": "Suggested plan requires confirmation",
-        "WARNING": "Warning only"
-      },
-      "next_action": "Suggested action",
-      "page_ranges": "Related page ranges",
-      "threshold": "Required",
-      "title": "Decision eligibility"
-    },
-    "decision": {
-      "acknowledge_title": "Acknowledge each current risk",
-      "approve_and_execute": "Approve and execute",
-      "custom_title": "Approve custom handling",
-      "irreversible_acknowledgement": "I understand that the listed CBZ files will be deleted permanently and cannot be recovered here.",
-      "irreversible_body": "Only the explicitly listed CBZ files are removed, but each removal is permanent. The plan is a per-file saga and may complete only partially.",
-      "irreversible_title": "Permanent physical deletion",
-      "keeper": "Book to keep",
-      "partial_warning": "Execution revalidates every generation, relation, local state, live stat, and full archive hash. A later conflict stops remaining items; completed items cannot be rolled back. Drive and Gorse confirmation remain separate.",
-      "queued": "Decision {id} was approved and queued",
-      "retry_queued": "Decision recovery was queued for full revalidation",
-      "remove_members": "CBZ files to delete",
-      "suggested_title": "Approve suggested plan"
-    },
-    "empty": {
-      "body": "No known candidates match these filters. This means the enabled scan backlog is clear; it does not prove that the library contains no duplicates with different covers.",
-      "title": "No known candidates"
-    },
-    "evidence": {
-      "coverage_left": "Left coverage",
-      "coverage_right": "Right coverage",
-      "longest_run": "Longest ordered run",
-      "not_analyzed": "Page-level deep verification has not run yet. The current relation only has cover-candidate evidence.",
-      "unmatched": "Unmatched pages"
-    },
-    "errors": {
-      "analyze_book": "Could not request Book analysis",
-      "cases": "Could not load review cases",
-      "case_changed": "The review case changed; current data has been reloaded",
-      "decision": "The decision was not accepted because evidence, state, or file identity changed",
-      "decisions": "Could not load decision audit records",
-      "page_comparison": "Could not load current page evidence",
-      "save": "Could not save duplicate-content settings",
-      "scan": "Could not request a scan",
-      "settings": "Could not load duplicate-content settings",
-      "status": "Could not load duplicate-content status",
-      "verify": "Could not request page-level deep verification"
-    },
-    "filters": {
-      "library": "Library",
-      "source": "Candidate source"
-    },
-    "intervals": {
-      "DAILY": "Daily",
-      "EVERY_12H": "Every 12 hours",
-      "EVERY_6H": "Every 6 hours",
-      "HOURLY": "Hourly",
-      "WEEKLY": "Weekly"
-    },
-    "members": "members",
-    "keeper": "Keeper",
-    "out_of_scope": "Out of MVP scope ({count} active books in series)",
-    "pages": "pages",
-    "page_comparison": {
-      "exact": "Exact",
-      "no_evidence": "No current page features are available. Run deep verification first.",
-      "perceptual": "Visual",
-      "title": "Current-generation page comparison",
-      "unmatched": "Unmatched"
-    },
-    "ready": "Ready",
-    "reasons": {
-      "ANALYSIS_INCOMPLETE": "Deletion is not available in the current analysis stage",
-      "ALT_EDITION": "The evidence may represent a different edition",
-      "ANCILLARY_UNCONFIRMED": "Unmatched pages have not been confirmed as ancillary",
-      "COVER_ONLY": "Only cover similarity has been verified",
-      "COLLECTION_PRESENT": "The losing Series belongs to a collection",
-      "DELETION_IN_PROGRESS": "A member already belongs to an active deletion decision",
-      "DIRECT_KEEPER_RELATION_MISSING": "A direct current relation from every removal member to the keeper is required",
-      "EDITION_UNCERTAIN": "The edition cannot be confirmed from visual evidence",
-      "EXTERNAL_STATE_NOT_VERIFIED": "External reader state cannot be fully verified",
-      "GORSE_STATE_UNKNOWN": "Gorse feedback state is unknown",
-      "FEATURE_STALE": "The relation does not match current source generations",
-      "LOW_CONFIDENCE": "This classifier is not calibrated for suggested deletion",
-      "MVP_SCOPE_CURRENT": "All members are current single-active-Book CBZ Series",
-      "NEAR_CONTAINED_IN": "The possible contained copy still has unmatched pages",
-      "NO_KEEPER": "Select one keeper before using a suggested plan",
-      "NO_LOCAL_STATE": "No verifiable local user state is attached to the removal members",
-      "NOT_CONTENT_DUPLICATE": "The pair has been classified as not content-duplicate",
-      "OUT_OF_SCOPE_MULTI_BOOK_SERIES": "Series does not contain exactly one active book",
-      "PARTIAL_OVERLAP": "Only part of the page sequence overlaps",
-      "PLAN_CHANGED": "The keeper or removal set changed",
-      "PROTECTED": "This book is explicitly protected"
-      ,"READLIST_PRESENT": "The losing Book belongs to a read list"
-      ,"READ_PROGRESS_PRESENT": "One or more users have reading progress on the losing Book"
-      ,"SOURCE_FILE_STAT_STALE": "The source file size or modification time no longer matches Komga"
-      ,"SOURCE_FILE_UNAVAILABLE": "The source CBZ path is unreadable or is not a regular file"
-      ,"STRONG_FILE_IDENTITY_UNAVAILABLE": "A readable current path and strong archive identity are required"
-      ,"USER_THUMBNAIL_OR_LOCKED_METADATA": "The losing Book or Series has user artwork or locked metadata"
-    },
-    "relations": {
-      "EXACT_FILE": "Exact file",
-      "EXACT_PAGE_SEQUENCE": "Exact page sequence",
-      "CONTAINED_IN": "Contained in",
-      "NEAR_CONTAINED_IN": "Near containment",
-      "PARTIAL_OVERLAP": "Partial overlap",
-      "ALT_EDITION": "Different edition",
-      "EDITION_UNCERTAIN": "Edition uncertain",
-      "SAME_EDITION_VARIANT": "Same-edition variant",
-      "UNRELATED": "Unrelated",
-      "VISUALLY_SIMILAR": "Visually similar"
-    },
-    "scan_requested": "Scan requested for {count} libraries",
-    "settings": {
-      "batch_size": "Books per run",
-      "calibration_notice": "Cover distance finds candidates only. It never authorizes deletion, and should be calibrated against labeled examples from the target library.",
-      "cover_distance": "Cover candidate distance",
-      "enabled": "Enabled",
-      "interval": "Scan interval",
-      "max_duration": "Maximum run time",
-      "paused": "Paused",
-      "quiet_period": "Quiet period",
-      "saved": "Duplicate-content settings saved",
-      "stability_period": "Completion stability period",
-      "top_k": "Maximum neighbors per book"
-    },
-    "status": {
-      "failed": "Needs attention",
-      "pending": "Pending work",
-      "review_cases": "Review cases",
-      "running": "Running"
-    },
-    "subtitle": "Incremental CBZ similarity analysis, evidence review, and irreversible version-bound decisions with per-file recovery.",
-    "tabs": {
-      "cases": "Review cases",
-      "settings": "Settings",
-      "tasks": "Task status"
-    },
-    "tasks": {
-      "audit_title": "Recent decision audit",
-      "failed_help": "Failed-review work is retained in the main database. Inspect the server log and use the retry API after correcting the cause.",
-      "gorse": "Gorse {state}",
-      "no_decisions": "No deletion decisions have been approved yet.",
-      "subtitle": "These are durable main-database states. The generic Komga task queue is only a wake-up mechanism.",
-      "title": "Durable work queue"
-    },
-    "title": "Duplicate Content Management",
-    "validation": {
-      "hash_distance": "Enter a distance from 0 to 256",
-      "non_negative": "Enter zero or a positive number",
-      "positive": "Enter a number greater than zero"
-    },
-    "work_states": {
-      "FAILED_REVIEW": "Needs attention",
-      "PENDING": "Pending",
-      "RUNNING": "Running",
-      "SUCCEEDED": "Succeeded",
-      "WAITING": "Waiting"
-    }
-  },
   "enums": {
     "copy_mode": {
       "HARDLINK": "Hardlink/Copy Files",
@@ -1268,6 +1060,116 @@
       "japanese": "Gojūon (Japanese)"
     },
     "tooltip_oauth2_auto_login": "Requires a single OAuth2 provider, and 'hide login fields' enabled"
+  },
+  "dedup": {
+    "title": "Duplicate cluster review",
+    "subtitle": "Review connected groups of cover candidates, compare direct evidence, and choose exactly which books to keep or remove.",
+    "scanNow": "Scan now",
+    "scanQueued": "Queued scans for {count} libraries",
+    "scanSettings": "Scan settings",
+    "scanInterval": "Scan interval",
+    "enabled": "Enabled",
+    "coverDistance": "Cover distance",
+    "topK": "Top-K neighbors",
+    "noLibraries": "No libraries are available for duplicate scanning.",
+    "pendingWork": "Pending work",
+    "statusFilter": "Status",
+    "libraryFilter": "Library",
+    "evidenceFilter": "Evidence maturity",
+    "clusterCount": "{count} cluster | {count} clusters",
+    "memberCount": "{count} member | {count} members",
+    "pageCount": "{count} page | {count} pages",
+    "pageCountUnknown": "Page count unknown",
+    "verifiedProgress": "{verified}/{total} pairs verified",
+    "planCounts": "Keep {keep}, remove {remove}",
+    "noSafeSuggestion": "No safe automatic deletion",
+    "untitledCluster": "Untitled duplicate cluster",
+    "emptyTitle": "No clusters match these filters",
+    "emptyBody": "Change a filter or run a scan after enabling duplicate review for a library.",
+    "verifyCurrentPage": "Verify current page ({count})",
+    "confirmBulkVerify": "Queue deep verification for {clusters} frozen clusters, {books} books, and {pairs} pairs? This may read every page from remote CBZ files.",
+    "bulkQueuedResult": "Clusters queued: {clusters}; pairs queued: {queued}; skipped: {skipped}; stale: {stale}",
+    "settingsSaved": "Duplicate scan settings saved",
+    "dialogTitle": "Duplicate cluster",
+    "membersAndActions": "Members and actions",
+    "evidence": "Direct evidence",
+    "eligibility": "Safety and confirmations",
+    "keep": "Keep",
+    "delete": "Delete",
+    "keeperForDelete": "Keep this book instead",
+    "outOfScope": "Outside current safe scope",
+    "relationMatrix": "Book pair",
+    "unverified": "Not verified",
+    "selectPairHint": "Select a pair to inspect its evidence and page sequence.",
+    "suggestedPlan": "Suggested plan",
+    "verifyNow": "Deep verify",
+    "useSuggestion": "Use suggested plan",
+    "submitCustom": "Apply custom plan",
+    "retryIncomplete": "Retry incomplete steps",
+    "verificationQueued": "Deep verification queued",
+    "confirmSuggested": "Apply the suggested plan and permanently remove {count} files?",
+    "confirmCustom": "Apply this custom plan and permanently remove {count} files?",
+    "confirmKeepAll": "Keep every member and mark this cluster processed without deleting files?",
+    "acknowledgeRisk": "I reviewed and accept the {type} risk for this direct pair",
+    "acknowledgeLocalState": "I reviewed and accept removing {book}, which has {state}",
+    "resolutionResult": "Resolution result",
+    "book": "Book",
+    "action": "Action",
+    "stepState": "Step state",
+    "result": "Result",
+    "seriesResults": "Gorse results by Series",
+    "series": "Series",
+    "expectedHidden": "Expected hidden",
+    "hidden": "Hidden",
+    "visible": "Visible",
+    "actual": "Actual",
+    "threshold": "Threshold",
+    "unknownError": "The duplicate review request failed.",
+    "status": {
+      "UNPROCESSED": "Unprocessed",
+      "PROCESSING": "Processing",
+      "PROCESSED": "Processed",
+      "NEEDS_ATTENTION": "Needs attention"
+    },
+    "resolutionState": {
+      "PROCESSING": "Processing",
+      "PROCESSED": "Processed",
+      "NEEDS_ATTENTION": "Needs attention",
+      "PARTIALLY_COMPLETED": "Partially completed"
+    },
+    "gorseState": {"CONFIRMED": "Confirmed", "NOT_APPLICABLE": "Not applicable", "FAILED": "Failed"},
+    "actionValue": {"KEEP": "Keep", "DELETE": "Delete"},
+    "maturity": {"COVER_ONLY": "Cover candidates only", "PARTIAL": "Partly verified", "COMPLETE": "Fully verified"},
+    "interval": {"HOURLY": "Hourly", "EVERY_6H": "Every 6 hours", "EVERY_12H": "Every 12 hours", "DAILY": "Daily", "WEEKLY": "Weekly"},
+    "metric": {
+      "coverDistance": "Cover distance", "coverageLeft": "Left coverage", "coverageRight": "Right coverage",
+      "orderConsistency": "Order consistency", "longestMatchedRun": "Longest matched run", "unmatchedPrefix": "Unmatched prefix",
+      "unmatchedSuffix": "Unmatched suffix", "unmatchedInternal": "Unmatched internal pages"
+    },
+    "relation": {
+      "EXACT_FILE": "exact file", "EXACT_PAGE_SEQUENCE": "exact page sequence", "SAME_EDITION_VARIANT": "same-edition variant",
+      "CONTAINED_IN": "contained sequence", "NEAR_CONTAINED_IN": "near containment", "PARTIAL_OVERLAP": "partial overlap",
+      "ALT_EDITION": "alternate edition", "EDITION_UNCERTAIN": "uncertain edition", "VISUALLY_SIMILAR": "visual similarity", "UNRELATED": "unrelated content"
+    },
+    "localState": {
+      "READ_PROGRESS_PRESENT": "Reading progress", "READLIST_PRESENT": "Read list", "COLLECTION_PRESENT": "Collection",
+      "USER_THUMBNAIL_OR_LOCKED_METADATA": "Custom cover or locked metadata"
+    },
+    "reopen": {
+      "CLUSTERS_MERGED": "Clusters merged after candidate topology changed", "CLUSTER_SPLIT": "Cluster split after candidate topology changed",
+      "TOPOLOGY_CHANGED": "Member or candidate topology changed", "EVIDENCE_CHANGED": "Direct evidence changed",
+      "LOCAL_STATE_CHANGED": "Local user state changed", "PROCESSING_LEASE_EXPIRED": "Previous processing was interrupted",
+      "PREFLIGHT_FAILED": "Preflight failed", "GORSE_FAILED": "Gorse confirmation failed", "FINALIZE_CONFLICT": "Final state could not be saved"
+    },
+    "reason": {
+      "CLUSTER_NOT_UNPROCESSED": "This cluster is not available for a new resolution.",
+      "CLUSTER_REVISION_STALE": "A member or its source generation changed.",
+      "MEMBER_RESOLUTION_ACTIVE": "A member is already used by an active resolution.",
+      "STATE_REVISION_CHANGED": "Local user state changed since this revision.",
+      "DELETE_FILE_UNAVAILABLE": "A file selected for deletion is unavailable, stale, or not writable.",
+      "LOCAL_STATE_WOULD_BE_DISCARDED": "The suggested plan would discard protected local user state.",
+      "PROCESSING_PRECHECK_PASSED": "Current processing preconditions passed."
+    }
   },
   "updates": {
     "available": "Updates are available",

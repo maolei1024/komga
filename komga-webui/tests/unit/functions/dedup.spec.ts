@@ -1,130 +1,54 @@
-import {
-  currentPageVerificationRequests,
-  hasPageEvidence,
-  mergeEligibilityReasons,
-  unmatchedPageCount,
-} from '@/functions/dedup'
-import {DedupEligibilityReasonDto, DedupReviewCaseDto} from '@/types/komga-dedup'
+import {currentPageVerificationRequests, formatBytes, mergeEligibilityReasons, resolutionSeriesResults} from '@/functions/dedup'
+import {DedupClusterSummaryDto, DedupEligibilityReasonDto} from '@/types/komga-dedup'
 
-describe('dedup presentation helpers', () => {
-  test('distinguishes missing evidence from valid zero values', () => {
-    const missing = reviewCase()
-    const zero = reviewCase({
-      coverageLeft: 0,
-      coverageRight: 0,
-      unmatchedPrefixCount: 0,
-      unmatchedSuffixCount: 0,
-      unmatchedInternalCount: 0,
-    })
+describe('duplicate cluster helpers', () => {
+  it('freezes every reviewable current-page cluster id and revision', () => {
+    const clusters = [summary('cover', 3, true), summary('verified', 7, true), summary('dormant', 2, false)]
 
-    expect(hasPageEvidence(missing)).toBe(false)
-    expect(unmatchedPageCount(missing)).toBeNull()
-    expect(hasPageEvidence(zero)).toBe(true)
-    expect(unmatchedPageCount(zero)).toBe(0)
+    expect(currentPageVerificationRequests(clusters)).toEqual([
+      {clusterId: 'cover', expectedRevision: 3},
+      {clusterId: 'verified', expectedRevision: 7},
+    ])
   })
 
-  test('merges action-specific reasons without rendering null metrics', () => {
-    const blocker = reason('COVER_ONLY', 'BLOCKER', ['SUGGESTED'], false)
-    const warning = reason('COVER_ONLY', 'WARNING', ['MANUAL'], true)
-    const merged = mergeEligibilityReasons(reviewCase({
-      eligibility: {
-        ...reviewCase().eligibility,
-        blockers: [blocker],
-        warnings: [warning],
-      },
-    }))
+  it('merges repeated reasons and preserves a real zero while omitting null detail', () => {
+    const merged = mergeEligibilityReasons([
+      reason('LOW_COVERAGE', 'WARNING', ['B', 'A'], 0, null),
+      reason('LOW_COVERAGE', 'BLOCKER', ['A', 'B'], null, 0.9),
+    ])
 
     expect(merged).toHaveLength(1)
-    expect(merged[0].effects).toEqual(['BLOCK_SUGGESTED', 'CONFIRM_MANUAL'])
-    expect(merged[0].actual).toBeUndefined()
-    expect(merged[0].threshold).toBeUndefined()
+    expect(merged[0].severity).toBe('BLOCKER')
+    expect(merged[0].memberIds).toEqual(['A', 'B'])
+    expect(merged[0].actual).toBe(0)
+    expect(merged[0].threshold).toBe(0.9)
   })
 
-  test('builds a request from every currently loaded non-exact case', () => {
-    const visual = reviewCase({id: 'visual', revision: 4})
-    const exact = reviewCase({id: 'exact', origin: 'EXACT_FILE'})
-    const unsupported = reviewCase({id: 'group', members: [member('a'), member('b'), member('c')]})
-
-    expect(currentPageVerificationRequests([visual, exact, unsupported]))
-      .toEqual([
-        {caseId: 'visual', expectedRevision: 4},
-        {caseId: 'group', expectedRevision: 1},
-      ])
+  it('formats zero and unavailable file sizes explicitly', () => {
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(null)).toBe('—')
+    expect(formatBytes(1024 * 1024)).toBe('1.0 MB')
   })
-})
 
-describe('dedup asset URLs', () => {
-  test.each([
-    ['/', 'http://localhost/api/v1/books/book/thumbnail', 'http://localhost/api/v1/books/book/pages/2/thumbnail'],
-    ['/komga/', 'http://localhost/komga/api/v1/books/book/thumbnail', 'http://localhost/komga/api/v1/books/book/pages/2/thumbnail'],
-  ])('joins resource base %s without a protocol-relative API host', (resourceBaseUrl, expectedBook, expectedPage) => {
-    jest.resetModules()
-    Object.assign(window, {resourceBaseUrl})
-    let urls: typeof import('@/functions/urls')
-    jest.isolateModules(() => {
-      urls = require('@/functions/urls')
-    })
-
-    expect(urls!.bookThumbnailUrl('book')).toBe(expectedBook)
-    expect(urls!.bookPageThumbnailUrl('book', 2)).toBe(expectedPage)
+  it('exposes every persisted per-Series Gorse result in stable order', () => {
+    expect(resolutionSeriesResults({series: {
+      z: {seriesId: 'z', state: 'FAILED', expectedHidden: true, error: 'readback mismatch'},
+      a: {seriesId: 'a', state: 'NOT_APPLICABLE', expectedHidden: null, error: null},
+    }})).toEqual([
+      {seriesId: 'a', state: 'NOT_APPLICABLE', expectedHidden: null, error: null},
+      {seriesId: 'z', state: 'FAILED', expectedHidden: true, error: 'readback mismatch'},
+    ])
   })
 })
 
-function reason(
-  code: string,
-  severity: DedupEligibilityReasonDto['severity'],
-  appliesTo: DedupEligibilityReasonDto['appliesTo'],
-  confirmationRequired: boolean,
-): DedupEligibilityReasonDto {
+function summary(id: string, revision: number, reviewable: boolean): DedupClusterSummaryDto {
   return {
-    code,
-    severity,
-    appliesTo,
-    confirmationRequired,
-    scope: 'CASE',
-    memberIds: ['left', 'right'],
-    messageKey: code,
-    actual: null,
-    threshold: null,
-    pageRanges: [],
-    action: 'RUN_DEEP_VERIFICATION',
+    id, revision, reviewable, libraryId: 'library', status: 'UNPROCESSED', memberCount: 2, coverMembers: [],
+    verifiedPairs: 0, totalPairs: 1, evidenceMaturity: 'COVER_ONLY', suggestionPlanAvailable: false,
+    suggestedPlanEligible: false, suggestedKeepCount: 2, suggestedDeleteCount: 0, lastModified: '2026-08-04T00:00:00Z',
   }
 }
 
-function member(bookId: string) {
-  return {book: null, bookId, activeBookCountInSeries: 1, inMvpScope: true}
-}
-
-function reviewCase(overrides: Partial<DedupReviewCaseDto> = {}): DedupReviewCaseDto {
-  return {
-    id: 'case',
-    libraryId: 'library',
-    revision: 1,
-    status: 'REVIEW_REQUIRED',
-    origin: 'COVER_SIMILARITY',
-    relationType: 'VISUALLY_SIMILAR',
-    coverDistance: 0,
-    coverageLeft: null,
-    coverageRight: null,
-    longestMatchedRun: null,
-    unmatchedPrefixCount: null,
-    unmatchedSuffixCount: null,
-    unmatchedInternalCount: null,
-    suggestedKeeperBookId: null,
-    members: [member('left'), member('right')],
-    eligibility: {
-      suggestedPlanEligible: false,
-      manualDeleteEligible: false,
-      ruleVersion: 4,
-      stateRevision: 'state',
-      planRevision: null,
-      evaluatedAt: '2026-08-03T00:00:00Z',
-      blockers: [],
-      warnings: [],
-      passed: [],
-    },
-    created: '2026-08-03T00:00:00Z',
-    lastModified: '2026-08-03T00:00:00Z',
-    ...overrides,
-  }
+function reason(code: string, severity: 'BLOCKER' | 'WARNING', memberIds: string[], actual: unknown, threshold: unknown): DedupEligibilityReasonDto {
+  return {code, severity, memberIds, actual, threshold, appliesTo: ['SUGGESTED'], confirmationRequired: false, scope: 'PAIR'}
 }

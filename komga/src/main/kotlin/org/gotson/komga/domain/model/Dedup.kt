@@ -10,7 +10,6 @@ data class DedupLibrarySettings(
   val batchSize: Int = 100,
   val maxDurationSeconds: Int = 300,
   val quietPeriodSeconds: Int = 180,
-  val completionStabilitySeconds: Int = 300,
   val coverCandidateDistance: Int = 15,
   val coverTopK: Int = 20,
   val createdDate: LocalDateTime = LocalDateTime.now(),
@@ -21,7 +20,6 @@ data class DedupLibrarySettings(
     require(batchSize > 0) { "Batch size must be positive" }
     require(maxDurationSeconds > 0) { "Maximum duration must be positive" }
     require(quietPeriodSeconds >= 0) { "Quiet period cannot be negative" }
-    require(completionStabilitySeconds >= 0) { "Completion stability period cannot be negative" }
     require(coverCandidateDistance in 0..256) { "Cover candidate distance must be between 0 and 256" }
     require(coverTopK > 0) { "Cover top-K must be positive" }
   }
@@ -32,8 +30,7 @@ enum class DedupWorkType {
   COMPUTE_COVER,
   FIND_COVER_NEIGHBORS,
   VERIFY_RELATION,
-  APPLY_DECISION_ITEM,
-  VERIFY_DELETION,
+  REBUILD_CLUSTERS,
 }
 
 enum class DedupWorkState {
@@ -103,13 +100,18 @@ data class DedupRelation(
   val unmatchedPrefixCount: Int? = null,
   val unmatchedSuffixCount: Int? = null,
   val unmatchedInternalCount: Int? = null,
+  val confidence: Double? = null,
   val status: DedupRelationStatus = DedupRelationStatus.VERIFIED,
   val evidenceJson: String = "{}",
   val featureSchemaVersion: Int = 1,
   val classifierRuleVersion: Int = 1,
   val createdDate: LocalDateTime = LocalDateTime.now(),
   val lastModifiedDate: LocalDateTime = createdDate,
-)
+) {
+  init {
+    require(bookLowId < bookHighId) { "Dedup relation book IDs must use canonical order" }
+  }
+}
 
 enum class DedupRelationType {
   EXACT_FILE,
@@ -200,60 +202,65 @@ private fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean =
     else -> contentEquals(other)
   }
 
-data class DedupReviewCase(
+enum class DedupClusterStatus {
+  UNPROCESSED,
+  PROCESSING,
+  PROCESSED,
+  NEEDS_ATTENTION,
+}
+
+data class DedupCluster(
   val id: String,
   val libraryId: String,
   val revision: Long,
-  val status: DedupReviewCaseStatus,
-  val suggestedKeeperBookId: String?,
-  val origin: DedupReviewCaseOrigin,
-  val memberBookIds: Set<String>,
+  val status: DedupClusterStatus,
+  val reviewable: Boolean,
+  val anchorBookId: String,
+  val topologyFingerprint: String,
+  val evidenceFingerprint: String,
+  val stateFingerprint: String,
+  val processedRevision: Long?,
+  val lastResolutionId: String?,
+  val reopenReason: String?,
+  val supersededBy: String?,
+  val createdDate: LocalDateTime,
+  val lastModifiedDate: LocalDateTime,
+  val processedDate: LocalDateTime?,
+)
+
+data class DedupClusterMember(
+  val clusterId: String,
+  val bookId: String,
+  val present: Boolean,
+  val sourceContentGeneration: String,
+  val sourceCoverGeneration: String,
+  val sourceMetadataGeneration: String,
+  val seriesScopeRevision: String,
   val createdDate: LocalDateTime,
   val lastModifiedDate: LocalDateTime,
 )
 
-data class DedupReviewCaseCandidate(
-  val id: String,
+data class DedupClusterWithMembers(
+  val cluster: DedupCluster,
+  val members: List<DedupClusterMember>,
+)
+
+data class DedupGorseSync(
+  val seriesId: String,
   val libraryId: String,
-  val origin: DedupReviewCaseOrigin,
-  val memberBookIds: Set<String>,
-  val relations: List<DedupRelation>,
+  val desiredHidden: Boolean,
+  val state: String,
+  val attemptCount: Int,
+  val nextRetryAt: LocalDateTime?,
+  val lastError: String?,
+  val createdDate: LocalDateTime,
+  val lastModifiedDate: LocalDateTime,
+  val completedDate: LocalDateTime?,
 )
 
-enum class DedupReviewCaseStatus {
-  REVIEW_REQUIRED,
-  SUGGESTION_READY,
-  COMPLETED,
-  IGNORED,
-  STALE,
-  FAILED_REVIEW,
-  NO_KEEPER,
-}
-
-enum class DedupReviewCaseOrigin {
-  EXACT_FILE,
-  COVER_SIMILARITY,
-}
-
-data class DedupOverride(
-  val id: String,
-  val type: DedupOverrideType,
-  val bookLowId: String? = null,
-  val bookHighId: String? = null,
-  val bookId: String? = null,
-  val lowContentGeneration: String? = null,
-  val highContentGeneration: String? = null,
-  val lowCoverGeneration: String? = null,
-  val highCoverGeneration: String? = null,
-  val actorId: String,
-  val reason: String? = null,
-  val createdDate: LocalDateTime = LocalDateTime.now(),
+data class DedupLocalStateSnapshot(
+  val bookId: String,
+  val revision: String,
+  val reasonCodes: Set<String>,
+  val details: Map<String, Any>,
 )
-
-enum class DedupOverrideType {
-  UNRELATED,
-  NOT_VISUALLY_SIMILAR,
-  NOT_CONTENT_DUPLICATE,
-  ALT_EDITION,
-  PROTECTED,
-}

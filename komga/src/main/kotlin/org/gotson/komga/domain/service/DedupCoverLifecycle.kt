@@ -6,8 +6,6 @@ import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
-import org.gotson.komga.domain.model.DedupReviewCaseCandidate
-import org.gotson.komga.domain.model.DedupReviewCaseOrigin
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.model.ThumbnailBook
 import org.gotson.komga.domain.persistence.BookRepository
@@ -96,7 +94,7 @@ class DedupCoverLifecycle(
     val byBookId = features.associateBy { it.bookId }
     val exactPairs = exactPairs(libraryId)
     val now = LocalDateTime.now()
-    val candidates =
+    val relations =
       coverIndex
         .findAllNeighbors(libraryId, settings.coverTopK)
         .filterNot { (it.bookLowId to it.bookHighId) in exactPairs }
@@ -142,17 +140,11 @@ class DedupCoverLifecycle(
                 coverDistance = neighbor.distance,
                 lastModifiedDate = now,
               ) ?: candidateRelation
-          DedupReviewCaseCandidate(
-            id = "cover-case-${stableHash(pairIdentity)}",
-            libraryId = libraryId,
-            origin = DedupReviewCaseOrigin.COVER_SIMILARITY,
-            memberBookIds = setOf(neighbor.bookLowId, neighbor.bookHighId),
-            relations = listOf(relation),
-          )
+          relation
         }
 
-    dedupRepository.replaceReviewCases(libraryId, DedupReviewCaseOrigin.COVER_SIMILARITY, candidates, now)
-    return candidates.size
+    dedupRepository.replaceCoverRelations(libraryId, relations, now)
+    return relations.size
   }
 
   fun currentContentGeneration(bookId: String): String? = bookRepository.findByIdOrNull(bookId)?.let(::sourceSnapshot)?.contentGeneration
@@ -171,6 +163,8 @@ class DedupCoverLifecycle(
       pageCount = source.pageCount,
     )
   }
+
+  fun currentSourceIdentities(libraryId: String): List<DedupSourceIdentity> = eligibleBooks(libraryId).mapNotNull { currentSourceIdentity(it.id) }
 
   private fun eligibleBooks(libraryId: String): List<Book> {
     val active =

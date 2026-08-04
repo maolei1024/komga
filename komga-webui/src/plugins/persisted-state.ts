@@ -44,7 +44,7 @@ export const persistedModule: Module<any, any> = {
     },
     importPath: '',
     duplicatesNewPageSize: 10,
-    dedupCasePageSize: 20,
+    dedupClusterPageSize: 20,
     rememberMe: false,
   },
   getters: {
@@ -173,8 +173,8 @@ export const persistedModule: Module<any, any> = {
     setDuplicatesNewPageSize(state, val) {
       state.duplicatesNewPageSize = val
     },
-    setDedupCasePageSize(state, val) {
-      state.dedupCasePageSize = val
+    setDedupClusterPageSize(state, val) {
+      state.dedupClusterPageSize = val
     },
     setRememberMe(state, val) {
       state.rememberMe = val

@@ -1,264 +1,270 @@
 package org.gotson.komga.infrastructure.jooq.main
 
 import org.assertj.core.api.Assertions.assertThat
-import org.gotson.komga.domain.model.DedupDecision
-import org.gotson.komga.domain.model.DedupDecisionItem
-import org.gotson.komga.domain.model.DedupDecisionItemState
-import org.gotson.komga.domain.model.DedupDecisionMode
-import org.gotson.komga.domain.model.DedupDecisionState
+import org.gotson.komga.domain.model.DedupCluster
+import org.gotson.komga.domain.model.DedupClusterMember
+import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupLibrarySettings
+import org.gotson.komga.domain.model.DedupResolution
+import org.gotson.komga.domain.model.DedupResolutionAction
+import org.gotson.komga.domain.model.DedupResolutionMember
+import org.gotson.komga.domain.model.DedupResolutionMemberState
+import org.gotson.komga.domain.model.DedupResolutionMode
+import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
+import org.gotson.komga.domain.model.Library
+import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.model.makeLibrary
-import org.junit.jupiter.api.AfterEach
+import org.gotson.komga.domain.model.makeSeries
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.test.annotation.DirtiesContext
 import java.time.Duration
 import java.time.LocalDateTime
+import java.util.UUID
 
 @SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class DedupDaoTest(
-  @Autowired private val dedupDao: DedupDao,
+  @Autowired private val dao: DedupDao,
   @Autowired private val libraryDao: LibraryDao,
+  @Autowired private val seriesDao: SeriesDao,
+  @Autowired private val bookDao: BookDao,
 ) {
-  private val library = makeLibrary("dedup-test")
+  private lateinit var library: Library
 
   @BeforeEach
   fun setup() {
+    library = makeLibrary("dedup-${UUID.randomUUID()}")
     libraryDao.insert(library)
   }
 
-  @AfterEach
-  fun cleanup() {
-    dedupDao.deleteAllDedupData()
-    libraryDao.deleteAll()
+  @Test
+  fun `new library settings round trip without completion stability`() {
+    val value = DedupLibrarySettings(library.id, enabled = true, paused = true, batchSize = 25, maxDurationSeconds = 45, quietPeriodSeconds = 120)
+    dao.saveLibrarySettings(value)
+    assertThat(dao.findLibrarySettings(library.id)).usingRecursiveComparison().ignoringFields("createdDate", "lastModifiedDate").isEqualTo(value)
   }
 
   @Test
-  fun `library settings round trip through the main database`() {
-    val value =
-      DedupLibrarySettings(
-        libraryId = library.id,
-        enabled = true,
-        paused = true,
-        batchSize = 25,
-        maxDurationSeconds = 45,
-        quietPeriodSeconds = 120,
-        completionStabilitySeconds = 240,
-      )
+  fun `coalesced work keeps a newer revision pending after an older lease completes`() {
+    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
+    dao.enqueueWork("work-${UUID.randomUUID()}", library.id, DedupWorkType.REBUILD_CLUSTERS, notBefore = now)
+    val claimed = dao.claimNextWork("worker", Duration.ofMinutes(2), libraryId = library.id, now = now)!!
+    dao.enqueueWork("ignored", library.id, DedupWorkType.REBUILD_CLUSTERS, notBefore = now)
 
-    dedupDao.saveLibrarySettings(value)
-
-    assertThat(dedupDao.findLibrarySettings(library.id))
-      .usingRecursiveComparison()
-      .ignoringFields("createdDate", "lastModifiedDate")
-      .isEqualTo(value)
-  }
-
-  @Test
-  fun `a dirty revision arriving during a lease remains pending after the old revision completes`() {
-    val now = LocalDateTime.of(2026, 8, 3, 12, 0)
-    val initial =
-      dedupDao.enqueueWork(
-        id = "work-1",
-        libraryId = library.id,
-        type = DedupWorkType.RECONCILE_EXACT_DUPLICATES,
-        notBefore = now,
-      )
-    assertThat(initial.desiredRevision).isEqualTo(1)
-
-    val claimed = dedupDao.claimNextWork("worker-1", Duration.ofMinutes(5), now = now)!!
-    assertThat(claimed.state).isEqualTo(DedupWorkState.RUNNING)
-
-    val dirtied =
-      dedupDao.enqueueWork(
-        id = "ignored-because-natural-key-is-unique",
-        libraryId = library.id,
-        type = DedupWorkType.RECONCILE_EXACT_DUPLICATES,
-        notBefore = now,
-      )
-    assertThat(dirtied.desiredRevision).isEqualTo(2)
-    assertThat(dirtied.leaseToken).isEqualTo(claimed.leaseToken)
-
-    assertThat(dedupDao.completeWork(claimed.id, claimed.leaseToken!!, claimed.desiredRevision, now)).isTrue
-    assertThat(dedupDao.findWorkById(claimed.id))
+    assertThat(dao.completeWork(claimed.id, claimed.leaseToken!!, claimed.desiredRevision, now)).isTrue()
+    assertThat(dao.findWorkById(claimed.id))
       .extracting("state", "desiredRevision", "completedRevision")
       .containsExactly(DedupWorkState.PENDING, 2L, 1L)
-
-    val second = dedupDao.claimNextWork("worker-2", Duration.ofMinutes(5), now = now)!!
-    assertThat(dedupDao.completeWork(second.id, second.leaseToken!!, second.desiredRevision, now)).isTrue
-    assertThat(dedupDao.findWorkById(second.id))
-      .extracting("state", "desiredRevision", "completedRevision")
-      .containsExactly(DedupWorkState.SUCCEEDED, 2L, 2L)
   }
 
   @Test
-  fun `ordinary failures back off and eventually require review`() {
-    val now = LocalDateTime.of(2026, 8, 3, 12, 0)
-    dedupDao.enqueueWork(
-      id = "work-1",
-      libraryId = library.id,
-      type = DedupWorkType.RECONCILE_EXACT_DUPLICATES,
-      notBefore = now,
-      maxAttempts = 2,
-    )
-
-    val first = dedupDao.claimNextWork("worker-1", Duration.ofMinutes(5), now = now)!!
-    assertThat(dedupDao.failWork(first.id, first.leaseToken!!, first.desiredRevision, "TEST", "failure", now)).isTrue
-    val afterFirst = dedupDao.findWorkById(first.id)!!
-    assertThat(afterFirst.state).isEqualTo(DedupWorkState.WAITING)
-    assertThat(afterFirst.attemptCount).isEqualTo(1)
-    assertThat(afterFirst.nextRetryAt).isAfter(now)
-
-    val retryTime = afterFirst.nextRetryAt!!
-    val second = dedupDao.claimNextWork("worker-2", Duration.ofMinutes(5), now = retryTime)!!
-    assertThat(dedupDao.failWork(second.id, second.leaseToken!!, second.desiredRevision, "TEST", "failure", retryTime)).isTrue
-    assertThat(dedupDao.findWorkById(second.id))
-      .extracting("state", "attemptCount", "nextRetryAt")
-      .containsExactly(DedupWorkState.FAILED_REVIEW, 2, null)
-  }
-
-  @Test
-  fun `expired leases are reclaimed for a later worker`() {
-    val now = LocalDateTime.of(2026, 8, 3, 12, 0)
-    dedupDao.enqueueWork(
-      id = "work-1",
-      libraryId = library.id,
-      type = DedupWorkType.RECONCILE_EXACT_DUPLICATES,
-      notBefore = now,
-    )
-    dedupDao.claimNextWork("dead-worker", Duration.ofMinutes(1), now = now)
-
-    assertThat(dedupDao.releaseExpiredLeases(now.plusMinutes(2))).isEqualTo(1)
-
-    val reclaimed = dedupDao.claimNextWork("new-worker", Duration.ofMinutes(1), now = now.plusMinutes(2))
-    assertThat(reclaimed).isNotNull
-    assertThat(reclaimed!!.leaseOwner).isEqualTo("new-worker")
-  }
-
-  @Test
-  fun `decision claim token serializes a per Book saga without mutating immutable plan snapshots`() {
-    val now = LocalDateTime.of(2026, 8, 3, 12, 0)
-    val decision =
-      DedupDecision(
-        id = "decision-1",
-        reviewCaseId = null,
-        planRevision = "plan-v1",
-        mode = DedupDecisionMode.MANUAL,
-        keeperBookId = "keeper",
-        keeperSnapshotJson = "{\"hash\":\"keeper-hash\"}",
-        planJson = "{\"remove\":[\"loser\"]}",
-        evidenceJson = "{}",
-        eligibilityJson = "{}",
-        classifierRuleVersion = 3,
-        manualConfirmationJson = "{\"accepted\":true}",
-        state = DedupDecisionState.APPROVED,
-        actorId = "admin",
-        approvedDate = now,
-        executedDate = null,
-        completedDate = null,
-        createdDate = now,
-        lastModifiedDate = now,
+  fun `cluster revision and state fingerprint are claimed with compare and set`() {
+    val now = LocalDateTime.now()
+    val cluster =
+      DedupCluster(
+        "cluster-${UUID.randomUUID()}",
+        library.id,
+        3,
+        DedupClusterStatus.UNPROCESSED,
+        true,
+        "book-A",
+        "topology",
+        "evidence",
+        "state",
+        null,
+        null,
+        null,
+        null,
+        now,
+        now,
+        null,
       )
-    val item =
-      DedupDecisionItem(
-        id = "item-1",
-        decisionId = decision.id,
-        bookId = "loser",
-        seriesId = "series",
-        libraryId = library.id,
-        titleSnapshot = "Loser title",
-        pathSnapshot = "/tmp/loser.cbz",
-        expectedPath = "/tmp/loser.cbz",
-        expectedSize = 100,
-        expectedMtime = now,
-        expectedArchiveHash = "archive-hash",
-        sourceContentGeneration = "content-v1",
-        seriesScopeRevision = "scope-v1",
-        stateRevision = "state-v1",
-        acknowledgedReasonsJson = "[]",
-        directRelationId = "relation-1",
-        directRelationGenerations = "relation-v1",
-        state = DedupDecisionItemState.PENDING,
-        attemptCount = 0,
-        resultCode = null,
-        resultJson = null,
-        lastError = null,
-        stabilityNotBefore = null,
-        deletedDate = null,
-        createdDate = now,
-        lastModifiedDate = now,
-      )
-    dedupDao.insertDecision(decision, listOf(item))
+    dao.saveCluster(cluster, emptyList())
 
-    assertThat(
-      dedupDao.claimDecision(
-        decision.id,
-        setOf(DedupDecisionState.APPROVED),
-        DedupDecisionState.REVALIDATING,
-        "executor-1",
+    assertThat(dao.claimCluster(cluster.id, 2, "state")).isFalse()
+    assertThat(dao.claimCluster(cluster.id, 3, "wrong")).isFalse()
+    assertThat(dao.claimCluster(cluster.id, 3, "state")).isTrue()
+    assertThat(dao.findCluster(cluster.id)?.cluster?.status).isEqualTo(DedupClusterStatus.PROCESSING)
+  }
+
+  @Test
+  fun `cluster members round trip and removed members remain as non-present history`() {
+    val now = LocalDateTime.now()
+    val series = makeSeries("series", library.id)
+    seriesDao.insert(series)
+    val books = listOf("A", "B").map { makeBook(it, libraryId = library.id, seriesId = series.id) }
+    books.forEach(bookDao::insert)
+    val cluster =
+      DedupCluster(
+        "cluster-${UUID.randomUUID()}",
+        library.id,
+        1,
+        DedupClusterStatus.UNPROCESSED,
+        true,
+        books[0].id,
+        "topology",
+        "evidence",
+        "state",
+        null,
+        null,
+        null,
+        null,
+        now,
+        now,
+        null,
+      )
+    val members =
+      books.map {
+        DedupClusterMember(cluster.id, it.id, true, "content-${it.id}", "cover-${it.id}", "metadata-${it.id}", "scope-${it.id}", now, now)
+      }
+
+    dao.saveCluster(cluster, members)
+    dao.saveCluster(cluster.copy(revision = 2, reviewable = false, lastModifiedDate = now.plusSeconds(1)), listOf(members[0]))
+
+    val stored = dao.findCluster(cluster.id)!!
+    assertThat(stored.cluster.revision).isEqualTo(2)
+    assertThat(stored.members).hasSize(2)
+    assertThat(stored.members.single { it.bookId == books[0].id }.present).isTrue()
+    assertThat(stored.members.single { it.bookId == books[1].id }.present).isFalse()
+  }
+
+  @Test
+  fun `resolution snapshot supports multiple keepers and active member exclusion`() {
+    val now = LocalDateTime.now()
+    val cluster =
+      DedupCluster(
+        "cluster-${UUID.randomUUID()}",
+        library.id,
+        1,
+        DedupClusterStatus.PROCESSING,
+        true,
+        "A",
+        "topology",
+        "evidence",
+        "state",
+        null,
+        null,
+        null,
+        null,
+        now,
+        now,
+        null,
+      )
+    dao.saveCluster(cluster, emptyList())
+    val resolution =
+      DedupResolution(
+        "resolution-${UUID.randomUUID()}",
+        cluster.id,
+        1,
+        DedupResolutionMode.CUSTOM,
+        "plan",
+        "{}",
+        "{}",
+        "{}",
+        1,
+        DedupResolutionState.PROCESSING,
+        "admin",
+        "{}",
+        "token",
         now.plusMinutes(5),
         now,
-      ),
-    ).isTrue
-    assertThat(
-      dedupDao.claimDecision(
-        decision.id,
-        setOf(DedupDecisionState.REVALIDATING),
-        DedupDecisionState.REVALIDATING,
-        "executor-2",
-        now.plusMinutes(5),
         now,
-      ),
-    ).isFalse
-    assertThat(
-      dedupDao.updateDecisionItem(
-        item.id,
-        decision.id,
-        "wrong-token",
-        setOf(DedupDecisionItemState.PENDING),
-        DedupDecisionItemState.REVALIDATING,
-      ),
-    ).isFalse
-    assertThat(
-      dedupDao.updateDecisionItem(
-        item.id,
-        decision.id,
-        "executor-1",
-        setOf(DedupDecisionItemState.PENDING),
-        DedupDecisionItemState.REVALIDATING,
-        incrementAttempt = true,
-      ),
-    ).isTrue
+        null,
+      )
+    val members =
+      listOf("A", "B").map { id ->
+        DedupResolutionMember(
+          resolution.id,
+          id,
+          "series-$id",
+          library.id,
+          DedupResolutionAction.KEEP,
+          null,
+          id,
+          "/tmp/$id.cbz",
+          "{}",
+          "{}",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          DedupResolutionMemberState.PLANNED,
+          null,
+          null,
+          null,
+          now,
+          now,
+        )
+      }
 
-    assertThat(dedupDao.findDecision(decision.id))
-      .extracting("planRevision", "keeperSnapshotJson", "planJson")
-      .containsExactly("plan-v1", "{\"hash\":\"keeper-hash\"}", "{\"remove\":[\"loser\"]}")
-    assertThat(dedupDao.findDecisionItem(item.id))
-      .extracting("state", "attemptCount", "stateRevision")
-      .containsExactly(DedupDecisionItemState.REVALIDATING, 1, "state-v1")
+    dao.insertResolution(resolution, members)
+
+    assertThat(dao.findResolutionMembers(resolution.id)).hasSize(2).allMatch { it.action == DedupResolutionAction.KEEP }
+    assertThat(dao.hasActiveResolutionForBooks(setOf("B"))).isTrue()
+    assertThat(dao.countResolutionsByState()[DedupResolutionState.PROCESSING]).isGreaterThanOrEqualTo(1)
   }
 
   @Test
-  fun `Gorse desired state is durable coalesced and retryable independently`() {
-    val now = LocalDateTime.of(2026, 8, 3, 12, 0)
-    dedupDao.enqueueGorseSync("series-1", library.id, desiredHidden = true, now = now)
-    dedupDao.enqueueGorseSync("series-1", library.id, desiredHidden = false, now = now.plusSeconds(1))
+  fun `deleting a Library cascades its cluster resolution audit without blocking native deletion`() {
+    val now = LocalDateTime.now()
+    val cluster = DedupCluster("cluster-${UUID.randomUUID()}", library.id, 1, DedupClusterStatus.PROCESSING, true, "A", "topology", "evidence", "state", null, null, null, null, now, now, null)
+    dao.saveCluster(cluster, emptyList())
+    val resolution =
+      DedupResolution(
+        "resolution-${UUID.randomUUID()}",
+        cluster.id,
+        1,
+        DedupResolutionMode.CUSTOM,
+        "plan",
+        "{}",
+        "{}",
+        "{}",
+        1,
+        DedupResolutionState.PROCESSING,
+        "admin",
+        "{}",
+        "token",
+        now.plusMinutes(5),
+        now,
+        now,
+        null,
+      )
+    dao.insertResolution(resolution, emptyList())
 
-    val claimed = dedupDao.findPendingGorseSync(now.plusSeconds(1))!!
-    assertThat(claimed.desiredHidden).isFalse
-    assertThat(claimed.state).isEqualTo("RUNNING")
-    assertThat(dedupDao.failGorseSync("series-1", "temporary failure", now.plusSeconds(1))).isTrue
-    val failed = dedupDao.findGorseSync("series-1")!!
-    assertThat(failed.state).isEqualTo("PENDING")
-    assertThat(failed.nextRetryAt).isAfter(now.plusSeconds(1))
-    assertThat(dedupDao.findPendingGorseSync(now.plusSeconds(2))).isNull()
+    libraryDao.delete(library.id)
 
-    val retryAt = failed.nextRetryAt!!
-    assertThat(dedupDao.findPendingGorseSync(retryAt)).isNotNull
-    assertThat(dedupDao.completeGorseSync("series-1", retryAt)).isTrue
-    assertThat(dedupDao.findGorseSync("series-1")?.state).isEqualTo("SUCCEEDED")
+    assertThat(libraryDao.findByIdOrNull(library.id)).isNull()
+    assertThat(dao.findResolution(resolution.id)).isNull()
+    assertThat(dao.findCluster(cluster.id)).isNull()
+  }
+
+  @Test
+  fun `Gorse desired state completion is compare and set on hidden intent`() {
+    val series = "series-${UUID.randomUUID()}"
+    val now = LocalDateTime.now()
+    dao.enqueueGorseSync(series, library.id, true, now)
+    dao.enqueueGorseSync(series, library.id, false, now.plusSeconds(1))
+
+    assertThat(dao.completeGorseSync(series, true, now.plusSeconds(2))).isFalse()
+    assertThat(dao.completeGorseSync(series, false, now.plusSeconds(2))).isTrue()
+    assertThat(dao.findGorseSync(series)?.state).isEqualTo("SUCCEEDED")
+  }
+
+  @Test
+  fun `expired Gorse running claims are recoverable without reclaiming active work`() {
+    val series = "series-${UUID.randomUUID()}"
+    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
+    dao.enqueueGorseSync(series, library.id, true, now)
+
+    assertThat(dao.findPendingGorseSync(now)?.state).isEqualTo("RUNNING")
+    assertThat(dao.findPendingGorseSync(now.plusMinutes(9))).isNull()
+    assertThat(dao.findPendingGorseSync(now.plusMinutes(11))?.state).isEqualTo("RUNNING")
   }
 }

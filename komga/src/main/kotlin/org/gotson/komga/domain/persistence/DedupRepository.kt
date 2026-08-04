@@ -1,12 +1,14 @@
 package org.gotson.komga.domain.persistence
 
+import org.gotson.komga.domain.model.DedupCluster
+import org.gotson.komga.domain.model.DedupClusterMember
+import org.gotson.komga.domain.model.DedupClusterStatus
+import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupFeature
+import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.DedupLibrarySettings
-import org.gotson.komga.domain.model.DedupOverride
 import org.gotson.komga.domain.model.DedupPageFeature
 import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupReviewCase
-import org.gotson.komga.domain.model.DedupReviewCaseCandidate
 import org.gotson.komga.domain.model.DedupWork
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
@@ -91,46 +93,101 @@ interface DedupRepository {
     features: Collection<DedupPageFeature>,
   )
 
-  fun replaceReviewCases(
-    libraryId: String,
-    origin: org.gotson.komga.domain.model.DedupReviewCaseOrigin,
-    candidates: Collection<DedupReviewCaseCandidate>,
-    now: LocalDateTime = LocalDateTime.now(),
-  )
-
-  fun saveReviewCase(
-    candidate: DedupReviewCaseCandidate,
-    now: LocalDateTime = LocalDateTime.now(),
-  )
-
-  fun findReviewCase(caseId: String): DedupReviewCase?
-
   fun findRelation(
     firstBookId: String,
     secondBookId: String,
   ): DedupRelation?
 
-  fun setReviewCaseKeeper(
-    caseId: String,
-    expectedRevision: Long,
-    bookId: String,
+  fun findRelations(libraryId: String): List<DedupRelation>
+
+  fun findRelationsForBooks(bookIds: Set<String>): List<DedupRelation>
+
+  fun saveRelation(relation: DedupRelation)
+
+  fun replaceExactRelations(
+    libraryId: String,
+    relations: Collection<DedupRelation>,
     now: LocalDateTime = LocalDateTime.now(),
-  ): Boolean
+  )
 
-  fun applyOverride(
-    caseId: String,
-    expectedRevision: Long,
-    override: DedupOverride,
-    newStatus: org.gotson.komga.domain.model.DedupReviewCaseStatus,
+  fun replaceCoverRelations(
+    libraryId: String,
+    relations: Collection<DedupRelation>,
     now: LocalDateTime = LocalDateTime.now(),
-  ): Boolean
+  )
 
-  fun findProtectedBookIds(bookIds: Set<String>): Set<String>
+  fun findCluster(clusterId: String): DedupClusterWithMembers?
 
-  fun findReviewCases(
+  fun findAllClusters(libraryId: String? = null): List<DedupClusterWithMembers>
+
+  fun findClusters(
     libraryId: String? = null,
-    origin: org.gotson.komga.domain.model.DedupReviewCaseOrigin? = null,
-  ): List<DedupReviewCase>
+    status: DedupClusterStatus? = null,
+    reviewable: Boolean? = null,
+    offset: Int = 0,
+    limit: Int = 20,
+  ): List<DedupClusterWithMembers>
 
-  fun deleteAllDedupData()
+  fun countClusters(
+    libraryId: String? = null,
+    status: DedupClusterStatus? = null,
+    reviewable: Boolean? = null,
+  ): Long
+
+  fun countClustersByStatus(): Map<DedupClusterStatus, Int>
+
+  fun lockLibraryForClusterRebuild(libraryId: String)
+
+  fun saveCluster(
+    cluster: DedupCluster,
+    members: Collection<DedupClusterMember>,
+  )
+
+  fun markClusterSuperseded(
+    clusterId: String,
+    supersededBy: String,
+    now: LocalDateTime = LocalDateTime.now(),
+  )
+
+  fun claimCluster(
+    clusterId: String,
+    expectedRevision: Long,
+    stateFingerprint: String,
+    now: LocalDateTime = LocalDateTime.now(),
+  ): Boolean
+
+  fun updateClusterState(
+    clusterId: String,
+    expectedStatuses: Set<DedupClusterStatus>,
+    newStatus: DedupClusterStatus,
+    lastResolutionId: String? = null,
+    reopenReason: String? = null,
+    now: LocalDateTime = LocalDateTime.now(),
+  ): Boolean
+
+  fun enqueueGorseSync(
+    seriesId: String,
+    libraryId: String,
+    desiredHidden: Boolean,
+    now: LocalDateTime = LocalDateTime.now(),
+  )
+
+  fun findPendingGorseSync(now: LocalDateTime = LocalDateTime.now()): DedupGorseSync?
+
+  fun findGorseSync(seriesId: String): DedupGorseSync?
+
+  fun completeGorseSync(
+    seriesId: String,
+    expectedHidden: Boolean,
+    now: LocalDateTime = LocalDateTime.now(),
+  ): Boolean
+
+  fun failGorseSync(
+    seriesId: String,
+    expectedHidden: Boolean,
+    error: String,
+    now: LocalDateTime = LocalDateTime.now(),
+  ): Boolean
+
+  fun countGorseSyncStates(): Map<String, Int>
 }

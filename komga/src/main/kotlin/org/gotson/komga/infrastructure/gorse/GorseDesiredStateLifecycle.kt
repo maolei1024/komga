@@ -4,7 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.domain.model.Series
 import org.gotson.komga.domain.persistence.BookMetadataAggregationRepository
 import org.gotson.komga.domain.persistence.BookRepository
-import org.gotson.komga.domain.persistence.DedupDecisionRepository
+import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
 import org.springframework.stereotype.Service
@@ -16,7 +16,7 @@ private val gorseUtcFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:
 
 @Service
 class GorseDesiredStateLifecycle(
-  private val decisionRepository: DedupDecisionRepository,
+  private val dedupRepository: DedupRepository,
   private val seriesRepository: SeriesRepository,
   private val bookRepository: BookRepository,
   private val seriesMetadataRepository: SeriesMetadataRepository,
@@ -31,30 +31,58 @@ class GorseDesiredStateLifecycle(
     val series = seriesRepository.findByIdOrNull(seriesId)
     val libraryId = series?.libraryId ?: fallbackLibraryId ?: return
     val hidden = series == null || series.deletedDate != null || bookRepository.findAllBySeriesId(seriesId).none { it.deletedDate == null }
-    decisionRepository.enqueueGorseSync(seriesId, libraryId, hidden)
+    dedupRepository.enqueueGorseSync(seriesId, libraryId, hidden)
   }
 
   fun reconcile(limit: Int = 100): Int {
     if (!gorseSettings.enabled) return 0
     var processed = 0
     repeat(limit) {
-      val work = decisionRepository.findPendingGorseSync() ?: return processed
+      val work = dedupRepository.findPendingGorseSync() ?: return processed
       try {
-        val series = seriesRepository.findByIdOrNull(work.seriesId)
-        if (series == null) {
-          check(work.desiredHidden) { "Cannot restore a missing Komga Series in Gorse" }
-          gorseClient.setHiddenChecked(work.seriesId, true)
-        } else {
-          gorseClient.upsertItemChecked(buildItem(series, work.desiredHidden))
-        }
-        check(decisionRepository.completeGorseSync(work.seriesId)) { "Gorse desired-state row changed before completion" }
+        applyChecked(work.seriesId, work.desiredHidden)
+        check(dedupRepository.completeGorseSync(work.seriesId, work.desiredHidden)) { "Gorse desired-state row changed before completion" }
       } catch (exception: Exception) {
         desiredStateLogger.error(exception) { "Gorse desired-state reconciliation failed for ${work.seriesId}" }
-        decisionRepository.failGorseSync(work.seriesId, exception.message ?: exception.javaClass.simpleName)
+        dedupRepository.failGorseSync(work.seriesId, work.desiredHidden, exception.message ?: exception.javaClass.simpleName)
       }
       processed++
     }
     return processed
+  }
+
+  fun syncNow(
+    seriesId: String,
+    fallbackLibraryId: String? = null,
+  ): GorseSyncNowResult {
+    if (!gorseSettings.enabled) return GorseSyncNowResult(seriesId, GorseSyncNowState.NOT_APPLICABLE, null, null)
+    val series = seriesRepository.findByIdOrNull(seriesId)
+    val libraryId = series?.libraryId ?: fallbackLibraryId ?: error("Cannot determine Library for Series $seriesId")
+    val hidden = series == null || series.deletedDate != null || bookRepository.findAllBySeriesId(seriesId).none { it.deletedDate == null }
+    dedupRepository.enqueueGorseSync(seriesId, libraryId, hidden)
+    return try {
+      applyChecked(seriesId, hidden)
+      check(dedupRepository.completeGorseSync(seriesId, hidden)) { "Gorse desired-state row changed during synchronous confirmation" }
+      GorseSyncNowResult(seriesId, GorseSyncNowState.CONFIRMED, hidden, null)
+    } catch (exception: Exception) {
+      dedupRepository.failGorseSync(seriesId, hidden, exception.message ?: exception.javaClass.simpleName)
+      GorseSyncNowResult(seriesId, GorseSyncNowState.FAILED, hidden, exception.message?.take(500) ?: exception.javaClass.simpleName)
+    }
+  }
+
+  private fun applyChecked(
+    seriesId: String,
+    hidden: Boolean,
+  ) {
+    val series = seriesRepository.findByIdOrNull(seriesId)
+    if (series == null) {
+      check(hidden) { "Cannot restore a missing Komga Series in Gorse" }
+      gorseClient.setHiddenChecked(seriesId, true)
+    } else {
+      gorseClient.upsertItemChecked(buildItem(series, hidden))
+    }
+    val observed = gorseClient.getItemChecked(seriesId)
+    check(observed.IsHidden == hidden) { "Gorse Item $seriesId IsHidden=${observed.IsHidden}, expected $hidden" }
   }
 
   fun buildItem(series: Series): GorseItem =
@@ -95,3 +123,16 @@ class GorseDesiredStateLifecycle(
     return labels
   }
 }
+
+enum class GorseSyncNowState {
+  CONFIRMED,
+  NOT_APPLICABLE,
+  FAILED,
+}
+
+data class GorseSyncNowResult(
+  val seriesId: String,
+  val state: GorseSyncNowState,
+  val expectedHidden: Boolean?,
+  val error: String?,
+)
