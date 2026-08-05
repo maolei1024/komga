@@ -1,11 +1,16 @@
-# ARM64 原生构建
+# 矩阵多架构原生构建 (PUBLIC 仓库，添加 owner 限制)
+matrix:
+  ARCH:
+    - amd64
+    - arm64
 labels:
-  arch: arm64
+  arch: ${ARCH}
 when:
   - event: push
     branch: master
     evaluate: 'CI_REPO_OWNER == "maolei1024"'
 steps:
+  # Gradle 预构建 (使用预构建基础镜像)
   - name: gradle-build
     image: docker.nexus.ixuni.win/baseimage/java21-node20
     commands:
@@ -17,8 +22,8 @@ steps:
     settings:
       repo: docker.nexus.ixuni.win/komga
       registry: docker.nexus.ixuni.win
-      tags: "${CI_PIPELINE_NUMBER}-arm64"
-      platforms: linux/arm64
+      tags: "${CI_PIPELINE_NUMBER}-${ARCH}"
+      platforms: "linux/${ARCH}"
       username:
         from_secret: nexus_username
       password:
@@ -34,4 +39,4 @@ steps:
       topic: mlNtfy
       status: failure
       priority: high
-      tags: ci,failure,build,arm64
+      tags: "ci,failure,build,${ARCH}"
