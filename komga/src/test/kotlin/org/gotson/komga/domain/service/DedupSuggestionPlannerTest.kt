@@ -35,7 +35,7 @@ class DedupSuggestionPlannerTest {
   fun defaults() {
     every { resolutions.hasActiveResolutionForBooks(any()) } returns false
     every { books.findByIdOrNull(any()) } answers { book(firstArg()) }
-    every { deletion.precheck(any()) } returns DedupFilePrecheck(DedupFilePrecheckStatus.AVAILABLE, "/tmp/book.cbz", 10, 10, LocalDateTime.MIN, LocalDateTime.MIN)
+    every { deletion.precheck(any()) } returns DedupFilePrecheck(DedupFilePrecheckStatus.AVAILABLE, "/tmp/book.cbz", 10, 10)
     every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
     every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("topology", "evidence", "state")
   }
@@ -91,7 +91,19 @@ class DedupSuggestionPlannerTest {
     ids.forEach { id -> every { cover.currentSourceIdentity(id) } returns identity(id) }
   }
 
-  private fun identity(id: String) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", 10)
+  private fun identity(id: String) =
+    DedupSourceIdentity(
+      id,
+      "series-$id",
+      "library",
+      "content-$id",
+      "cover-$id",
+      "metadata-$id",
+      "scope-$id",
+      10,
+      org.gotson.komga.domain.model.DedupArchiveHashState.READY,
+      "hash-$id",
+    )
 
   private fun exact(
     left: String,

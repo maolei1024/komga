@@ -4,6 +4,7 @@ import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
+import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.DedupLibrarySettings
@@ -71,6 +72,8 @@ interface DedupRepository {
 
   fun findFeature(bookId: String): DedupFeature?
 
+  fun findFeatures(bookIds: Set<String>): List<DedupFeature>
+
   fun findReadyCoverFeatures(libraryId: String): List<DedupFeature>
 
   fun saveFeature(feature: DedupFeature)
@@ -124,6 +127,7 @@ interface DedupRepository {
     libraryId: String? = null,
     status: DedupClusterStatus? = null,
     reviewable: Boolean? = null,
+    evidenceMaturity: DedupEvidenceMaturity? = null,
     offset: Int = 0,
     limit: Int = 20,
   ): List<DedupClusterWithMembers>
@@ -132,6 +136,7 @@ interface DedupRepository {
     libraryId: String? = null,
     status: DedupClusterStatus? = null,
     reviewable: Boolean? = null,
+    evidenceMaturity: DedupEvidenceMaturity? = null,
   ): Long
 
   fun countClustersByStatus(): Map<DedupClusterStatus, Int>

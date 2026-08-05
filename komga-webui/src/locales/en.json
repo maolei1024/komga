@@ -1072,7 +1072,8 @@
     "coverDistance": "Cover distance",
     "topK": "Top-K neighbors",
     "noLibraries": "No libraries are available for duplicate scanning.",
-    "pendingWork": "Pending work",
+    "backgroundWork": "Background task queue",
+    "backgroundWorkHelp": "Includes scanning, cover feature, and deep-verification tasks. It is not the number of clusters awaiting manual review.",
     "statusFilter": "Status",
     "libraryFilter": "Library",
     "evidenceFilter": "Evidence maturity",
@@ -1080,9 +1081,11 @@
     "memberCount": "{count} member | {count} members",
     "pageCount": "{count} page | {count} pages",
     "pageCountUnknown": "Page count unknown",
+    "deepVerificationRequired": "Deep verification required",
     "verifiedProgress": "{verified}/{total} pairs verified",
     "planCounts": "Keep {keep}, remove {remove}",
     "noSafeSuggestion": "No safe automatic deletion",
+    "eligibilityUnavailable": "Processing eligibility unavailable",
     "untitledCluster": "Untitled duplicate cluster",
     "emptyTitle": "No clusters match these filters",
     "emptyBody": "Change a filter or run a scan after enabling duplicate review for a library.",
@@ -1106,10 +1109,11 @@
     "useSuggestion": "Use suggested plan",
     "submitCustom": "Apply custom plan",
     "retryIncomplete": "Retry incomplete steps",
+    "retryEligibility": "Retry eligibility check",
+    "reapprove": "Abandon and reapprove",
+    "confirmReapprove": "Keep the previous processing record for audit, abandon this approval with no irreversible progress, and reload current evidence?",
     "verificationQueued": "Deep verification queued",
     "confirmSuggested": "Apply the suggested plan and permanently remove {count} files?",
-    "confirmCustom": "Apply this custom plan and permanently remove {count} files?",
-    "confirmKeepAll": "Keep every member and mark this cluster processed without deleting files?",
     "acknowledgeRisk": "I reviewed and accept the {type} risk for this direct pair",
     "acknowledgeLocalState": "I reviewed and accept removing {book}, which has {state}",
     "resolutionResult": "Resolution result",
@@ -1135,7 +1139,8 @@
       "PROCESSING": "Processing",
       "PROCESSED": "Processed",
       "NEEDS_ATTENTION": "Needs attention",
-      "PARTIALLY_COMPLETED": "Partially completed"
+      "PARTIALLY_COMPLETED": "Partially completed",
+      "ABANDONED": "Abandoned"
     },
     "gorseState": {"CONFIRMED": "Confirmed", "NOT_APPLICABLE": "Not applicable", "FAILED": "Failed"},
     "actionValue": {"KEEP": "Keep", "DELETE": "Delete"},
@@ -1159,7 +1164,8 @@
       "CLUSTERS_MERGED": "Clusters merged after candidate topology changed", "CLUSTER_SPLIT": "Cluster split after candidate topology changed",
       "TOPOLOGY_CHANGED": "Member or candidate topology changed", "EVIDENCE_CHANGED": "Direct evidence changed",
       "LOCAL_STATE_CHANGED": "Local user state changed", "PROCESSING_LEASE_EXPIRED": "Previous processing was interrupted",
-      "PREFLIGHT_FAILED": "Preflight failed", "GORSE_FAILED": "Gorse confirmation failed", "FINALIZE_CONFLICT": "Final state could not be saved"
+      "PREFLIGHT_FAILED": "Preflight failed", "GORSE_FAILED": "Gorse confirmation failed", "FINALIZE_CONFLICT": "Final state could not be saved",
+      "IDENTITY_RULE_CHANGED": "File identity rules changed; review is required", "REAPPROVAL_REQUIRED": "The previous approval was abandoned; approve again using current evidence"
     },
     "reason": {
       "CLUSTER_NOT_UNPROCESSED": "This cluster is not available for a new resolution.",
@@ -1168,6 +1174,8 @@
       "STATE_REVISION_CHANGED": "Local user state changed since this revision.",
       "DELETE_FILE_UNAVAILABLE": "A file selected for deletion is unavailable, stale, or not writable.",
       "LOCAL_STATE_WOULD_BE_DISCARDED": "The suggested plan would discard protected local user state.",
+      "ARCHIVE_HASH_REQUIRED": "Deep verification must establish current archive hashes for the removed book and its keeper.",
+      "DIRECT_CONTENT_EVIDENCE_REQUIRED": "Cover similarity alone is insufficient; deep verification is required before deletion.",
       "PROCESSING_PRECHECK_PASSED": "Current processing preconditions passed."
     }
   },

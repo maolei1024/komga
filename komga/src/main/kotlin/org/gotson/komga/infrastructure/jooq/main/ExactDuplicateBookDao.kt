@@ -44,7 +44,6 @@ class ExactDuplicateBookDao(
         b.URL,
         b.FILE_HASH,
         b.FILE_SIZE,
-        b.FILE_LAST_MODIFIED,
         b.ONESHOT,
         b.DELETED_DATE,
       ).from(b)
@@ -60,7 +59,6 @@ class ExactDuplicateBookDao(
           url = it[b.URL]!!,
           fileHash = it[b.FILE_HASH]!!,
           fileSize = it[b.FILE_SIZE]!!,
-          fileLastModified = it[b.FILE_LAST_MODIFIED]!!,
           oneshot = it[b.ONESHOT]!!,
           deleted = it[b.DELETED_DATE] != null,
         )

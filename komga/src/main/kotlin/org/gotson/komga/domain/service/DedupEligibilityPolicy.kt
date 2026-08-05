@@ -1,5 +1,6 @@
 package org.gotson.komga.domain.service
 
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupPlanMember
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupResolutionAction
@@ -68,7 +69,13 @@ class DedupEligibilityPolicy(
           val relation =
             relations.firstOrNull { setOf(it.bookLowId, it.bookHighId) == setOf(selection.bookId, keeper) }
               ?: conflict("DIRECT_RELATION_REQUIRED", "Every DELETE requires a current direct relation")
+          if (relation.type == DedupRelationType.VISUALLY_SIMILAR) {
+            conflict("DIRECT_CONTENT_EVIDENCE_REQUIRED", "Cover similarity must be deep-verified before deletion")
+          }
           if (relation.type == DedupRelationType.UNRELATED) conflict("UNRELATED_DELETE_FORBIDDEN", "A relation classified as unrelated cannot be deleted")
+          if (identities[selection.bookId]?.archiveHashState != DedupArchiveHashState.READY || identities[keeper]?.archiveHashState != DedupArchiveHashState.READY) {
+            conflict("ARCHIVE_HASH_REQUIRED", "DELETE members and their keepers require a current archive hash")
+          }
           if (relation.type == DedupRelationType.CONTAINED_IN && !relation.isSafeFor(selection.bookId, keeper)) {
             conflict("CONTAINMENT_DIRECTION_INVALID", "A container cannot be deleted in favor of its contained Book")
           }

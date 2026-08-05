@@ -4,6 +4,7 @@ import com.github.f4b6a3.tsid.TsidCreator
 import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
+import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
@@ -23,7 +24,7 @@ class DedupClusterLifecycle(
   private val localStateLifecycle: DedupLocalStateLifecycle,
 ) {
   companion object {
-    const val ELIGIBILITY_RULE_VERSION = 1
+    const val ELIGIBILITY_RULE_VERSION = 2
   }
 
   @Transactional
@@ -134,6 +135,10 @@ class DedupClusterLifecycle(
           createdDate = old?.createdDate ?: now,
           lastModifiedDate = if (changed) now else old.lastModifiedDate,
           processedDate = if (status == DedupClusterStatus.PROCESSED) old?.processedDate else null,
+          memberCount = memberIds.size,
+          verifiedPairCount = verifiedPairCount(direct),
+          totalPairCount = totalPairCount(memberIds.size),
+          evidenceMaturity = evidenceMaturity(memberIds.size, direct),
         )
       val oldMembers = chosen?.members.orEmpty().associateBy { it.bookId }
       val members = memberIdentities.map { identity -> identity.toMember(id, oldMembers[identity.bookId]?.createdDate ?: now, now) }
@@ -169,6 +174,10 @@ class DedupClusterLifecycle(
           reopenReason = if (changed) "TOPOLOGY_CHANGED" else old.cluster.reopenReason,
           lastModifiedDate = if (changed || old.cluster.reviewable) now else old.cluster.lastModifiedDate,
           processedDate = if (status == DedupClusterStatus.PROCESSED) old.cluster.processedDate else null,
+          memberCount = presentIds.size,
+          verifiedPairCount = verifiedPairCount(direct),
+          totalPairCount = totalPairCount(presentIds.size),
+          evidenceMaturity = evidenceMaturity(presentIds.size, direct),
         )
       val oldMembers = old.members.associateBy { it.bookId }
       dedupRepository.saveCluster(value, memberIdentities.map { it.toMember(value.id, oldMembers[it.bookId]?.createdDate ?: now, now) })
@@ -206,6 +215,10 @@ class DedupClusterLifecycle(
         reopenReason = null,
         lastModifiedDate = now,
         processedDate = now,
+        memberCount = survivorBookIds.size,
+        verifiedPairCount = verifiedPairCount(relations),
+        totalPairCount = totalPairCount(survivorBookIds.size),
+        evidenceMaturity = evidenceMaturity(survivorBookIds.size, relations),
       )
     val oldMembers = current.members.associateBy { it.bookId }
     dedupRepository.saveCluster(value, identities.map { it.toMember(clusterId, oldMembers[it.bookId]?.createdDate ?: now, now) })
@@ -298,6 +311,23 @@ class DedupClusterLifecycle(
     val low = identities[bookLowId] ?: return false
     val high = identities[bookHighId] ?: return false
     return low.coverGeneration == lowCoverGeneration && high.coverGeneration == highCoverGeneration
+  }
+
+  private fun verifiedPairCount(relations: Collection<DedupRelation>): Int = relations.count { it.status == DedupRelationStatus.VERIFIED && it.type != DedupRelationType.VISUALLY_SIMILAR }
+
+  private fun totalPairCount(memberCount: Int): Int = memberCount * (memberCount - 1) / 2
+
+  private fun evidenceMaturity(
+    memberCount: Int,
+    relations: Collection<DedupRelation>,
+  ): DedupEvidenceMaturity {
+    val verified = verifiedPairCount(relations)
+    val total = totalPairCount(memberCount)
+    return when {
+      verified == 0 -> DedupEvidenceMaturity.COVER_ONLY
+      verified >= total -> DedupEvidenceMaturity.COMPLETE
+      else -> DedupEvidenceMaturity.PARTIAL
+    }
   }
 
   private fun DedupSourceIdentity.toMember(

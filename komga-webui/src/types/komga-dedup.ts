@@ -1,10 +1,8 @@
-import {BookDto} from '@/types/komga-books'
-
 export type DedupScanInterval = 'HOURLY' | 'EVERY_6H' | 'EVERY_12H' | 'DAILY' | 'WEEKLY'
 export type DedupClusterStatus = 'UNPROCESSED' | 'PROCESSING' | 'PROCESSED' | 'NEEDS_ATTENTION'
 export type DedupEvidenceMaturity = 'COVER_ONLY' | 'PARTIAL' | 'COMPLETE'
 export type DedupResolutionAction = 'KEEP' | 'DELETE'
-export type DedupResolutionState = 'PROCESSING' | 'PROCESSED' | 'NEEDS_ATTENTION' | 'PARTIALLY_COMPLETED'
+export type DedupResolutionState = 'PROCESSING' | 'PROCESSED' | 'NEEDS_ATTENTION' | 'PARTIALLY_COMPLETED' | 'ABANDONED'
 
 export interface DedupLibrarySettingsDto {
   libraryId: string
@@ -68,10 +66,6 @@ export interface DedupClusterSummaryDto {
   verifiedPairs: number
   totalPairs: number
   evidenceMaturity: DedupEvidenceMaturity
-  suggestionPlanAvailable: boolean
-  suggestedPlanEligible: boolean
-  suggestedKeepCount: number
-  suggestedDeleteCount: number
   reopenReason?: string | null
   lastModified: string
   processed?: string | null
@@ -80,15 +74,12 @@ export interface DedupClusterSummaryDto {
 export interface DedupClusterMemberDto {
   bookId: string
   seriesId?: string | null
-  book?: BookDto | null
   title?: string | null
   path?: string | null
   fileSize?: number | null
   pageCount?: number | null
   activeBookCountInSeries: number
   inMvpScope: boolean
-  localStateReasonCodes: string[]
-  localState: Record<string, unknown>
   thumbnailUrl: string
 }
 
@@ -133,13 +124,46 @@ export interface DedupResolutionSummaryDto { id: string; mode: 'SUGGESTED' | 'CU
 
 export interface DedupClusterDetailDto {
   summary: DedupClusterSummaryDto
-  stateRevision: string
   members: DedupClusterMemberDto[]
   relations: DedupRelationDto[]
-  suggestedPlan?: DedupPlanDto | null
-  eligibility: DedupEligibilityReportDto
   lastResolution?: DedupResolutionSummaryDto | null
 }
+
+export interface DedupClusterMemberProcessingDto {
+  bookId: string
+  archiveHashState: 'MISSING' | 'READY' | 'STALE'
+  localStateReasonCodes: string[]
+  localState: Record<string, unknown>
+}
+
+export interface DedupResolutionRecoveryDto {
+  resolutionId: string
+  action: 'RETRY' | 'REAPPROVE'
+}
+
+export interface DedupClusterProcessingDto {
+  clusterId: string
+  revision: number
+  stateRevision: string
+  members: DedupClusterMemberProcessingDto[]
+  suggestedPlan?: DedupPlanDto | null
+  eligibility: DedupEligibilityReportDto
+  recovery?: DedupResolutionRecoveryDto | null
+}
+
+export interface DedupClusterEligibilityDto {
+  clusterId: string
+  expectedRevision: number
+  status: 'READY' | 'STALE' | 'NOT_FOUND' | 'FAILED'
+  suggestionPlanAvailable: boolean
+  suggestedPlanEligible: boolean
+  suggestedKeepCount: number
+  suggestedDeleteCount: number
+  blockerCodes: string[]
+  error?: string | null
+}
+
+export interface DedupClusterEligibilityBatchDto { items: DedupClusterEligibilityDto[] }
 
 export interface DedupPageEvidenceDto {
   bookId: string

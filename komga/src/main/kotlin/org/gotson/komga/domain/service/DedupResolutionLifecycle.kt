@@ -2,6 +2,7 @@ package org.gotson.komga.domain.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.f4b6a3.tsid.TsidCreator
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionAction
@@ -16,6 +17,7 @@ import org.gotson.komga.domain.persistence.DedupResolutionRepository
 import org.gotson.komga.infrastructure.gorse.GorseDesiredStateLifecycle
 import org.gotson.komga.infrastructure.gorse.GorseSyncNowState
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -119,6 +121,49 @@ class DedupResolutionLifecycle(
     }
   }
 
+  @Transactional
+  fun abandon(resolutionId: String): DedupResolution {
+    val value = resolutionRepository.findResolution(resolutionId) ?: validation("RESOLUTION_NOT_FOUND", "Resolution was not found")
+    if (value.state != DedupResolutionState.NEEDS_ATTENTION) validation("RESOLUTION_NOT_ABANDONABLE", "Resolution is not waiting for reapproval")
+    val members = resolutionRepository.findResolutionMembers(resolutionId)
+    val irreversible =
+      members.any {
+        it.state in
+          setOf(
+            DedupResolutionMemberState.DELETED,
+            DedupResolutionMemberState.KOMGA_SAVED,
+            DedupResolutionMemberState.GORSE_CONFIRMED,
+            DedupResolutionMemberState.COMPLETED,
+          ) || (it.action == DedupResolutionAction.DELETE && Files.notExists(Path.of(it.expectedPath ?: it.pathSnapshot)))
+      }
+    if (irreversible) validation("RESOLUTION_HAS_IRREVERSIBLE_PROGRESS", "A resolution with irreversible progress cannot be abandoned")
+    val cluster = dedupRepository.findCluster(value.clusterId) ?: validation("CLUSTER_NOT_FOUND", "Cluster was not found")
+    if (cluster.cluster.status != DedupClusterStatus.NEEDS_ATTENTION) validation("CLUSTER_NOT_REAPPROVABLE", "Cluster state changed")
+    val now = LocalDateTime.now()
+    val result = objectMapper.writeValueAsString(mapOf("code" to "REAPPROVAL_REQUESTED", "previousResult" to objectMapper.readTree(value.resultJson)))
+    check(
+      resolutionRepository.updateResolution(
+        resolutionId,
+        setOf(DedupResolutionState.NEEDS_ATTENTION),
+        DedupResolutionState.ABANDONED,
+        result,
+        completedDate = now,
+        now = now,
+      ),
+    ) { "Resolution state changed during abandonment" }
+    check(
+      dedupRepository.updateClusterState(
+        value.clusterId,
+        setOf(DedupClusterStatus.NEEDS_ATTENTION),
+        DedupClusterStatus.UNPROCESSED,
+        resolutionId,
+        "REAPPROVAL_REQUIRED",
+        now,
+      ),
+    ) { "Cluster state changed during abandonment" }
+    return requireNotNull(resolutionRepository.findResolution(resolutionId))
+  }
+
   private fun executeNew(
     clusterId: String,
     expectedRevision: Long,
@@ -169,7 +214,6 @@ class DedupResolutionLifecycle(
             directRelationSnapshotJson = relation?.let(objectMapper::writeValueAsString),
             expectedPath = null,
             expectedSize = null,
-            expectedMtime = null,
             expectedArchiveHash = null,
             state = DedupResolutionMemberState.PLANNED,
             resultCode = null,
@@ -229,6 +273,7 @@ class DedupResolutionLifecycle(
     hashFiles: Boolean,
   ) {
     val members = resolutionRepository.findResolutionMembers(value.id)
+    val strongIdentityBookIds = if (hashFiles) members.strongIdentityBookIds() else emptySet()
     val cluster = requireNotNull(dedupRepository.findCluster(value.clusterId)) { "Cluster no longer exists" }
     val fingerprints = requireNotNull(clusterLifecycle.currentFingerprints(cluster)) { "Cluster source state is unavailable" }
     check(
@@ -254,7 +299,10 @@ class DedupResolutionLifecycle(
           check(relationSnapshotMatches(member, direct)) { "Direct relation evidence changed" }
           check(physicalDeletionLifecycle.precheck(book).status == DedupFilePrecheckStatus.AVAILABLE) { "Delete path precheck failed" }
         }
-        val strong = if (hashFiles) physicalDeletionLifecycle.captureStrongIdentity(book) else null
+        val requiresStrongIdentity = member.bookId in strongIdentityBookIds
+        if (requiresStrongIdentity) check(identity.archiveHashState == DedupArchiveHashState.READY && identity.archiveHash != null) { "A current persisted archive hash is required" }
+        val strong = if (requiresStrongIdentity) physicalDeletionLifecycle.captureStrongIdentity(book) else null
+        if (strong != null) check(strong.archiveHash == identity.archiveHash) { "Archive hash changed; deep verification and reapproval are required" }
         check(
           resolutionRepository.updateResolutionMember(
             value.id,
@@ -263,7 +311,6 @@ class DedupResolutionLifecycle(
             DedupResolutionMemberState.PREFLIGHTED,
             strong?.path,
             strong?.size,
-            strong?.mtime,
             strong?.archiveHash,
           ),
         ) { "Resolution member changed during preflight" }
@@ -422,11 +469,12 @@ class DedupResolutionLifecycle(
     value: DedupResolution,
     members: List<DedupResolutionMember>,
   ) {
-    members.filter { it.action == DedupResolutionAction.KEEP && it.state == DedupResolutionMemberState.PREFLIGHTED }.sortedBy { it.bookId }.forEach { member ->
+    val keeperIds = members.filter { it.action == DedupResolutionAction.DELETE }.mapNotNull { it.keeperBookId }.toSet()
+    members.filter { it.bookId in keeperIds && it.state == DedupResolutionMemberState.PREFLIGHTED }.sortedBy { it.bookId }.forEach { member ->
       try {
         val book = requireNotNull(bookRepository.findByIdOrNull(member.bookId)) { "Keeper no longer exists" }
         val current = physicalDeletionLifecycle.captureStrongIdentity(book)
-        check(current.matches(member.expectedIdentity())) { "Keeper path, size, mtime, or archive hash changed" }
+        check(current.matches(member.expectedIdentity())) { "Keeper path, size, or archive hash changed" }
       } catch (exception: Exception) {
         resolutionRepository.updateResolutionMember(
           value.id,
@@ -446,6 +494,7 @@ class DedupResolutionLifecycle(
     clusterMemberIds: Set<String>,
   ) {
     val members = resolutionRepository.findResolutionMembers(value.id)
+    val strongIdentityBookIds = members.strongIdentityBookIds()
     members.forEach { member ->
       when (member.state) {
         DedupResolutionMemberState.COMPLETED, DedupResolutionMemberState.GORSE_CONFIRMED -> Unit
@@ -485,7 +534,7 @@ class DedupResolutionLifecycle(
               failResolution(value, member.bookId, "RELATION_CHANGED", "Direct relation changed; create a new resolution")
             }
           }
-          val strong = if (resolutionRepository.findResolutionMembers(value.id).any { it.action == DedupResolutionAction.DELETE }) physicalDeletionLifecycle.captureStrongIdentity(book) else null
+          val strong = if (member.bookId in strongIdentityBookIds) physicalDeletionLifecycle.captureStrongIdentity(book) else null
           if (member.expectedArchiveHash != null && strong?.archiveHash != member.expectedArchiveHash) failResolution(value, member.bookId, "GENERATION_MISMATCH", "Archive hash changed; create a new resolution")
           resolutionRepository.updateResolutionMember(
             value.id,
@@ -494,7 +543,6 @@ class DedupResolutionLifecycle(
             DedupResolutionMemberState.PREFLIGHTED,
             strong?.path,
             strong?.size,
-            strong?.mtime,
             strong?.archiveHash,
           )
         }
@@ -542,11 +590,15 @@ class DedupResolutionLifecycle(
     return snapshot == current
   }
 
+  private fun List<DedupResolutionMember>.strongIdentityBookIds(): Set<String> =
+    filter { it.action == DedupResolutionAction.DELETE }
+      .flatMap { listOf(it.bookId, requireNotNull(it.keeperBookId)) }
+      .toSet()
+
   private fun DedupResolutionMember.expectedIdentity() =
     DedupStrongFileIdentity(
       requireNotNull(expectedPath),
       requireNotNull(expectedSize),
-      requireNotNull(expectedMtime),
       requireNotNull(expectedArchiveHash),
     )
 

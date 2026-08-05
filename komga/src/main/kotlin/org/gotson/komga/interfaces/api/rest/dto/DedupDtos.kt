@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Size
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupEligibilityReport
+import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
@@ -81,12 +82,6 @@ data class DedupStatusDto(
   val pausedLibraries: Int,
 )
 
-enum class DedupEvidenceMaturity {
-  COVER_ONLY,
-  PARTIAL,
-  COMPLETE,
-}
-
 data class DedupClusterSummaryDto(
   val id: String,
   val libraryId: String,
@@ -98,10 +93,6 @@ data class DedupClusterSummaryDto(
   val verifiedPairs: Int,
   val totalPairs: Int,
   val evidenceMaturity: DedupEvidenceMaturity,
-  val suggestionPlanAvailable: Boolean,
-  val suggestedPlanEligible: Boolean,
-  val suggestedKeepCount: Int,
-  val suggestedDeleteCount: Int,
   val reopenReason: String?,
   @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val lastModified: LocalDateTime,
   @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val processed: LocalDateTime?,
@@ -115,27 +106,63 @@ data class DedupClusterCoverMemberDto(
 
 data class DedupClusterDetailDto(
   val summary: DedupClusterSummaryDto,
-  val stateRevision: String,
   val members: List<DedupClusterMemberDto>,
   val relations: List<DedupRelationDto>,
-  val suggestedPlan: DedupPlanDto?,
-  val eligibility: DedupEligibilityReport,
   val lastResolution: DedupResolutionSummaryDto?,
 )
 
 data class DedupClusterMemberDto(
   val bookId: String,
   val seriesId: String?,
-  val book: BookDto?,
   val title: String?,
   val path: String?,
   val fileSize: Long?,
   val pageCount: Int?,
   val activeBookCountInSeries: Int,
   val inMvpScope: Boolean,
+  val thumbnailUrl: String,
+)
+
+data class DedupClusterProcessingDto(
+  val clusterId: String,
+  val revision: Long,
+  val stateRevision: String,
+  val members: List<DedupClusterMemberProcessingDto>,
+  val suggestedPlan: DedupPlanDto?,
+  val eligibility: DedupEligibilityReport,
+  val recovery: DedupResolutionRecoveryDto?,
+)
+
+data class DedupClusterMemberProcessingDto(
+  val bookId: String,
+  val archiveHashState: String,
   val localStateReasonCodes: Set<String>,
   val localState: Map<String, Any>,
-  val thumbnailUrl: String,
+)
+
+data class DedupResolutionRecoveryDto(
+  val resolutionId: String,
+  val action: String,
+)
+
+data class DedupClusterEligibilityRequestDto(
+  @field:Size(min = 1, max = 20) @field:Valid val clusters: List<DedupClusterVerificationRequestDto>,
+)
+
+data class DedupClusterEligibilityBatchDto(
+  val items: List<DedupClusterEligibilityDto>,
+)
+
+data class DedupClusterEligibilityDto(
+  val clusterId: String,
+  val expectedRevision: Long,
+  val status: String,
+  val suggestionPlanAvailable: Boolean = false,
+  val suggestedPlanEligible: Boolean = false,
+  val suggestedKeepCount: Int = 0,
+  val suggestedDeleteCount: Int = 0,
+  val blockerCodes: List<String> = emptyList(),
+  val error: String? = null,
 )
 
 data class DedupRelationDto(

@@ -21,6 +21,7 @@ class DedupDeepVerificationLifecycle(
   private val bookAnalyzer: BookAnalyzer,
   private val coverHasher: CoverPerceptualHasher,
   private val coverLifecycle: DedupCoverLifecycle,
+  private val physicalDeletionLifecycle: DedupPhysicalBookDeletionLifecycle,
   private val aligner: PageSequenceAligner,
   private val objectMapper: ObjectMapper,
 ) {
@@ -35,11 +36,29 @@ class DedupDeepVerificationLifecycle(
   ) {
     val memberIds = listOf(firstBookId, secondBookId).sorted()
     require(memberIds[0] != memberIds[1]) { "Deep verification requires two different Books" }
+    memberIds.forEach(::ensureArchiveIdentity)
     val lowIdentity = requireNotNull(coverLifecycle.currentSourceIdentity(memberIds[0]))
     val highIdentity = requireNotNull(coverLifecycle.currentSourceIdentity(memberIds[1]))
     require(lowIdentity.libraryId == highIdentity.libraryId) { "Deep verification Books must be in one Library" }
     val currentRelation = dedupRepository.findRelation(memberIds[0], memberIds[1])
-    if (currentRelation?.type == DedupRelationType.EXACT_FILE) return
+    if (currentRelation?.type == DedupRelationType.EXACT_FILE && lowIdentity.archiveHash != null && lowIdentity.archiveHash == highIdentity.archiveHash) {
+      dedupRepository.saveRelation(
+        currentRelation.copy(
+          lowContentGeneration = lowIdentity.contentGeneration,
+          highContentGeneration = highIdentity.contentGeneration,
+          evidenceJson =
+            objectMapper.writeValueAsString(
+              mapOf(
+                "archiveHash" to lowIdentity.archiveHash,
+                "fileSize" to bookRepository.findByIdOrNull(memberIds[0])?.fileSize,
+                "identity" to "PERSISTED_ARCHIVE_HASH_AND_SIZE",
+              ),
+            ),
+          lastModifiedDate = LocalDateTime.now(),
+        ),
+      )
+      return
+    }
     val settings = requireNotNull(dedupRepository.findLibrarySettings(lowIdentity.libraryId))
     val deadline = LocalDateTime.now().plusSeconds(settings.maxDurationSeconds.toLong())
     val left = loadPageFeatures(memberIds[0], deadline)
@@ -93,6 +112,8 @@ class DedupDeepVerificationLifecycle(
                   )
                 },
               "ancillaryClassification" to "UNCONFIRMED",
+              "leftArchiveHash" to lowIdentity.archiveHash,
+              "rightArchiveHash" to highIdentity.archiveHash,
             ),
           ),
         featureSchemaVersion = PAGE_FEATURE_SCHEMA_VERSION,
@@ -101,6 +122,11 @@ class DedupDeepVerificationLifecycle(
         lastModifiedDate = now,
       )
     dedupRepository.saveRelation(relation)
+  }
+
+  private fun ensureArchiveIdentity(bookId: String) {
+    val book = requireNotNull(bookRepository.findByIdOrNull(bookId))
+    coverLifecycle.persistArchiveIdentity(bookId, physicalDeletionLifecycle.captureStrongIdentity(book))
   }
 
   private fun loadPageFeatures(
@@ -134,6 +160,7 @@ class DedupDeepVerificationLifecycle(
     dedupRepository.findFeature(bookId)?.let { feature ->
       dedupRepository.saveFeature(
         feature.copy(
+          sourceContentGeneration = generation,
           pageState = DedupFeatureState.READY,
           pageCount = media.pageCount,
           analyzedDate = LocalDateTime.now(),

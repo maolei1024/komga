@@ -1,12 +1,13 @@
 <template>
   <article class="member-row" :class="{'delete-selected': selection.action === 'DELETE'}">
-    <v-img :src="bookThumbnailUrl(member.bookId)" class="member-cover" width="74" height="104" contain/>
+    <DedupLazyImage :src="bookThumbnailUrl(member.bookId)" class="member-cover" :width="74" :height="104"/>
     <div class="member-info">
       <strong>{{ member.title || member.bookId }}</strong>
       <span class="path" :title="member.path || ''">{{ member.path || '—' }}</span>
       <span>{{ formatBytes(member.fileSize) }} · {{ member.pageCount == null ? $t('dedup.pageCountUnknown') : $tc('dedup.pageCount', member.pageCount, {count: member.pageCount}) }}</span>
       <div class="state-chips">
-        <v-chip v-for="code in member.localStateReasonCodes" :key="code" x-small label>{{ reasonLabel(code) }}</v-chip>
+        <v-chip v-for="code in processing.localStateReasonCodes" :key="code" x-small label>{{ reasonLabel(code) }}</v-chip>
+        <v-chip v-if="processing.archiveHashState !== 'READY'" x-small color="warning" label>{{ $t('dedup.deepVerificationRequired') }}</v-chip>
         <v-chip v-if="!member.inMvpScope" x-small color="warning" label>{{ $t('dedup.outOfScope') }}</v-chip>
       </div>
     </div>
@@ -24,13 +25,16 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import {DedupClusterMemberDto, DedupResolutionAction} from '@/types/komga-dedup'
+import {DedupClusterMemberDto, DedupClusterMemberProcessingDto, DedupResolutionAction} from '@/types/komga-dedup'
 import {bookThumbnailUrl} from '@/functions/urls'
 import {formatBytes} from '@/functions/dedup'
+import DedupLazyImage from './DedupLazyImage.vue'
 export default Vue.extend({
   name: 'DedupClusterMember',
+  components: {DedupLazyImage},
   props: {
     member: {type: Object as () => DedupClusterMemberDto, required: true},
+    processing: {type: Object as () => DedupClusterMemberProcessingDto, default: () => ({bookId: '', archiveHashState: 'MISSING', localStateReasonCodes: [], localState: {}})},
     selection: {type: Object as () => {action: DedupResolutionAction; keeperBookId?: string}, required: true},
     keeperOptions: {type: Array as () => Array<{bookId: string; title: string}>, default: () => []},
     disabled: {type: Boolean, default: false},

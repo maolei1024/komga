@@ -73,7 +73,6 @@ data class ExactDuplicateBook(
   val url: String,
   val fileHash: String,
   val fileSize: Long,
-  val fileLastModified: LocalDateTime,
   val oneshot: Boolean,
   val deleted: Boolean,
 )
@@ -152,6 +151,11 @@ data class DedupFeature(
   val pageCount: Int?,
   val analyzedDate: LocalDateTime?,
   val lastModifiedDate: LocalDateTime,
+  val archiveHash: String? = null,
+  val archiveHashPath: String? = null,
+  val archiveHashSize: Long? = null,
+  val archiveHashSchemaVersion: Int? = null,
+  val archiveHashDate: LocalDateTime? = null,
 ) {
   override fun equals(other: Any?): Boolean =
     other is DedupFeature &&
@@ -174,6 +178,19 @@ enum class DedupFeatureState {
   DELETED,
 }
 
+enum class DedupArchiveHashState {
+  MISSING,
+  READY,
+  STALE,
+}
+
+const val DEDUP_ARCHIVE_HASH_SCHEMA_VERSION = 1
+
+fun dedupContentGeneration(
+  fileSize: Long,
+  archiveHash: String?,
+): String = "dedup-v2:$fileSize:${archiveHash ?: "UNHASHED"}"
+
 data class DedupPageFeature(
   val bookId: String,
   val sourceContentGeneration: String,
@@ -193,6 +210,8 @@ data class DedupSourceIdentity(
   val metadataGeneration: String,
   val seriesScopeRevision: String,
   val pageCount: Int?,
+  val archiveHashState: DedupArchiveHashState = DedupArchiveHashState.MISSING,
+  val archiveHash: String? = null,
 )
 
 private fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean =
@@ -207,6 +226,12 @@ enum class DedupClusterStatus {
   PROCESSING,
   PROCESSED,
   NEEDS_ATTENTION,
+}
+
+enum class DedupEvidenceMaturity {
+  COVER_ONLY,
+  PARTIAL,
+  COMPLETE,
 }
 
 data class DedupCluster(
@@ -226,6 +251,10 @@ data class DedupCluster(
   val createdDate: LocalDateTime,
   val lastModifiedDate: LocalDateTime,
   val processedDate: LocalDateTime?,
+  val memberCount: Int = 0,
+  val verifiedPairCount: Int = 0,
+  val totalPairCount: Int = 0,
+  val evidenceMaturity: DedupEvidenceMaturity = DedupEvidenceMaturity.COVER_ONLY,
 )
 
 data class DedupClusterMember(

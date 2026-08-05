@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
@@ -119,6 +120,50 @@ class DedupEligibilityPolicyTest {
   }
 
   @Test
+  fun `cover-only relation cannot authorize deletion even when risk is acknowledged`() {
+    val relation =
+      DedupRelation(
+        "relation",
+        "library",
+        "A",
+        "B",
+        "content-A",
+        "content-B",
+        lowCoverGeneration = "cover-A",
+        highCoverGeneration = "cover-B",
+        type = DedupRelationType.VISUALLY_SIMILAR,
+      )
+    every { repository.findRelationsForBooks(any()) } returns listOf(relation)
+
+    assertThatThrownBy {
+      policy.validateCustom(
+        "cluster",
+        1,
+        "state",
+        listOf(DedupCustomMemberSelection("A", DedupResolutionAction.KEEP), DedupCustomMemberSelection("B", DedupResolutionAction.DELETE, "A")),
+        setOf(DedupSuggestionPlanner.riskCode(relation)),
+      )
+    }.isInstanceOf(DedupResolutionValidationException::class.java).hasMessageContaining("deep-verified")
+  }
+
+  @Test
+  fun `delete requires current archive hashes for both members`() {
+    every { repository.findRelationsForBooks(any()) } returns
+      listOf(DedupRelation("relation", "library", "A", "B", "content-A", "content-B", type = DedupRelationType.EXACT_FILE))
+    every { cover.currentSourceIdentity("B") } returns identity("B").copy(archiveHashState = DedupArchiveHashState.MISSING, archiveHash = null)
+
+    assertThatThrownBy {
+      policy.validateCustom(
+        "cluster",
+        1,
+        "state",
+        listOf(DedupCustomMemberSelection("A", DedupResolutionAction.KEEP), DedupCustomMemberSelection("B", DedupResolutionAction.DELETE, "A")),
+        emptySet(),
+      )
+    }.isInstanceOf(DedupResolutionValidationException::class.java).hasMessageContaining("archive hash")
+  }
+
+  @Test
   fun `custom approval rejects topology or evidence changed before cluster rebuild`() {
     every { repository.findRelationsForBooks(any()) } returns emptyList()
     every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("changed-topology", "evidence", "state")
@@ -143,5 +188,5 @@ class DedupEligibilityPolicyTest {
     return DedupClusterWithMembers(cluster, listOf("A", "B").map { DedupClusterMember("cluster", it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
   }
 
-  private fun identity(id: String) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", 10)
+  private fun identity(id: String) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", 10, DedupArchiveHashState.READY, "hash-$id")
 }

@@ -18,6 +18,8 @@ interface BookRepository {
 
   fun findAll(): Collection<Book>
 
+  fun findAllByIds(bookIds: Collection<String>): Collection<Book>
+
   fun findAllBySeriesId(seriesId: String): Collection<Book>
 
   fun findAllBySeriesIds(seriesIds: Collection<String>): Collection<Book>

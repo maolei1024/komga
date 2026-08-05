@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.ExactDuplicateBook
+import org.gotson.komga.domain.model.dedupContentGeneration
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
 import org.springframework.stereotype.Service
@@ -15,6 +16,7 @@ import java.time.LocalDateTime
 class DedupExactDuplicateLifecycle(
   private val exactDuplicateBookRepository: ExactDuplicateBookRepository,
   private val dedupRepository: DedupRepository,
+  private val coverLifecycle: DedupCoverLifecycle,
   private val objectMapper: ObjectMapper,
 ) {
   fun reconcileLibrary(
@@ -61,7 +63,7 @@ class DedupExactDuplicateLifecycle(
     }
   }
 
-  private fun ExactDuplicateBook.contentGeneration(): String = stableHash("$fileHash|$fileSize|$fileLastModified")
+  private fun ExactDuplicateBook.contentGeneration(): String = coverLifecycle.currentContentGeneration(id) ?: dedupContentGeneration(fileSize, null)
 
   private fun stableHash(value: String): String =
     MessageDigest

@@ -7,12 +7,14 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.application.tasks.TaskEmitter
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
+import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.model.DedupWork
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
@@ -40,6 +42,8 @@ class DedupWorkLifecycleTest {
     every { repository.findRelation("A", "B") } returns exact("A", "B")
     every { repository.findRelation("A", "C") } returns null
     every { repository.findRelation("B", "C") } returns null
+    every { cover.currentSourceIdentity("A") } returns identity("A")
+    every { cover.currentSourceIdentity("B") } returns identity("B")
     every { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, any(), any(), 6, any()) } answers {
       work(id = firstArg(), target = arg(3))
     }
@@ -54,6 +58,25 @@ class DedupWorkLifecycleTest {
     verify(exactly = 1) { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "A|C", any(), 6, any()) }
     verify(exactly = 1) { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "B|C", any(), 6, any()) }
     verify(exactly = 1) { emitter.drainDedupQueue("library", 6) }
+  }
+
+  @Test
+  fun `exact pair without persisted archive hashes is queued for deep verification`() {
+    every { repository.findCluster("cluster") } returns cluster("A", "B")
+    every { repository.findRelation("A", "B") } returns exact("A", "B")
+    every { cover.currentSourceIdentity("A") } returns identity("A")
+    every { cover.currentSourceIdentity("B") } returns identity("B").copy(archiveHashState = DedupArchiveHashState.MISSING, archiveHash = null)
+    every { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "A|B", any(), 6, any()) } answers {
+      work(id = firstArg(), target = arg(3))
+    }
+    every { emitter.drainDedupQueue("library", 6) } just Runs
+
+    val result = lifecycle.requestClusterVerification("cluster", 1)
+
+    assertThat(result.status).isEqualTo(DedupClusterVerificationStatus.QUEUED)
+    assertThat(result.queuedPairs).isEqualTo(1)
+    assertThat(result.skippedPairs).isZero()
+    verify(exactly = 1) { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "A|B", any(), 6, any()) }
   }
 
   @Test
@@ -76,6 +99,20 @@ class DedupWorkLifecycleTest {
     left: String,
     right: String,
   ) = DedupRelation("relation", "library", left, right, "content-$left", "content-$right", type = DedupRelationType.EXACT_FILE)
+
+  private fun identity(id: String) =
+    DedupSourceIdentity(
+      id,
+      "series-$id",
+      "library",
+      "content-$id",
+      "cover-$id",
+      "metadata-$id",
+      "scope-$id",
+      10,
+      DedupArchiveHashState.READY,
+      "hash-$id",
+    )
 
   private fun work(
     id: String,

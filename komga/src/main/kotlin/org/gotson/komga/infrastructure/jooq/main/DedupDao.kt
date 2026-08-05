@@ -4,6 +4,7 @@ import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
+import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupGorseSync
@@ -331,6 +332,16 @@ class DedupDao(
       .fetchOne()
       ?.toDomain()
 
+  override fun findFeatures(bookIds: Set<String>): List<DedupFeature> {
+    if (bookIds.isEmpty()) return emptyList()
+    return dslRO
+      .selectFrom(feature)
+      .where(feature.BOOK_ID.`in`(bookIds))
+      .orderBy(feature.BOOK_ID)
+      .fetch()
+      .map { it.toDomain() }
+  }
+
   override fun findReadyCoverFeatures(libraryId: String): List<DedupFeature> =
     dslRO
       .selectFrom(feature)
@@ -361,6 +372,11 @@ class DedupDao(
         feature.PAGE_COUNT,
         feature.ANALYZED_DATE,
         feature.LAST_MODIFIED_DATE,
+        feature.ARCHIVE_HASH,
+        feature.ARCHIVE_HASH_PATH,
+        feature.ARCHIVE_HASH_SIZE,
+        feature.ARCHIVE_HASH_SCHEMA_VERSION,
+        feature.ARCHIVE_HASH_DATE,
       ).values(
         value.bookId,
         value.seriesId,
@@ -378,6 +394,11 @@ class DedupDao(
         value.pageCount,
         value.analyzedDate,
         value.lastModifiedDate,
+        value.archiveHash,
+        value.archiveHashPath,
+        value.archiveHashSize,
+        value.archiveHashSchemaVersion,
+        value.archiveHashDate,
       ).onDuplicateKeyUpdate()
       .set(feature.SERIES_ID, value.seriesId)
       .set(feature.LIBRARY_ID, value.libraryId)
@@ -394,6 +415,11 @@ class DedupDao(
       .set(feature.PAGE_COUNT, value.pageCount)
       .set(feature.ANALYZED_DATE, value.analyzedDate)
       .set(feature.LAST_MODIFIED_DATE, value.lastModifiedDate)
+      .set(feature.ARCHIVE_HASH, value.archiveHash)
+      .set(feature.ARCHIVE_HASH_PATH, value.archiveHashPath)
+      .set(feature.ARCHIVE_HASH_SIZE, value.archiveHashSize)
+      .set(feature.ARCHIVE_HASH_SCHEMA_VERSION, value.archiveHashSchemaVersion)
+      .set(feature.ARCHIVE_HASH_DATE, value.archiveHashDate)
       .execute()
   }
 
@@ -646,6 +672,7 @@ class DedupDao(
     libraryId: String?,
     status: DedupClusterStatus?,
     reviewable: Boolean?,
+    evidenceMaturity: DedupEvidenceMaturity?,
     offset: Int,
     limit: Int,
   ): List<DedupClusterWithMembers> {
@@ -656,6 +683,7 @@ class DedupDao(
         .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
         .and(status?.let { cluster.STATUS.eq(it.name) } ?: DSL.noCondition())
         .and(reviewable?.let { cluster.REVIEWABLE.eq(it) } ?: DSL.noCondition())
+        .and(evidenceMaturity?.let { cluster.EVIDENCE_MATURITY.eq(it.name) } ?: DSL.noCondition())
         .and(cluster.SUPERSEDED_BY.isNull)
         .orderBy(cluster.LAST_MODIFIED_DATE.desc(), cluster.ID)
         .offset(offset)
@@ -670,6 +698,7 @@ class DedupDao(
     libraryId: String?,
     status: DedupClusterStatus?,
     reviewable: Boolean?,
+    evidenceMaturity: DedupEvidenceMaturity?,
   ): Long =
     dslRO
       .selectCount()
@@ -677,6 +706,7 @@ class DedupDao(
       .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
       .and(status?.let { cluster.STATUS.eq(it.name) } ?: DSL.noCondition())
       .and(reviewable?.let { cluster.REVIEWABLE.eq(it) } ?: DSL.noCondition())
+      .and(evidenceMaturity?.let { cluster.EVIDENCE_MATURITY.eq(it.name) } ?: DSL.noCondition())
       .and(cluster.SUPERSEDED_BY.isNull)
       .fetchOne(0, Long::class.java) ?: 0L
 
@@ -723,6 +753,10 @@ class DedupDao(
         cluster.CREATED_DATE,
         cluster.LAST_MODIFIED_DATE,
         cluster.PROCESSED_DATE,
+        cluster.MEMBER_COUNT,
+        cluster.VERIFIED_PAIR_COUNT,
+        cluster.TOTAL_PAIR_COUNT,
+        cluster.EVIDENCE_MATURITY,
       ).values(
         value.id,
         value.libraryId,
@@ -740,6 +774,10 @@ class DedupDao(
         value.createdDate,
         value.lastModifiedDate,
         value.processedDate,
+        value.memberCount,
+        value.verifiedPairCount,
+        value.totalPairCount,
+        value.evidenceMaturity.name,
       ).onDuplicateKeyUpdate()
       .set(cluster.LIBRARY_ID, value.libraryId)
       .set(cluster.REVISION, value.revision)
@@ -755,6 +793,10 @@ class DedupDao(
       .set(cluster.SUPERSEDED_BY, value.supersededBy)
       .set(cluster.LAST_MODIFIED_DATE, value.lastModifiedDate)
       .set(cluster.PROCESSED_DATE, value.processedDate)
+      .set(cluster.MEMBER_COUNT, value.memberCount)
+      .set(cluster.VERIFIED_PAIR_COUNT, value.verifiedPairCount)
+      .set(cluster.TOTAL_PAIR_COUNT, value.totalPairCount)
+      .set(cluster.EVIDENCE_MATURITY, value.evidenceMaturity.name)
       .execute()
     val supplied = members.map { it.bookId }.toSet()
     dslRW
@@ -923,7 +965,6 @@ class DedupDao(
             resolutionMember.DIRECT_RELATION_SNAPSHOT_JSON,
             resolutionMember.EXPECTED_PATH,
             resolutionMember.EXPECTED_SIZE,
-            resolutionMember.EXPECTED_MTIME,
             resolutionMember.EXPECTED_ARCHIVE_HASH,
             resolutionMember.STATE,
             resolutionMember.RESULT_CODE,
@@ -946,7 +987,6 @@ class DedupDao(
             member.directRelationSnapshotJson,
             member.expectedPath,
             member.expectedSize,
-            member.expectedMtime,
             member.expectedArchiveHash,
             member.state.name,
             member.resultCode,
@@ -1038,7 +1078,6 @@ class DedupDao(
     state: DedupResolutionMemberState,
     expectedPath: String?,
     expectedSize: Long?,
-    expectedMtime: LocalDateTime?,
     expectedArchiveHash: String?,
     resultCode: String?,
     resultJson: String?,
@@ -1055,7 +1094,6 @@ class DedupDao(
         .set(resolutionMember.LAST_MODIFIED_DATE, now)
     if (expectedPath != null) update = update.set(resolutionMember.EXPECTED_PATH, expectedPath)
     if (expectedSize != null) update = update.set(resolutionMember.EXPECTED_SIZE, expectedSize)
-    if (expectedMtime != null) update = update.set(resolutionMember.EXPECTED_MTIME, expectedMtime)
     if (expectedArchiveHash != null) update = update.set(resolutionMember.EXPECTED_ARCHIVE_HASH, expectedArchiveHash)
     return update
       .where(resolutionMember.RESOLUTION_ID.eq(resolutionId))
@@ -1303,6 +1341,11 @@ class DedupDao(
       pageCount,
       analyzedDate,
       lastModifiedDate!!,
+      archiveHash,
+      archiveHashPath,
+      archiveHashSize,
+      archiveHashSchemaVersion,
+      archiveHashDate,
     )
 
   private fun org.gotson.komga.jooq.main.tables.records.DedupRelationRecord.toRelation() =
@@ -1355,6 +1398,10 @@ class DedupDao(
       createdDate!!,
       lastModifiedDate!!,
       processedDate,
+      memberCount!!,
+      verifiedPairCount!!,
+      totalPairCount!!,
+      DedupEvidenceMaturity.valueOf(evidenceMaturity!!),
     )
 
   private fun org.gotson.komga.jooq.main.tables.records.DedupClusterMemberRecord.toClusterMember() =
@@ -1407,7 +1454,6 @@ class DedupDao(
       directRelationSnapshotJson,
       expectedPath,
       expectedSize,
-      expectedMtime,
       expectedArchiveHash,
       DedupResolutionMemberState.valueOf(state!!),
       resultCode,

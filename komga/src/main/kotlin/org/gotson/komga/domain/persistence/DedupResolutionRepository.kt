@@ -45,7 +45,6 @@ interface DedupResolutionRepository {
     state: DedupResolutionMemberState,
     expectedPath: String? = null,
     expectedSize: Long? = null,
-    expectedMtime: LocalDateTime? = null,
     expectedArchiveHash: String? = null,
     resultCode: String? = null,
     resultJson: String? = null,

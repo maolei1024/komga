@@ -2,12 +2,14 @@ package org.gotson.komga.interfaces.api.rest
 
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import io.mockk.verify
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionMode
 import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.service.DedupResolutionExecutionException
 import org.gotson.komga.domain.service.DedupResolutionLifecycle
 import org.gotson.komga.domain.service.DedupResolutionValidationException
+import org.gotson.komga.domain.service.DedupSuggestionPlanner
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -26,6 +28,17 @@ class DedupControllerTest(
 ) {
   @MockkBean
   private lateinit var resolutionLifecycle: DedupResolutionLifecycle
+
+  @MockkBean
+  private lateinit var suggestionPlanner: DedupSuggestionPlanner
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `cluster base list never evaluates live processing eligibility`() {
+    mockMvc.get("/api/v1/dedup/clusters?page=0&size=100&status=UNPROCESSED").andExpect { status { isOk() } }
+
+    verify(exactly = 0) { suggestionPlanner.evaluate(any<org.gotson.komga.domain.model.DedupClusterWithMembers>()) }
+  }
 
   @Test
   @WithMockUser(roles = ["USER"])
@@ -125,6 +138,18 @@ class DedupControllerTest(
         jsonPath("$.resolutionId") { value("resolution-partial") }
         jsonPath("$.partial") { value(true) }
       }
+  }
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `abandon endpoint returns the preserved audit in abandoned state`() {
+    every { resolutionLifecycle.abandon("resolution") } returns resolution().copy(state = DedupResolutionState.ABANDONED)
+
+    mockMvc.post("/api/v1/dedup/resolutions/resolution/abandon").andExpect {
+      status { isOk() }
+      jsonPath("$.id") { value("resolution") }
+      jsonPath("$.state") { value("ABANDONED") }
+    }
   }
 
   @Test

@@ -77,6 +77,18 @@ class BookDao(
       .map { it.toDomain() }
 
   @Transactional
+  override fun findAllByIds(bookIds: Collection<String>): Collection<Book> {
+    if (bookIds.isEmpty()) return emptyList()
+    dslRO.withTempTable(batchSize, bookIds).use { tempTable ->
+      return dslRO
+        .selectFrom(b)
+        .where(b.ID.`in`(tempTable.selectTempStrings()))
+        .fetchInto(b)
+        .map { it.toDomain() }
+    }
+  }
+
+  @Transactional
   override fun findAllBySeriesIds(seriesIds: Collection<String>): Collection<Book> {
     dslRO.withTempTable(batchSize, seriesIds).use { tempTable ->
       return dslRO

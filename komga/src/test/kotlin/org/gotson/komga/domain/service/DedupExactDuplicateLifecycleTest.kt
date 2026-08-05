@@ -10,17 +10,18 @@ import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.ExactDuplicateBook
+import org.gotson.komga.domain.model.dedupContentGeneration
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
 import org.junit.jupiter.api.Test
-import java.time.LocalDateTime
 
 class DedupExactDuplicateLifecycleTest {
   @Test
   fun `only equal hash and size CBZ books produce stable direct exact relations`() {
     val exactBooks = mockk<ExactDuplicateBookRepository>()
     val dedup = mockk<DedupRepository>()
-    val lifecycle = DedupExactDuplicateLifecycle(exactBooks, dedup, jacksonObjectMapper())
+    val cover = mockk<DedupCoverLifecycle>()
+    val lifecycle = DedupExactDuplicateLifecycle(exactBooks, dedup, cover, jacksonObjectMapper())
     val books =
       listOf(
         book("A", "file:/A.cbz", "hash", 100),
@@ -29,6 +30,7 @@ class DedupExactDuplicateLifecycleTest {
         book("D", "file:/D.pdf", "hash", 100),
       )
     every { exactBooks.findAllExactDuplicates("library", false) } returns books
+    books.forEach { every { cover.currentContentGeneration(it.id) } returns dedupContentGeneration(it.fileSize, null) }
     val captured = slot<Collection<DedupRelation>>()
     every { dedup.replaceExactRelations("library", capture(captured), any()) } just Runs
 
@@ -46,5 +48,5 @@ class DedupExactDuplicateLifecycleTest {
     url: String,
     hash: String,
     size: Long,
-  ) = ExactDuplicateBook(id, "series-$id", "library", id, url, hash, size, LocalDateTime.MIN, true, false)
+  ) = ExactDuplicateBook(id, "series-$id", "library", id, url, hash, size, true, false)
 }

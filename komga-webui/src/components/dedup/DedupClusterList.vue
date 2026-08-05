@@ -6,16 +6,19 @@
       <h2>{{ $t('dedup.emptyTitle') }}</h2>
       <p>{{ $t('dedup.emptyBody') }}</p>
     </div>
-    <DedupClusterListItem v-for="cluster in clusters" v-else :key="cluster.id" :cluster="cluster" @open="$emit('open', $event)"/>
+    <DedupClusterListItem v-for="cluster in clusters" v-else :key="cluster.id" :cluster="cluster"
+      :eligibility="eligibility[cluster.id] || null" @visible="$emit('visible', $event)" @open="$emit('open', $event)"/>
   </section>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
-import {DedupClusterSummaryDto} from '@/types/komga-dedup'
+import {DedupClusterEligibilityDto, DedupClusterSummaryDto} from '@/types/komga-dedup'
 import DedupClusterListItem from './DedupClusterListItem.vue'
 export default Vue.extend({name: 'DedupClusterList', components: {DedupClusterListItem}, props: {
-  clusters: {type: Array as () => DedupClusterSummaryDto[], required: true}, loading: {type: Boolean, default: false},
+  clusters: {type: Array as () => DedupClusterSummaryDto[], required: true},
+  eligibility: {type: Object as () => Record<string, DedupClusterEligibilityDto>, default: () => ({})},
+  loading: {type: Boolean, default: false},
 }})
 </script>
 

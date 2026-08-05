@@ -7,6 +7,9 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import org.assertj.core.api.Assertions.assertThat
+import org.gotson.komga.domain.model.Book
+import org.gotson.komga.domain.model.DEDUP_ARCHIVE_HASH_SCHEMA_VERSION
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupLibrarySettings
@@ -21,9 +24,85 @@ import org.gotson.komga.infrastructure.dedup.CoverNeighbor
 import org.gotson.komga.infrastructure.dedup.CoverPerceptualHasher
 import org.gotson.komga.infrastructure.dedup.CoverSimilarityIndex
 import org.junit.jupiter.api.Test
+import java.net.URL
 import java.time.LocalDateTime
 
 class DedupCoverLifecycleTest {
+  @Test
+  fun `book and thumbnail timestamps do not affect source generations`() {
+    val books = mockk<BookRepository>()
+    val media = mockk<MediaRepository>()
+    val thumbnails = mockk<ThumbnailBookRepository>()
+    val dedup = mockk<DedupRepository>()
+    var book =
+      Book(
+        name = "book.cbz",
+        url = URL("file:/tmp/book.cbz"),
+        fileLastModified = LocalDateTime.MIN,
+        fileSize = 42,
+        id = "book",
+        seriesId = "series",
+        libraryId = "library",
+      )
+    every { books.findByIdOrNull("book") } answers { book }
+    every { books.findAllBySeriesId("series") } answers { listOf(book) }
+    every { thumbnails.findSelectedByBookIdOrNull("book") } returns null
+    var feature: DedupFeature? = null
+    every { dedup.findFeature("book") } answers { feature }
+    every { dedup.saveFeature(any()) } answers { feature = firstArg() }
+    every { media.findByIdOrNull("book") } returns null
+    val lifecycle =
+      DedupCoverLifecycle(
+        books,
+        media,
+        thumbnails,
+        mockk(),
+        dedup,
+        mockk(),
+        mockk(),
+        jacksonObjectMapper(),
+      )
+
+    val before = lifecycle.currentSourceIdentity("book")!!
+    book = book.copy(fileLastModified = LocalDateTime.MAX, lastModifiedDate = LocalDateTime.MAX)
+    val after = lifecycle.currentSourceIdentity("book")!!
+
+    assertThat(after.contentGeneration).isEqualTo(before.contentGeneration)
+    assertThat(after.coverGeneration).isEqualTo(before.coverGeneration)
+    assertThat(after.metadataGeneration).isEqualTo(before.metadataGeneration)
+
+    feature = feature("book").copy(pageState = DedupFeatureState.READY)
+    lifecycle.persistArchiveIdentity("book", DedupStrongFileIdentity("/tmp/book.cbz", 42, "archive-hash"))
+    assertThat(feature!!.sourceContentGeneration).isEqualTo("dedup-v2:42:archive-hash")
+    assertThat(feature!!.pageState).isEqualTo(DedupFeatureState.WAITING)
+    assertThat(feature!!.archiveHashDate).isNotNull()
+
+    val readyFeature =
+      feature("book").copy(
+        archiveHash = "archive-hash",
+        archiveHashPath = "/tmp/book.cbz",
+        archiveHashSize = 42,
+        archiveHashSchemaVersion = DEDUP_ARCHIVE_HASH_SCHEMA_VERSION,
+      )
+    feature = readyFeature
+    val ready = lifecycle.currentSourceIdentity("book")!!
+    assertThat(ready.archiveHashState).isEqualTo(DedupArchiveHashState.READY)
+    assertThat(ready.archiveHash).isEqualTo("archive-hash")
+    assertThat(ready.contentGeneration).isNotEqualTo(before.contentGeneration)
+
+    listOf(
+      readyFeature.copy(archiveHashPath = "/tmp/moved.cbz"),
+      readyFeature.copy(archiveHashSize = 43),
+      readyFeature.copy(archiveHashSchemaVersion = DEDUP_ARCHIVE_HASH_SCHEMA_VERSION + 1),
+    ).forEach { staleFeature ->
+      feature = staleFeature
+      val stale = lifecycle.currentSourceIdentity("book")!!
+      assertThat(stale.archiveHashState).isEqualTo(DedupArchiveHashState.STALE)
+      assertThat(stale.archiveHash).isNull()
+      assertThat(stale.contentGeneration).isEqualTo(before.contentGeneration)
+    }
+  }
+
   @Test
   fun `cover candidate refresh preserves current deep evidence and adds current cover distance`() {
     val books = mockk<BookRepository>()

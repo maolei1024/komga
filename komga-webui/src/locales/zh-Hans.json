@@ -1072,7 +1072,8 @@
     "coverDistance": "封面距离",
     "topK": "Top-K 邻居",
     "noLibraries": "当前没有可配置重复扫描的媒体库。",
-    "pendingWork": "待处理工作",
+    "backgroundWork": "后台任务队列",
+    "backgroundWorkHelp": "包含扫描、封面特征和深度验证任务，不代表有同等数量的重复簇需要人工处理。",
     "statusFilter": "状态",
     "libraryFilter": "媒体库",
     "evidenceFilter": "证据成熟度",
@@ -1080,9 +1081,11 @@
     "memberCount": "{count} 个成员 | {count} 个成员",
     "pageCount": "{count} 页 | {count} 页",
     "pageCountUnknown": "页数未知",
+    "deepVerificationRequired": "需要深度验证",
     "verifiedProgress": "已核验 {verified}/{total} 对",
     "planCounts": "保留 {keep}，删除 {remove}",
     "noSafeSuggestion": "没有安全的自动删除建议",
+    "eligibilityUnavailable": "处理资格暂不可用",
     "untitledCluster": "未命名重复簇",
     "emptyTitle": "没有符合筛选条件的重复簇",
     "emptyBody": "可以调整筛选，或先为媒体库启用重复核验并执行扫描。",
@@ -1106,10 +1109,11 @@
     "useSuggestion": "采用建议方案",
     "submitCustom": "提交自定义方案",
     "retryIncomplete": "重试未完成步骤",
+    "retryEligibility": "重试资格检查",
+    "reapprove": "放弃旧审批并重新审批",
+    "confirmReapprove": "保留旧处理记录作为审计，放弃这次未产生不可逆进度的审批，并重新加载当前证据？",
     "verificationQueued": "已加入深度验证队列",
     "confirmSuggested": "采用建议方案并永久删除 {count} 个文件？",
-    "confirmCustom": "提交自定义方案并永久删除 {count} 个文件？",
-    "confirmKeepAll": "本次不删除文件，保留全部成员并把当前簇标记为已处理？",
     "acknowledgeRisk": "我已核对并接受此直接关系的“{type}”风险",
     "acknowledgeLocalState": "我已核对并接受删除“{book}”，它包含“{state}”本地状态",
     "resolutionResult": "处理结果",
@@ -1129,7 +1133,7 @@
       "UNPROCESSED": "未处理", "PROCESSING": "处理中", "PROCESSED": "已处理", "NEEDS_ATTENTION": "需要注意"
     },
     "resolutionState": {
-      "PROCESSING": "处理中", "PROCESSED": "已处理", "NEEDS_ATTENTION": "需要注意", "PARTIALLY_COMPLETED": "部分完成"
+      "PROCESSING": "处理中", "PROCESSED": "已处理", "NEEDS_ATTENTION": "需要注意", "PARTIALLY_COMPLETED": "部分完成", "ABANDONED": "已放弃"
     },
     "gorseState": {"CONFIRMED": "已确认", "NOT_APPLICABLE": "不适用", "FAILED": "失败"},
     "actionValue": {"KEEP": "保留", "DELETE": "删除"},
@@ -1153,7 +1157,8 @@
       "CLUSTERS_MERGED": "候选拓扑变化后重复簇已合并", "CLUSTER_SPLIT": "候选拓扑变化后重复簇已拆分",
       "TOPOLOGY_CHANGED": "成员或候选拓扑已变化", "EVIDENCE_CHANGED": "直接证据已变化",
       "LOCAL_STATE_CHANGED": "本地用户状态已变化", "PROCESSING_LEASE_EXPIRED": "上一次处理被中断",
-      "PREFLIGHT_FAILED": "执行前校验失败", "GORSE_FAILED": "Gorse 状态确认失败", "FINALIZE_CONFLICT": "最终状态保存冲突"
+      "PREFLIGHT_FAILED": "执行前校验失败", "GORSE_FAILED": "Gorse 状态确认失败", "FINALIZE_CONFLICT": "最终状态保存冲突",
+      "IDENTITY_RULE_CHANGED": "文件身份规则已更新，需要重新核验", "REAPPROVAL_REQUIRED": "旧审批已放弃，请按当前证据重新审批"
     },
     "reason": {
       "CLUSTER_NOT_UNPROCESSED": "当前簇不能创建新的处理方案。",
@@ -1162,6 +1167,8 @@
       "STATE_REVISION_CHANGED": "当前 revision 之后本地用户状态发生了变化。",
       "DELETE_FILE_UNAVAILABLE": "待删除文件不可用、stat 过期或不可写。",
       "LOCAL_STATE_WOULD_BE_DISCARDED": "建议方案会丢弃受保护的本地用户状态。",
+      "ARCHIVE_HASH_REQUIRED": "删除者与保留者需要先通过深度验证建立当前 archive hash。",
+      "DIRECT_CONTENT_EVIDENCE_REQUIRED": "仅有封面相似证据，删除前必须完成深度验证。",
       "PROCESSING_PRECHECK_PASSED": "当前处理前提已通过。"
     }
   },

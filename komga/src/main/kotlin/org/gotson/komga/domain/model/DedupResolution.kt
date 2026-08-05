@@ -12,6 +12,7 @@ enum class DedupResolutionState {
   PROCESSED,
   NEEDS_ATTENTION,
   PARTIALLY_COMPLETED,
+  ABANDONED,
 }
 
 enum class DedupResolutionAction {
@@ -83,7 +84,6 @@ data class DedupResolutionMember(
   val directRelationSnapshotJson: String?,
   val expectedPath: String?,
   val expectedSize: Long?,
-  val expectedMtime: LocalDateTime?,
   val expectedArchiveHash: String?,
   val state: DedupResolutionMemberState,
   val resultCode: String?,

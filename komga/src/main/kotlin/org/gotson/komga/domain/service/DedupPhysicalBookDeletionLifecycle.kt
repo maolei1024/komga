@@ -8,21 +8,16 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.PosixFilePermission
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 import kotlin.io.path.exists
 
 data class DedupStrongFileIdentity(
   val path: String,
   val size: Long,
-  val mtime: LocalDateTime,
   val archiveHash: String,
 ) {
   fun matches(other: DedupStrongFileIdentity): Boolean =
     path == other.path &&
       size == other.size &&
-      mtime.truncatedTo(ChronoUnit.MILLIS).isEqual(other.mtime.truncatedTo(ChronoUnit.MILLIS)) &&
       archiveHash == other.archiveHash
 }
 
@@ -38,8 +33,6 @@ data class DedupFilePrecheck(
   val path: String,
   val databaseSize: Long,
   val liveSize: Long? = null,
-  val databaseMtime: LocalDateTime,
-  val liveMtime: LocalDateTime? = null,
   val detail: String? = null,
 )
 
@@ -64,10 +57,9 @@ class DedupPhysicalBookDeletionLifecycle(
     val hash = hasher.computeHash(path)
     val after = readStableAttributes(path)
     check(before.sameFileVersion(after)) { "Book changed while its full archive hash was being computed" }
-    val identity = DedupStrongFileIdentity(path.toString(), after.size(), after.lastModified(), hash)
+    val identity = DedupStrongFileIdentity(path.toString(), after.size(), hash)
     if (requireDatabaseStat) {
       check(book.fileSize == identity.size) { "Live file size no longer matches Komga" }
-      check(book.fileLastModified.sameStoredTime(identity.mtime)) { "Live file mtime no longer matches Komga" }
     }
     return identity
   }
@@ -79,16 +71,13 @@ class DedupPhysicalBookDeletionLifecycle(
     if (!Files.isReadable(path)) return unavailable(book, path, "Book path is not readable")
     if (!isWritable(path)) return unavailable(book, path, "Book path is not writable")
     val attributes = runCatching { Files.readAttributes(path, BasicFileAttributes::class.java) }.getOrElse { return unavailable(book, path, it.message ?: "Book stat is unavailable") }
-    val liveMtime = attributes.lastModified()
-    return if (book.fileSize <= 0 || book.fileSize != attributes.size() || !book.fileLastModified.sameStoredTime(liveMtime)) {
+    return if (book.fileSize <= 0 || book.fileSize != attributes.size()) {
       DedupFilePrecheck(
         status = DedupFilePrecheckStatus.STAT_STALE,
         path = path.toString(),
         databaseSize = book.fileSize,
         liveSize = attributes.size(),
-        databaseMtime = book.fileLastModified,
-        liveMtime = liveMtime,
-        detail = "Live file size or mtime no longer matches Komga",
+        detail = "Live file size no longer matches Komga",
       )
     } else {
       DedupFilePrecheck(
@@ -96,8 +85,6 @@ class DedupPhysicalBookDeletionLifecycle(
         path = path.toString(),
         databaseSize = book.fileSize,
         liveSize = attributes.size(),
-        databaseMtime = book.fileLastModified,
-        liveMtime = liveMtime,
       )
     }
   }
@@ -118,9 +105,9 @@ class DedupPhysicalBookDeletionLifecycle(
       } catch (exception: Exception) {
         return conflict(DedupDeletionResultCode.GENERATION_MISMATCH, exception.message)
       }
-    if (!current.matches(expected)) return conflict(DedupDeletionResultCode.GENERATION_MISMATCH, "Live path, size, mtime, or archive hash changed")
+    if (!current.matches(expected)) return conflict(DedupDeletionResultCode.GENERATION_MISMATCH, "Live path, size, or archive hash changed")
     val justBeforeDelete = readStableAttributes(path)
-    if (justBeforeDelete.size() != expected.size || !justBeforeDelete.lastModified().sameStoredTime(expected.mtime)) {
+    if (justBeforeDelete.size() != expected.size) {
       return conflict(DedupDeletionResultCode.GENERATION_MISMATCH, "File changed after final hash validation")
     }
 
@@ -168,7 +155,6 @@ class DedupPhysicalBookDeletionLifecycle(
     status = DedupFilePrecheckStatus.UNAVAILABLE,
     path = path.toString(),
     databaseSize = book.fileSize,
-    databaseMtime = book.fileLastModified,
     detail = detail,
   )
 
@@ -181,11 +167,7 @@ class DedupPhysicalBookDeletionLifecycle(
     }.getOrDefault(true)
   }
 
-  private fun BasicFileAttributes.sameFileVersion(other: BasicFileAttributes): Boolean = size() == other.size() && lastModifiedTime() == other.lastModifiedTime() && fileKey() == other.fileKey()
-
-  private fun BasicFileAttributes.lastModified(): LocalDateTime = LocalDateTime.ofInstant(lastModifiedTime().toInstant(), ZoneId.systemDefault())
-
-  private fun LocalDateTime.sameStoredTime(other: LocalDateTime): Boolean = truncatedTo(ChronoUnit.MILLIS).isEqual(other.truncatedTo(ChronoUnit.MILLIS))
+  private fun BasicFileAttributes.sameFileVersion(other: BasicFileAttributes): Boolean = size() == other.size() && fileKey() == other.fileKey()
 
   private fun conflict(
     code: DedupDeletionResultCode,

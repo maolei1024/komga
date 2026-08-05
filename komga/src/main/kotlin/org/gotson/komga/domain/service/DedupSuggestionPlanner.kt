@@ -1,5 +1,6 @@
 package org.gotson.komga.domain.service
 
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupEligibilityReason
@@ -76,6 +77,9 @@ class DedupSuggestionPlanner(
     plan?.members?.filter { it.action == DedupResolutionAction.DELETE }?.forEach { member ->
       if (available[member.bookId] != true) blockers += reason("DELETE_FILE_UNAVAILABLE", setOf(member.bookId))
       if (localStates[member.bookId]?.reasonCodes?.isNotEmpty() == true) blockers += reason("LOCAL_STATE_WOULD_BE_DISCARDED", setOf(member.bookId))
+      val keeperId = requireNotNull(member.keeperBookId)
+      val missingHashIds = setOf(member.bookId, keeperId).filter { identities[it]?.archiveHashState != DedupArchiveHashState.READY }.toSet()
+      if (missingHashIds.isNotEmpty()) blockers += reason("ARCHIVE_HASH_REQUIRED", missingHashIds)
     }
     val planAvailable = plan?.deleteCount?.let { it > 0 } == true
     val evidenceEligible =
@@ -181,7 +185,6 @@ class DedupSuggestionPlanner(
   companion object {
     val RISK_TYPES =
       setOf(
-        DedupRelationType.VISUALLY_SIMILAR,
         DedupRelationType.SAME_EDITION_VARIANT,
         DedupRelationType.NEAR_CONTAINED_IN,
         DedupRelationType.PARTIAL_OVERLAP,

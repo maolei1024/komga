@@ -17,7 +17,7 @@
       <div><strong>{{ status.clusters.UNPROCESSED || 0 }}</strong><span>{{ $t('dedup.status.UNPROCESSED') }}</span></div>
       <div><strong>{{ status.clusters.PROCESSING || 0 }}</strong><span>{{ $t('dedup.status.PROCESSING') }}</span></div>
       <div><strong>{{ status.clusters.NEEDS_ATTENTION || 0 }}</strong><span>{{ $t('dedup.status.NEEDS_ATTENTION') }}</span></div>
-      <div><strong>{{ pendingWork }}</strong><span>{{ $t('dedup.pendingWork') }}</span></div>
+      <div class="background-status"><strong>{{ backgroundWorkCount }}</strong><span>{{ $t('dedup.backgroundWork') }}</span><small>{{ $t('dedup.backgroundWorkHelp') }}</small></div>
     </section>
 
     <v-expansion-panels flat class="settings-panel mb-5">
@@ -49,7 +49,7 @@
       <v-pagination v-if="pageCount > 1" v-model="clusterPage" :length="pageCount" :total-visible="paginationVisible" :disabled="filterLocked"/>
     </div>
 
-    <DedupClusterList :clusters="clusters" :loading="loadingClusters" @open="openCluster"/>
+    <DedupClusterList :clusters="clusters" :eligibility="clusterEligibility" :loading="loadingClusters" @visible="queueEligibility" @open="openCluster"/>
 
     <div class="pagination-row">
       <v-pagination v-if="pageCount > 1" v-model="clusterPage" :length="pageCount" :total-visible="paginationVisible" :disabled="filterLocked"/>
@@ -69,9 +69,9 @@ import Vue from 'vue'
 import PageSizeSelect from '@/components/PageSizeSelect.vue'
 import DedupClusterList from '@/components/dedup/DedupClusterList.vue'
 import DedupClusterDialog from '@/components/dedup/DedupClusterDialog.vue'
-import {currentPageVerificationRequests} from '@/functions/dedup'
+import {currentPageVerificationRequests, isCurrentClusterEligibility} from '@/functions/dedup'
 import {
-  DedupClusterStatus, DedupClusterSummaryDto, DedupClusterVerificationRequestDto, DedupEvidenceMaturity,
+  DedupClusterEligibilityDto, DedupClusterStatus, DedupClusterSummaryDto, DedupClusterVerificationRequestDto, DedupEvidenceMaturity,
   DedupSettingsDto, DedupStatusDto,
 } from '@/types/komga-dedup'
 
@@ -84,6 +84,7 @@ export default Vue.extend({
     status: {...EMPTY_STATUS} as DedupStatusDto,
     settings: {libraries: []} as DedupSettingsDto,
     clusters: [] as DedupClusterSummaryDto[],
+    clusterEligibility: {} as Record<string, DedupClusterEligibilityDto>,
     totalClusters: 0,
     clusterPage: 1,
     filters: {status: 'UNPROCESSED' as DedupClusterStatus, libraryId: undefined as string | undefined, evidence: undefined as DedupEvidenceMaturity | undefined},
@@ -96,14 +97,19 @@ export default Vue.extend({
     dialogOpen: false,
     selectedClusterId: '',
     snackbar: {show: false, text: '', color: 'success'},
+    clusterLoadGeneration: 0,
+    clusterAbort: null as AbortController | null,
+    eligibilityAbort: null as AbortController | null,
+    eligibilityTimer: 0 as number,
+    pendingEligibility: new Map<string, DedupClusterVerificationRequestDto>(),
   }),
   computed: {
     clusterPageSize: {
       get(): number { const value = this.$store.state.persistedState.dedupClusterPageSize; return [20, 50, 100].includes(value) ? value : 20 },
-      set(value: number) { this.$store.commit('setDedupClusterPageSize', value); this.clusterPage = 1; this.loadClusters() },
+      set(value: number) { this.$store.commit('setDedupClusterPageSize', value); if (this.clusterPage !== 1) this.clusterPage = 1; else this.loadClusters() },
     },
     filterLocked(): boolean { return this.bulkVerifying },
-    pendingWork(): number { return (this.status.work.WAITING || 0) + (this.status.work.PENDING || 0) + (this.status.work.RUNNING || 0) },
+    backgroundWorkCount(): number { return (this.status.work.WAITING || 0) + (this.status.work.PENDING || 0) + (this.status.work.RUNNING || 0) },
     pageCount(): number { return Math.max(1, Math.ceil(this.totalClusters / this.clusterPageSize)) },
     paginationVisible(): number { return this.$vuetify.breakpoint.smAndDown ? 5 : this.$vuetify.breakpoint.mdOnly ? 8 : 12 },
     bulkRequests(): DedupClusterVerificationRequestDto[] { return currentPageVerificationRequests(this.clusters) },
@@ -117,18 +123,62 @@ export default Vue.extend({
     clusterPage() { this.loadClusters() },
   },
   async mounted() { await Promise.all([this.loadSettings(), this.loadStatus(), this.loadClusters()]) },
+  beforeDestroy() { this.cancelClusterRequests() },
   methods: {
     async loadSettings() { try { this.settings = await this.$komgaDedup.getSettings(); this.settingsDirty = false } catch (error) { this.notifyError(error) } },
     async loadStatus() { this.loadingStatus = true; try { this.status = await this.$komgaDedup.getStatus() } catch (error) { this.notifyError(error) } finally { this.loadingStatus = false } },
     async loadClusters() {
+      const generation = ++this.clusterLoadGeneration
+      this.cancelClusterRequests(false)
+      this.clusterAbort = new AbortController()
+      this.clusterEligibility = {}
+      this.pendingEligibility.clear()
       this.loadingClusters = true
       try {
         const response = await this.$komgaDedup.getClusters({page: this.clusterPage - 1, size: this.clusterPageSize, status: this.filters.status,
-          library_id: this.filters.libraryId, evidence: this.filters.evidence})
+          library_id: this.filters.libraryId, evidence: this.filters.evidence}, this.clusterAbort.signal)
+        if (generation !== this.clusterLoadGeneration) return
         this.clusters = response.content; this.totalClusters = response.totalElements
         const maxPage = Math.max(1, response.totalPages)
         if (this.clusterPage > maxPage) { this.clusterPage = maxPage; return }
-      } catch (error) { this.notifyError(error) } finally { this.loadingClusters = false }
+      } catch (error) { if (error?.code !== 'ERR_CANCELED') this.notifyError(error) } finally { if (generation === this.clusterLoadGeneration) this.loadingClusters = false }
+    },
+    queueEligibility(cluster: DedupClusterSummaryDto) {
+      if (this.clusterEligibility[cluster.id]) return
+      this.pendingEligibility.set(cluster.id, {clusterId: cluster.id, expectedRevision: cluster.revision})
+      if (!this.eligibilityTimer) this.eligibilityTimer = window.setTimeout(this.flushEligibility, 50)
+    },
+    async flushEligibility() {
+      this.eligibilityTimer = 0
+      if (this.eligibilityAbort || this.pendingEligibility.size === 0) return
+      const generation = this.clusterLoadGeneration
+      const batch = [...this.pendingEligibility.values()].slice(0, 20)
+      batch.forEach(item => this.pendingEligibility.delete(item.clusterId))
+      const controller = new AbortController()
+      this.eligibilityAbort = controller
+      try {
+        const response = await this.$komgaDedup.getClusterEligibility(batch, controller.signal)
+        if (generation !== this.clusterLoadGeneration) return
+        response.items.forEach(item => {
+          const cluster = this.clusters.find(value => value.id === item.clusterId)
+          if (isCurrentClusterEligibility(cluster, item)) this.$set(this.clusterEligibility, item.clusterId, item)
+        })
+      } catch (error) {
+        if (error?.code !== 'ERR_CANCELED') batch.forEach(item => this.$set(this.clusterEligibility, item.clusterId, {
+          clusterId: item.clusterId, expectedRevision: item.expectedRevision, status: 'FAILED', suggestionPlanAvailable: false,
+          suggestedPlanEligible: false, suggestedKeepCount: 0, suggestedDeleteCount: 0, blockerCodes: [], error: error?.message,
+        } as DedupClusterEligibilityDto))
+      } finally {
+        if (this.eligibilityAbort === controller) this.eligibilityAbort = null
+        if (generation === this.clusterLoadGeneration && this.pendingEligibility.size) this.eligibilityTimer = window.setTimeout(this.flushEligibility, 0)
+      }
+    },
+    cancelClusterRequests(invalidate = true) {
+      this.clusterAbort?.abort(); this.clusterAbort = null
+      this.eligibilityAbort?.abort(); this.eligibilityAbort = null
+      if (this.eligibilityTimer) window.clearTimeout(this.eligibilityTimer)
+      this.eligibilityTimer = 0
+      if (invalidate) this.clusterLoadGeneration++
     },
     filtersChanged() { if (this.filterLocked) return; if (this.clusterPage !== 1) this.clusterPage = 1; else this.loadClusters() },
     async requestScan() { this.scanning = true; try { const result = await this.$komgaDedup.requestScan(); this.notify(this.$t('dedup.scanQueued', {count: result.requestedLibraries}).toString(), 'success'); await this.loadStatus() } catch (error) { this.notifyError(error) } finally { this.scanning = false } },
@@ -165,6 +215,8 @@ export default Vue.extend({
 .status-strip div { min-width: 130px; flex: 1; display: flex; align-items: baseline; gap: 8px; padding: 12px 16px; background: var(--v-base-base); }
 .status-strip strong { font-size: 1.125rem; }
 .status-strip span { color: var(--v-contrast-light-2-base); font-size: .8125rem; }
+.status-strip .background-status { flex-wrap: wrap; }
+.status-strip .background-status small { flex-basis: 100%; color: var(--v-contrast-light-2-base); font-size: .72rem; line-height: 1.35; }
 .settings-panel { overflow: hidden; border-radius: 8px; }
 .settings-row { display: grid; grid-template-columns: minmax(190px, 1.4fr) repeat(3, minmax(140px, 1fr)); gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--v-contrast-1-base); }
 .settings-library { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

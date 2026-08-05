@@ -4,6 +4,7 @@ import com.github.f4b6a3.tsid.TsidCreator
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.application.tasks.DEFAULT_PRIORITY
 import org.gotson.komga.application.tasks.TaskEmitter
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupWork
@@ -163,7 +164,18 @@ class DedupWorkLifecycle(
     var failed = 0
     pairs.forEach { (left, right) ->
       val relation = dedupRepository.findRelation(left, right)
-      if (relation?.type == DedupRelationType.EXACT_FILE) {
+      val identities =
+        if (relation?.type == DedupRelationType.EXACT_FILE) {
+          listOfNotNull(coverLifecycle.currentSourceIdentity(left), coverLifecycle.currentSourceIdentity(right)).associateBy { it.bookId }
+        } else {
+          emptyMap()
+        }
+      val exactIdentityReady =
+        relation?.type == DedupRelationType.EXACT_FILE &&
+          identities.size == 2 &&
+          identities.values.all { it.archiveHashState == DedupArchiveHashState.READY } &&
+          relation.isCurrent(identities)
+      if (exactIdentityReady) {
         skipped++
       } else {
         runCatching {

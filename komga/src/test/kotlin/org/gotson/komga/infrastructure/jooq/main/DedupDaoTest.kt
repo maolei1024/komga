@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
+import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionAction
@@ -134,6 +135,64 @@ class DedupDaoTest(
   }
 
   @Test
+  fun `cluster evidence filtering and pagination use persisted summary fields`() {
+    val now = LocalDateTime.now()
+    val coverOnly =
+      DedupCluster(
+        "cluster-cover-${UUID.randomUUID()}",
+        library.id,
+        1,
+        DedupClusterStatus.UNPROCESSED,
+        true,
+        "A",
+        "topology-a",
+        "evidence-a",
+        "state-a",
+        null,
+        null,
+        null,
+        null,
+        now,
+        now.minusMinutes(1),
+        null,
+        2,
+        0,
+        1,
+        DedupEvidenceMaturity.COVER_ONLY,
+      )
+    val complete =
+      DedupCluster(
+        "cluster-complete-${UUID.randomUUID()}",
+        library.id,
+        1,
+        DedupClusterStatus.UNPROCESSED,
+        true,
+        "B",
+        "topology-b",
+        "evidence-b",
+        "state-b",
+        null,
+        null,
+        null,
+        null,
+        now,
+        now,
+        null,
+        2,
+        1,
+        1,
+        DedupEvidenceMaturity.COMPLETE,
+      )
+    dao.saveCluster(coverOnly, emptyList())
+    dao.saveCluster(complete, emptyList())
+
+    val page = dao.findClusters(library.id, DedupClusterStatus.UNPROCESSED, true, DedupEvidenceMaturity.COMPLETE, 0, 20)
+
+    assertThat(page.map { it.cluster.id }).containsExactly(complete.id)
+    assertThat(dao.countClusters(library.id, DedupClusterStatus.UNPROCESSED, true, DedupEvidenceMaturity.COMPLETE)).isEqualTo(1)
+  }
+
+  @Test
   fun `resolution snapshot supports multiple keepers and active member exclusion`() {
     val now = LocalDateTime.now()
     val cluster =
@@ -189,7 +248,6 @@ class DedupDaoTest(
           "/tmp/$id.cbz",
           "{}",
           "{}",
-          null,
           null,
           null,
           null,

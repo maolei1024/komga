@@ -1,7 +1,13 @@
-import {currentPageVerificationRequests, formatBytes, mergeEligibilityReasons, resolutionSeriesResults} from '@/functions/dedup'
+import {currentPageVerificationRequests, formatBytes, isCurrentClusterEligibility, mergeEligibilityReasons, resolutionSeriesResults} from '@/functions/dedup'
 import {DedupClusterSummaryDto, DedupEligibilityReasonDto} from '@/types/komga-dedup'
 
 describe('duplicate cluster helpers', () => {
+  it('rejects stale eligibility for a newer cluster revision', () => {
+    const cluster = summary('cluster', 2, true)
+    expect(isCurrentClusterEligibility(cluster, {clusterId: 'cluster', expectedRevision: 1} as any)).toBe(false)
+    expect(isCurrentClusterEligibility(cluster, {clusterId: 'cluster', expectedRevision: 2} as any)).toBe(true)
+  })
+
   it('freezes every reviewable current-page cluster id and revision', () => {
     const clusters = [summary('cover', 3, true), summary('verified', 7, true), summary('dormant', 2, false)]
 
@@ -44,8 +50,7 @@ describe('duplicate cluster helpers', () => {
 function summary(id: string, revision: number, reviewable: boolean): DedupClusterSummaryDto {
   return {
     id, revision, reviewable, libraryId: 'library', status: 'UNPROCESSED', memberCount: 2, coverMembers: [],
-    verifiedPairs: 0, totalPairs: 1, evidenceMaturity: 'COVER_ONLY', suggestionPlanAvailable: false,
-    suggestedPlanEligible: false, suggestedKeepCount: 2, suggestedDeleteCount: 0, lastModified: '2026-08-04T00:00:00Z',
+    verifiedPairs: 0, totalPairs: 1, evidenceMaturity: 'COVER_ONLY', lastModified: '2026-08-04T00:00:00Z',
   }
 }
 

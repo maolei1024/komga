@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermission
 import java.time.LocalDateTime
@@ -55,10 +56,10 @@ class DedupPhysicalBookDeletionLifecycleTest {
 
   @Test
   fun `a file changed after approval conflicts and is never unlinked`() {
-    val cbz = Files.write(directory.resolve("changed.cbz"), "first version".toByteArray())
+    val cbz = Files.write(directory.resolve("changed.cbz"), "first".toByteArray())
     val book = bookFor(cbz)
     val expected = lifecycle.captureStrongIdentity(book)
-    Files.write(cbz, "different version".toByteArray())
+    Files.write(cbz, "other".toByteArray())
     Files.setLastModifiedTime(cbz, FileTime.fromMillis(System.currentTimeMillis() + 2_000))
 
     val result = lifecycle.deleteVerifiedBook(book, expected)
@@ -82,6 +83,33 @@ class DedupPhysicalBookDeletionLifecycleTest {
   }
 
   @Test
+  fun `mtime drift is ignored by precheck identity and deletion`() {
+    val cbz = Files.write(directory.resolve("mtime-drift.cbz"), "stable archive".toByteArray())
+    val book = bookFor(cbz)
+    val expected = lifecycle.captureStrongIdentity(book)
+    Files.setLastModifiedTime(cbz, FileTime.fromMillis(System.currentTimeMillis() + 60_000))
+    every { bookLifecycle.softDeleteMany(listOf(book)) } just Runs
+
+    assertThat(lifecycle.precheck(book).status).isEqualTo(DedupFilePrecheckStatus.AVAILABLE)
+    assertThat(lifecycle.captureStrongIdentity(book)).isEqualTo(expected)
+    assertThat(lifecycle.deleteVerifiedBook(book, expected).code).isEqualTo(DedupDeletionResultCode.DELETED)
+  }
+
+  @Test
+  fun `mtime drift during full hash capture is ignored`() {
+    val cbz = Files.write(directory.resolve("mtime-drift-during-hash.cbz"), "stable archive".toByteArray())
+    val book = bookFor(cbz)
+    val mutatingHasher = mockk<Hasher>()
+    every { mutatingHasher.computeHash(cbz) } answers {
+      Files.setLastModifiedTime(cbz, FileTime.fromMillis(System.currentTimeMillis() + 60_000))
+      "stable-hash"
+    }
+
+    assertThat(DedupPhysicalBookDeletionLifecycle(mutatingHasher, bookLifecycle).captureStrongIdentity(book).archiveHash)
+      .isEqualTo("stable-hash")
+  }
+
+  @Test
   fun `a non CBZ source remains ineligible for strong identity`() {
     val zip = Files.write(directory.resolve("book.zip"), "archive bytes".toByteArray())
     val book = bookFor(zip)
@@ -98,6 +126,21 @@ class DedupPhysicalBookDeletionLifecycleTest {
     val mutatingHasher = mockk<Hasher>()
     every { mutatingHasher.computeHash(cbz) } answers {
       Files.write(cbz, "changed while hashing".toByteArray())
+      "unstable-hash"
+    }
+
+    assertThatThrownBy { DedupPhysicalBookDeletionLifecycle(mutatingHasher, bookLifecycle).captureStrongIdentity(book) }
+      .hasMessageContaining("changed while its full archive hash")
+  }
+
+  @Test
+  fun `a same-size fileKey replacement during full hash capture is rejected`() {
+    val cbz = Files.write(directory.resolve("replaced-during-hash.cbz"), "first".toByteArray())
+    val book = bookFor(cbz)
+    val mutatingHasher = mockk<Hasher>()
+    every { mutatingHasher.computeHash(cbz) } answers {
+      val replacement = Files.write(directory.resolve("replacement.cbz"), "other".toByteArray())
+      Files.move(replacement, cbz, StandardCopyOption.REPLACE_EXISTING)
       "unstable-hash"
     }
 

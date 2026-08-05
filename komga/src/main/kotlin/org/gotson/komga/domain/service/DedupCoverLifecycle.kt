@@ -2,12 +2,15 @@ package org.gotson.komga.domain.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.gotson.komga.domain.model.Book
+import org.gotson.komga.domain.model.DEDUP_ARCHIVE_HASH_SCHEMA_VERSION
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.dedupContentGeneration
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
@@ -83,6 +86,11 @@ class DedupCoverLifecycle(
         pageCount = before.pageCount,
         analyzedDate = now,
         lastModifiedDate = now,
+        archiveHash = before.archiveHash,
+        archiveHashPath = before.archiveHashPath,
+        archiveHashSize = before.archiveHashSize,
+        archiveHashSchemaVersion = before.archiveHashSchemaVersion,
+        archiveHashDate = before.archiveHashDate,
       ),
     )
   }
@@ -161,6 +169,37 @@ class DedupCoverLifecycle(
       metadataGeneration = source.metadataGeneration,
       seriesScopeRevision = source.scopeRevision,
       pageCount = source.pageCount,
+      archiveHashState = source.archiveHashState,
+      archiveHash = source.archiveHash,
+    )
+  }
+
+  fun persistArchiveIdentity(
+    bookId: String,
+    identity: DedupStrongFileIdentity,
+    now: LocalDateTime = LocalDateTime.now(),
+  ) {
+    val book = requireNotNull(bookRepository.findByIdOrNull(bookId)) { "Book no longer exists" }
+    val expectedPath =
+      book.path
+        .toAbsolutePath()
+        .normalize()
+        .toString()
+    check(identity.path == expectedPath) { "Book path changed during archive hashing" }
+    check(identity.size == book.fileSize) { "Archive size no longer matches Komga" }
+    val feature = requireNotNull(dedupRepository.findFeature(bookId)) { "Dedup feature is unavailable" }
+    val generation = dedupContentGeneration(identity.size, identity.archiveHash)
+    dedupRepository.saveFeature(
+      feature.copy(
+        sourceContentGeneration = generation,
+        pageState = if (feature.sourceContentGeneration == generation) feature.pageState else DedupFeatureState.WAITING,
+        archiveHash = identity.archiveHash,
+        archiveHashPath = identity.path,
+        archiveHashSize = identity.size,
+        archiveHashSchemaVersion = DEDUP_ARCHIVE_HASH_SCHEMA_VERSION,
+        archiveHashDate = now,
+        lastModifiedDate = now,
+      ),
     )
   }
 
@@ -185,19 +224,39 @@ class DedupCoverLifecycle(
         .sorted()
     if (activeIds != listOf(book.id)) return null
     val thumbnail = thumbnailBookRepository.findSelectedByBookIdOrNull(book.id)
+    val feature = dedupRepository.findFeature(book.id)
+    val expectedPath =
+      book.path
+        .toAbsolutePath()
+        .normalize()
+        .toString()
+    val archiveHashState =
+      when {
+        feature?.archiveHash.isNullOrBlank() -> DedupArchiveHashState.MISSING
+        feature.archiveHashPath != expectedPath || feature.archiveHashSize != book.fileSize ||
+          feature.archiveHashSchemaVersion != DEDUP_ARCHIVE_HASH_SCHEMA_VERSION -> DedupArchiveHashState.STALE
+        else -> DedupArchiveHashState.READY
+      }
+    val archiveHash = feature?.archiveHash?.takeIf { archiveHashState == DedupArchiveHashState.READY }
     val coverIdentity =
       when {
         thumbnail == null -> "missing"
-        thumbnail.thumbnail != null -> "${thumbnail.id}|${thumbnail.lastModifiedDate}|${stableHash(thumbnail.thumbnail)}"
-        else -> "${thumbnail.id}|${thumbnail.lastModifiedDate}|${thumbnail.url}|${thumbnail.fileSize}"
+        thumbnail.thumbnail != null -> "${thumbnail.id}|${stableHash(thumbnail.thumbnail)}"
+        else -> "${thumbnail.id}|${thumbnail.url}|${thumbnail.fileSize}"
       }
     return CoverSourceSnapshot(
-      contentGeneration = stableHash("${book.fileHash}|${book.fileSize}|${book.fileLastModified}"),
+      contentGeneration = dedupContentGeneration(book.fileSize, archiveHash),
       coverGeneration = stableHash(coverIdentity),
-      metadataGeneration = stableHash("${book.name}|${book.lastModifiedDate}"),
+      metadataGeneration = stableHash("${book.name}|${book.seriesId}"),
       scopeRevision = stableHash("${book.seriesId}|${activeIds.joinToString() }"),
       pageCount = mediaRepository.findByIdOrNull(book.id)?.pages?.size,
       thumbnail = thumbnail,
+      archiveHashState = archiveHashState,
+      archiveHash = archiveHash,
+      archiveHashPath = feature?.archiveHashPath,
+      archiveHashSize = feature?.archiveHashSize,
+      archiveHashSchemaVersion = feature?.archiveHashSchemaVersion,
+      archiveHashDate = feature?.archiveHashDate,
     )
   }
 
@@ -227,6 +286,12 @@ class DedupCoverLifecycle(
     val scopeRevision: String,
     val pageCount: Int?,
     val thumbnail: ThumbnailBook?,
+    val archiveHashState: DedupArchiveHashState,
+    val archiveHash: String?,
+    val archiveHashPath: String?,
+    val archiveHashSize: Long?,
+    val archiveHashSchemaVersion: Int?,
+    val archiveHashDate: LocalDateTime?,
   ) {
     fun matches(other: CoverSourceSnapshot): Boolean =
       contentGeneration == other.contentGeneration &&

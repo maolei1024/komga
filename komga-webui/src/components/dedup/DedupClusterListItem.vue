@@ -1,8 +1,8 @@
 <template>
   <button class="cluster-row" type="button" @click="$emit('open', cluster.id)">
     <span class="cover-stack" aria-hidden="true">
-      <v-img v-for="(member, index) in cluster.coverMembers" :key="member.bookId"
-             :src="bookThumbnailUrl(member.bookId)" :style="coverStyle(index)" class="cover" contain/>
+      <DedupLazyImage v-for="(member, index) in cluster.coverMembers" :key="member.bookId"
+        :src="bookThumbnailUrl(member.bookId)" :style="coverStyle(index)" class="cover" :width="58" :height="84"/>
     </span>
     <span class="cluster-main">
       <span class="cluster-heading">
@@ -20,13 +20,17 @@
       </span>
     </span>
     <span class="cluster-plan">
-      <v-icon :color="cluster.suggestionPlanAvailable ? 'success' : 'grey'" small>
-        {{ cluster.suggestionPlanAvailable ? 'mdi-shield-check' : 'mdi-shield-outline' }}
-      </v-icon>
-      <span v-if="cluster.suggestionPlanAvailable">
-        {{ $t('dedup.planCounts', {keep: cluster.suggestedKeepCount, remove: cluster.suggestedDeleteCount}) }}
-      </span>
-      <span v-else>{{ $t('dedup.noSafeSuggestion') }}</span>
+      <span v-if="!eligibility" class="eligibility-skeleton"/>
+      <template v-else>
+        <v-icon :color="eligibility.suggestionPlanAvailable ? 'success' : 'grey'" small>
+          {{ eligibility.suggestionPlanAvailable ? 'mdi-shield-check' : 'mdi-shield-outline' }}
+        </v-icon>
+        <span v-if="eligibility.status !== 'READY'">{{ $t('dedup.eligibilityUnavailable') }}</span>
+        <span v-else-if="eligibility.suggestionPlanAvailable">
+          {{ $t('dedup.planCounts', {keep: eligibility.suggestedKeepCount, remove: eligibility.suggestedDeleteCount}) }}
+        </span>
+        <span v-else>{{ $t('dedup.noSafeSuggestion') }}</span>
+      </template>
     </span>
     <v-icon class="row-chevron">mdi-chevron-right</v-icon>
   </button>
@@ -34,16 +38,33 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import {DedupClusterSummaryDto} from '@/types/komga-dedup'
+import {DedupClusterEligibilityDto, DedupClusterSummaryDto} from '@/types/komga-dedup'
 import {bookThumbnailUrl} from '@/functions/urls'
+import DedupLazyImage from './DedupLazyImage.vue'
 
 export default Vue.extend({
   name: 'DedupClusterListItem',
-  props: {cluster: {type: Object as () => DedupClusterSummaryDto, required: true}},
+  components: {DedupLazyImage},
+  props: {
+    cluster: {type: Object as () => DedupClusterSummaryDto, required: true},
+    eligibility: {type: Object as () => DedupClusterEligibilityDto | null, default: null},
+  },
+  data: () => ({observer: null as IntersectionObserver | null}),
   computed: {
     title(): string { return this.cluster.coverMembers.map(x => x.title).filter(Boolean).slice(0, 2).join(' / ') || this.$t('dedup.untitledCluster').toString() },
     statusColor(): string { return ({UNPROCESSED: 'info', PROCESSING: 'warning', PROCESSED: 'success', NEEDS_ATTENTION: 'error'} as Record<string, string>)[this.cluster.status] },
   },
+  mounted() {
+    if (!('IntersectionObserver' in window)) { this.$emit('visible', this.cluster); return }
+    this.observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        this.$emit('visible', this.cluster)
+        this.observer?.disconnect()
+      }
+    }, {rootMargin: '300px'})
+    this.observer.observe(this.$el)
+  },
+  beforeDestroy() { this.observer?.disconnect() },
   methods: {
     bookThumbnailUrl,
     coverStyle(index: number) { return {left: `${index * 18}px`, zIndex: this.cluster.coverMembers.length - index} },
@@ -64,6 +85,7 @@ export default Vue.extend({
 .cluster-meta, .cluster-plan, .reopen-reason { color: var(--v-contrast-light-2-base); font-size: .875rem; }
 .reopen-reason { display: flex; align-items: center; gap: 4px; color: var(--v-warning-base); }
 .cluster-plan { flex: 0 0 220px; display: flex; gap: 8px; align-items: center; }
+.eligibility-skeleton { width: 170px; height: 14px; border-radius: 4px; background: var(--v-contrast-1-base); }
 .row-chevron { flex: 0 0 auto; }
 @media (max-width: 760px) {
   .cluster-row { min-height: 104px; gap: 12px; padding: 12px; }

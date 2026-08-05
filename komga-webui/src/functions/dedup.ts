@@ -1,10 +1,18 @@
 import {
+  DedupClusterEligibilityDto,
   DedupClusterSummaryDto,
   DedupClusterVerificationRequestDto,
   DedupEligibilityReasonDto,
   DedupGorseSeriesResultDto,
   DedupResolutionResultPayloadDto,
 } from '@/types/komga-dedup'
+
+export function isCurrentClusterEligibility(
+  cluster: DedupClusterSummaryDto | undefined,
+  eligibility: DedupClusterEligibilityDto,
+): boolean {
+  return cluster?.id === eligibility.clusterId && cluster.revision === eligibility.expectedRevision
+}
 
 export interface DedupEligibilityDisplayReason {
   key: string
