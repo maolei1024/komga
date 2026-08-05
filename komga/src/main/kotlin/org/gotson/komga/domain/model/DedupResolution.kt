@@ -107,35 +107,3 @@ data class DedupResolutionPlan(
   val deleteCount: Int get() = members.count { it.action == DedupResolutionAction.DELETE }
   val keepCount: Int get() = members.count { it.action == DedupResolutionAction.KEEP }
 }
-
-enum class DedupEligibilitySeverity {
-  BLOCKER,
-  WARNING,
-  PASSED,
-}
-
-data class DedupEligibilityReason(
-  val code: String,
-  val severity: DedupEligibilitySeverity,
-  val appliesTo: Set<String>,
-  val confirmationRequired: Boolean,
-  val scope: String,
-  val memberIds: Set<String> = emptySet(),
-  val actual: Any? = null,
-  val threshold: Any? = null,
-  val action: String? = null,
-)
-
-data class DedupEligibilityReport(
-  val suggestionPlanAvailable: Boolean,
-  val suggestionEvidenceEligible: Boolean,
-  val processingEligible: Boolean,
-  val suggestedPlanEligible: Boolean,
-  val ruleVersion: Int,
-  val stateRevision: String,
-  val planRevision: String?,
-  val evaluatedAt: LocalDateTime,
-  val blockers: List<DedupEligibilityReason>,
-  val warnings: List<DedupEligibilityReason>,
-  val passed: List<DedupEligibilityReason>,
-)

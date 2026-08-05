@@ -11,4 +11,7 @@ interface ExactDuplicateBookRepository {
     libraryId: String? = null,
     includeDeleted: Boolean = true,
   ): List<ExactDuplicateBook>
+
+  /** Returns the active Books sharing the target Book's non-empty file hash and size. */
+  fun findExactDuplicatesForBook(bookId: String): List<ExactDuplicateBook>
 }

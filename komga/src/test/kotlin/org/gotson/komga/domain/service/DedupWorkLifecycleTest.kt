@@ -1,145 +1,125 @@
 package org.gotson.komga.domain.service
 
-import io.mockk.Runs
-import io.mockk.every
-import io.mockk.just
-import io.mockk.mockk
-import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
-import org.gotson.komga.application.tasks.TaskEmitter
-import org.gotson.komga.domain.model.DedupArchiveHashState
-import org.gotson.komga.domain.model.DedupCluster
-import org.gotson.komga.domain.model.DedupClusterMember
-import org.gotson.komga.domain.model.DedupClusterStatus
-import org.gotson.komga.domain.model.DedupClusterWithMembers
-import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupRelationType
-import org.gotson.komga.domain.model.DedupSourceIdentity
-import org.gotson.komga.domain.model.DedupWork
+import org.gotson.komga.domain.model.Book
+import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupWorkState
 import org.gotson.komga.domain.model.DedupWorkType
-import org.gotson.komga.domain.persistence.DedupRepository
-import org.gotson.komga.domain.persistence.DedupResolutionRepository
-import org.gotson.komga.infrastructure.gorse.GorseDesiredStateLifecycle
+import org.gotson.komga.domain.model.makeLibrary
+import org.gotson.komga.domain.model.makeSeries
+import org.gotson.komga.infrastructure.jooq.main.BookDao
+import org.gotson.komga.infrastructure.jooq.main.DedupDao
+import org.gotson.komga.infrastructure.jooq.main.LibraryDao
+import org.gotson.komga.infrastructure.jooq.main.SeriesDao
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.test.annotation.DirtiesContext
+import java.net.URL
 import java.time.LocalDateTime
+import java.util.UUID
 
-class DedupWorkLifecycleTest {
-  private val repository = mockk<DedupRepository>()
-  private val resolutionRepository = mockk<DedupResolutionRepository>()
-  private val exact = mockk<DedupExactDuplicateLifecycle>()
-  private val cover = mockk<DedupCoverLifecycle>()
-  private val deep = mockk<DedupDeepVerificationLifecycle>()
-  private val clusters = mockk<DedupClusterLifecycle>()
-  private val emitter = mockk<TaskEmitter>()
-  private val gorse = mockk<GorseDesiredStateLifecycle>()
-  private val lifecycle = DedupWorkLifecycle(repository, resolutionRepository, exact, cover, deep, clusters, emitter, gorse)
-
+@SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class DedupWorkLifecycleTest(
+  @Autowired private val lifecycle: DedupWorkLifecycle,
+  @Autowired private val dao: DedupDao,
+  @Autowired private val libraryDao: LibraryDao,
+  @Autowired private val seriesDao: SeriesDao,
+  @Autowired private val bookDao: BookDao,
+) {
   @Test
-  fun `cluster verification queues every unordered non-exact pair and wakes one Library once`() {
-    val cluster = cluster("A", "B", "C")
-    every { repository.findCluster("cluster") } returns cluster
-    every { repository.findRelation("A", "B") } returns exact("A", "B")
-    every { repository.findRelation("A", "C") } returns null
-    every { repository.findRelation("B", "C") } returns null
-    every { cover.currentSourceIdentity("A") } returns identity("A")
-    every { cover.currentSourceIdentity("B") } returns identity("B")
-    every { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, any(), any(), 6, any()) } answers {
-      work(id = firstArg(), target = arg(3))
-    }
-    every { emitter.drainDedupQueue("library", 6) } just Runs
+  fun `250 unscanned Books with N 100 are processed in 100 100 50 batches`() {
+    val fixture = fixture(250, batchSize = 100)
 
-    val results = lifecycle.requestClusterVerifications(listOf(DedupClusterVerificationRequest("cluster", 1)))
+    lifecycle.drain(fixture.libraryId)
+    assertThat(dao.findFeaturesByLibrary(fixture.libraryId)).hasSize(100)
+    assertThat(dao.findLibrarySettings(fixture.libraryId)?.lastBatchBookCount).isEqualTo(100)
 
-    assertThat(results.single().status).isEqualTo(DedupClusterVerificationStatus.QUEUED)
-    assertThat(results.single().pairCount).isEqualTo(3)
-    assertThat(results.single().queuedPairs).isEqualTo(2)
-    assertThat(results.single().skippedPairs).isEqualTo(1)
-    verify(exactly = 1) { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "A|C", any(), 6, any()) }
-    verify(exactly = 1) { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "B|C", any(), 6, any()) }
-    verify(exactly = 1) { emitter.drainDedupQueue("library", 6) }
+    lifecycle.drain(fixture.libraryId)
+    assertThat(dao.findFeaturesByLibrary(fixture.libraryId)).hasSize(200)
+    assertThat(dao.findLibrarySettings(fixture.libraryId)?.lastBatchBookCount).isEqualTo(100)
+
+    lifecycle.drain(fixture.libraryId)
+    assertThat(dao.findFeaturesByLibrary(fixture.libraryId)).hasSize(250)
+    assertThat(dao.findLibrarySettings(fixture.libraryId)?.lastBatchBookCount).isEqualTo(50)
+    assertThat(
+      dao.findAllWork().count { it.libraryId == fixture.libraryId && it.type == DedupWorkType.SCAN_BOOK && it.state == DedupWorkState.SUCCEEDED },
+    ).isEqualTo(250)
   }
 
   @Test
-  fun `exact pair without persisted archive hashes is queued for deep verification`() {
-    every { repository.findCluster("cluster") } returns cluster("A", "B")
-    every { repository.findRelation("A", "B") } returns exact("A", "B")
-    every { cover.currentSourceIdentity("A") } returns identity("A")
-    every { cover.currentSourceIdentity("B") } returns identity("B").copy(archiveHashState = DedupArchiveHashState.MISSING, archiveHash = null)
-    every { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "A|B", any(), 6, any()) } answers {
-      work(id = firstArg(), target = arg(3))
-    }
-    every { emitter.drainDedupQueue("library", 6) } just Runs
+  fun `internal rebuild work does not consume the Book allowance`() {
+    val fixture = fixture(60, batchSize = 25)
+    dao.enqueueWork("rebuild-${UUID.randomUUID()}", fixture.libraryId, DedupWorkType.REBUILD_CLUSTERS)
 
-    val result = lifecycle.requestClusterVerification("cluster", 1)
+    lifecycle.drain(fixture.libraryId)
 
-    assertThat(result.status).isEqualTo(DedupClusterVerificationStatus.QUEUED)
-    assertThat(result.queuedPairs).isEqualTo(1)
-    assertThat(result.skippedPairs).isZero()
-    verify(exactly = 1) { repository.enqueueWork(any(), "library", DedupWorkType.VERIFY_RELATION, "A|B", any(), 6, any()) }
+    assertThat(dao.findFeaturesByLibrary(fixture.libraryId)).hasSize(25)
+    assertThat(dao.findLibrarySettings(fixture.libraryId)?.lastBatchBookCount).isEqualTo(25)
+    assertThat(dao.findAllWork().single { it.libraryId == fixture.libraryId && it.type == DedupWorkType.REBUILD_CLUSTERS }.state)
+      .isEqualTo(DedupWorkState.SUCCEEDED)
   }
 
   @Test
-  fun `stale cluster revision never queues pair work`() {
-    every { repository.findCluster("cluster") } returns cluster("A", "B")
+  fun `modified soft-deleted and hard-deleted Books coalesce through SCAN_BOOK in a multi-Book Series`() {
+    val fixture = fixture(2, batchSize = 10)
+    lifecycle.drain(fixture.libraryId)
+    val first = bookDao.findByIdOrNull(fixture.bookIds[0])!!
+    val second = bookDao.findByIdOrNull(fixture.bookIds[1])!!
+    assertThat(dao.findFeature(first.id)).isNotNull
+    assertThat(dao.findFeature(second.id)).isNotNull
 
-    val result = lifecycle.requestClusterVerification("cluster", 2)
+    val previousMetadata = dao.findFeature(first.id)!!.sourceMetadataGeneration
+    bookDao.update(first.copy(name = "renamed.cbz"))
+    lifecycle.requestBookScan(fixture.libraryId, first.id, DedupWorkLifecycle.PRIORITY_UPDATED)
+    lifecycle.requestBookScan(fixture.libraryId, first.id, DedupWorkLifecycle.PRIORITY_UPDATED)
+    lifecycle.drain(fixture.libraryId)
+    assertThat(dao.findFeature(first.id)?.sourceMetadataGeneration).isNotEqualTo(previousMetadata)
 
-    assertThat(result.status).isEqualTo(DedupClusterVerificationStatus.STALE)
-    verify(exactly = 0) { repository.enqueueWork(any(), any(), any(), any(), any(), any(), any()) }
+    bookDao.update(bookDao.findByIdOrNull(first.id)!!.copy(deletedDate = LocalDateTime.now()))
+    lifecycle.requestBookScan(fixture.libraryId, first.id, DedupWorkLifecycle.PRIORITY_DELETED)
+    lifecycle.drain(fixture.libraryId)
+    assertThat(dao.findFeature(first.id)).isNull()
+
+    lifecycle.requestBookScan(fixture.libraryId, second.id, DedupWorkLifecycle.PRIORITY_DELETED)
+    bookDao.delete(second.id)
+    lifecycle.drain(fixture.libraryId)
+    assertThat(dao.findFeature(second.id)).isNull()
   }
 
-  private fun cluster(vararg ids: String): DedupClusterWithMembers {
+  private fun fixture(
+    count: Int,
+    batchSize: Int,
+  ): Fixture {
+    val suffix = UUID.randomUUID().toString()
+    val library = makeLibrary("dedup-work-$suffix")
+    libraryDao.insert(library)
+    val series = makeSeries("series-$suffix", library.id)
+    seriesDao.insert(series)
     val now = LocalDateTime.now()
-    val value = DedupCluster("cluster", "library", 1, DedupClusterStatus.UNPROCESSED, true, ids.first(), "topology", "evidence", "state", null, null, null, null, now, now, null)
-    return DedupClusterWithMembers(value, ids.map { DedupClusterMember("cluster", it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
+    val books =
+      (1..count).map { index ->
+        val id = "book-$suffix-${index.toString().padStart(4, '0')}"
+        Book(
+          name = "$index.cbz",
+          url = URL("file:/tmp/$id.cbz"),
+          fileLastModified = now,
+          fileSize = 100,
+          id = id,
+          seriesId = series.id,
+          libraryId = library.id,
+          createdDate = now.plusNanos(index.toLong()),
+          lastModifiedDate = now.plusNanos(index.toLong()),
+        )
+      }
+    bookDao.insert(books)
+    dao.saveLibrarySettings(DedupLibrarySettings(library.id, enabled = true, batchSize = batchSize, quietPeriodSeconds = 0))
+    return Fixture(library.id, books.map { it.id })
   }
 
-  private fun exact(
-    left: String,
-    right: String,
-  ) = DedupRelation("relation", "library", left, right, "content-$left", "content-$right", type = DedupRelationType.EXACT_FILE)
-
-  private fun identity(id: String) =
-    DedupSourceIdentity(
-      id,
-      "series-$id",
-      "library",
-      "content-$id",
-      "cover-$id",
-      "metadata-$id",
-      "scope-$id",
-      10,
-      DedupArchiveHashState.READY,
-      "hash-$id",
-    )
-
-  private fun work(
-    id: String,
-    target: String,
-  ): DedupWork {
-    val now = LocalDateTime.now()
-    return DedupWork(
-      id,
-      "library",
-      DedupWorkType.VERIFY_RELATION,
-      target,
-      DedupWorkState.WAITING,
-      1,
-      0,
-      now,
-      null,
-      null,
-      null,
-      null,
-      0,
-      8,
-      null,
-      null,
-      6,
-      now,
-      now,
-      null,
-    )
-  }
+  private data class Fixture(
+    val libraryId: String,
+    val bookIds: List<String>,
+  )
 }

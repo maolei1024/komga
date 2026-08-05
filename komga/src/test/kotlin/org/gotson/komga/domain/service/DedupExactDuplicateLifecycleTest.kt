@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
 
 class DedupExactDuplicateLifecycleTest {
   @Test
-  fun `only equal hash and size CBZ books produce stable direct exact relations`() {
+  fun `Book refresh only replaces exact relations touching its target`() {
     val exactBooks = mockk<ExactDuplicateBookRepository>()
     val dedup = mockk<DedupRepository>()
     val cover = mockk<DedupCoverLifecycle>()
@@ -26,20 +26,19 @@ class DedupExactDuplicateLifecycleTest {
       listOf(
         book("A", "file:/A.cbz", "hash", 100),
         book("B", "file:/B.cbz", "hash", 100),
-        book("C", "file:/C.cbz", "hash", 101),
         book("D", "file:/D.pdf", "hash", 100),
       )
-    every { exactBooks.findAllExactDuplicates("library", false) } returns books
-    books.forEach { every { cover.currentContentGeneration(it.id) } returns dedupContentGeneration(it.fileSize, null) }
+    every { exactBooks.findExactDuplicatesForBook("A") } returns books
+    books.forEach { every { cover.currentContentGeneration(it.id) } returns dedupContentGeneration(it.fileSize, null, it.fileHash) }
     val captured = slot<Collection<DedupRelation>>()
-    every { dedup.replaceExactRelations("library", capture(captured), any()) } just Runs
+    every { dedup.replaceExactRelationsForBook("A", capture(captured), any()) } just Runs
 
-    assertThat(lifecycle.reconcileLibrary("library")).isEqualTo(1)
+    assertThat(lifecycle.refreshForBook("A")).isEqualTo(1)
     val first = captured.captured.single()
     assertThat(setOf(first.bookLowId, first.bookHighId)).isEqualTo(setOf("A", "B"))
     assertThat(first.type).isEqualTo(DedupRelationType.EXACT_FILE)
 
-    lifecycle.reconcileLibrary("library")
+    lifecycle.refreshForBook("A")
     assertThat(captured.captured.single().id).isEqualTo(first.id)
   }
 

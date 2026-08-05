@@ -21,6 +21,13 @@ interface DedupResolutionRepository {
 
   fun countResolutions(): Long
 
+  fun findProcessedResolutions(
+    offset: Int = 0,
+    limit: Int = 20,
+  ): List<DedupResolution>
+
+  fun countProcessedResolutions(): Long
+
   fun countResolutionsByState(): Map<DedupResolutionState, Int>
 
   fun findResolutionMembers(resolutionId: String): List<DedupResolutionMember>

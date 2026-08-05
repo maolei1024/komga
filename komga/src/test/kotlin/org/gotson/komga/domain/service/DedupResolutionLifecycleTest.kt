@@ -1,7 +1,9 @@
 package org.gotson.komga.domain.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
@@ -12,22 +14,15 @@ import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupDeletionResultCode
-import org.gotson.komga.domain.model.DedupEligibilityReport
-import org.gotson.komga.domain.model.DedupLocalStateSnapshot
-import org.gotson.komga.domain.model.DedupPlanMember
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionAction
 import org.gotson.komga.domain.model.DedupResolutionMember
 import org.gotson.komga.domain.model.DedupResolutionMemberState
-import org.gotson.komga.domain.model.DedupResolutionPlan
 import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.DedupResolutionRepository
-import org.gotson.komga.infrastructure.gorse.GorseDesiredStateLifecycle
-import org.gotson.komga.infrastructure.gorse.GorseSyncNowResult
-import org.gotson.komga.infrastructure.gorse.GorseSyncNowState
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URL
@@ -40,338 +35,196 @@ class DedupResolutionLifecycleTest {
   lateinit var directory: Path
 
   @Test
-  fun `preflight conflict can be abandoned for reapproval without deleting its audit`() {
-    val dedup = mockk<DedupRepository>()
-    val resolutions = FakeResolutionRepository()
-    val value = cluster().copy(cluster = cluster().cluster.copy(status = DedupClusterStatus.NEEDS_ATTENTION, lastResolutionId = "resolution"))
-    val now = LocalDateTime.now()
-    resolutions.insertResolution(
-      resolution("resolution", DedupResolutionState.NEEDS_ATTENTION, now),
-      listOf(resolutionMember("resolution", DedupResolutionMemberState.CONFLICT, now)),
-    )
-    every { dedup.findCluster("cluster") } returns value
-    every { dedup.updateClusterState("cluster", setOf(DedupClusterStatus.NEEDS_ATTENTION), DedupClusterStatus.UNPROCESSED, "resolution", "REAPPROVAL_REQUIRED", any()) } returns true
-    val lifecycle = lifecycle(dedup, resolutions)
+  fun `empty delete IDs complete keep-all and never hash or delete a file`() {
+    val context = context("A", "B")
 
-    val result = lifecycle.abandon("resolution")
-
-    assertThat(result.state).isEqualTo(DedupResolutionState.ABANDONED)
-    assertThat(resolutions.findResolutionMembers("resolution")).singleElement().extracting("state").isEqualTo(DedupResolutionMemberState.CONFLICT)
-    verify { dedup.updateClusterState("cluster", setOf(DedupClusterStatus.NEEDS_ATTENTION), DedupClusterStatus.UNPROCESSED, "resolution", "REAPPROVAL_REQUIRED", any()) }
-  }
-
-  @Test
-  fun `resolution with irreversible progress cannot be abandoned`() {
-    val dedup = mockk<DedupRepository>()
-    val resolutions = FakeResolutionRepository()
-    val now = LocalDateTime.now()
-    resolutions.insertResolution(
-      resolution("resolution", DedupResolutionState.NEEDS_ATTENTION, now),
-      listOf(resolutionMember("resolution", DedupResolutionMemberState.DELETED, now)),
-    )
-
-    org.assertj.core.api.Assertions
-      .assertThatThrownBy { lifecycle(dedup, resolutions).abandon("resolution") }
-      .isInstanceOf(DedupResolutionValidationException::class.java)
-      .hasMessageContaining("irreversible")
-  }
-
-  @Test
-  fun `missing delete path without a completed preflight cannot be abandoned`() {
-    val dedup = mockk<DedupRepository>()
-    val resolutions = FakeResolutionRepository()
-    val now = LocalDateTime.now()
-    resolutions.insertResolution(
-      resolution("resolution", DedupResolutionState.NEEDS_ATTENTION, now),
-      listOf(
-        resolutionMember("resolution", DedupResolutionMemberState.CONFLICT, now).copy(
-          action = DedupResolutionAction.DELETE,
-          keeperBookId = "B",
-          pathSnapshot = directory.resolve("missing.cbz").toString(),
-          directRelationId = "relation",
-          directRelationSnapshotJson = "{}",
-        ),
-      ),
-    )
-
-    org.assertj.core.api.Assertions
-      .assertThatThrownBy { lifecycle(dedup, resolutions).abandon("resolution") }
-      .isInstanceOf(DedupResolutionValidationException::class.java)
-      .hasMessageContaining("irreversible")
-  }
-
-  @Test
-  fun `keep-all resolution completes synchronously without hashing deleting or contacting Gorse`() {
-    val dedup = mockk<DedupRepository>()
-    val resolutions = FakeResolutionRepository()
-    val books = mockk<BookRepository>()
-    val suggestions = mockk<DedupSuggestionPlanner>()
-    val policy = mockk<DedupEligibilityPolicy>()
-    val localState = mockk<DedupLocalStateLifecycle>()
-    val cover = mockk<DedupCoverLifecycle>()
-    val deletion = mockk<DedupPhysicalBookDeletionLifecycle>()
-    val clusters = mockk<DedupClusterLifecycle>()
-    val gorse = mockk<GorseDesiredStateLifecycle>()
-    val value = cluster()
-    val plan = DedupResolutionPlan("plan", listOf(DedupPlanMember("A", DedupResolutionAction.KEEP), DedupPlanMember("B", DedupResolutionAction.KEEP)))
-    val report = DedupEligibilityReport(false, false, true, false, 1, "state", null, LocalDateTime.now(), emptyList(), emptyList(), emptyList())
-    val snapshots = listOf("A", "B").associateWith { DedupLocalStateSnapshot(it, "local-$it", emptySet(), emptyMap()) }
-    every { policy.validateCustom(any(), any(), any(), any(), any()) } returns plan
-    every { suggestions.evaluate("cluster") } returns DedupSuggestion(null, report, snapshots)
-    every { dedup.findCluster("cluster") } returns value
-    every { dedup.claimCluster("cluster", 1, "state", any()) } returns true
-    every { dedup.findRelationsForBooks(any()) } returns emptyList()
-    every { dedup.updateClusterState(any(), any(), any(), any(), any(), any()) } returns true
-    every { clusters.rebuildLibrary("library", any()) } returns 1
-    every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("topology", "evidence", "state")
-    listOf("A", "B").forEach { id ->
-      every { books.findByIdOrNull(id) } returns book(id)
-      every { cover.currentSourceIdentity(id) } returns identity(id)
-      every { localState.snapshot(id) } returns snapshots.getValue(id)
-    }
-    every { clusters.finalizeProcessed("cluster", any(), setOf("A", "B"), any()) } answers {
-      value.cluster.copy(status = DedupClusterStatus.PROCESSED, processedRevision = 1, lastResolutionId = arg(1))
-    }
-    val lifecycle =
-      DedupResolutionLifecycle(
-        dedup,
-        resolutions,
-        books,
-        suggestions,
-        policy,
-        localState,
-        cover,
-        deletion,
-        clusters,
-        gorse,
-        jacksonObjectMapper().findAndRegisterModules(),
-      )
-
-    val result =
-      lifecycle.createCustom(
-        "cluster",
-        1,
-        "state",
-        listOf(
-          DedupCustomMemberSelection("A", DedupResolutionAction.KEEP),
-          DedupCustomMemberSelection("B", DedupResolutionAction.KEEP),
-        ),
-        emptySet(),
-        "admin",
-      )
+    val result = context.lifecycle.createCustom("cluster", 1, emptyList(), "admin")
 
     assertThat(result.state).isEqualTo(DedupResolutionState.PROCESSED)
-    assertThat(resolutions.findResolutionMembers(result.id)).allMatch { it.state == DedupResolutionMemberState.COMPLETED }
-    verify(exactly = 0) { deletion.captureStrongIdentity(any(), any()) }
-    verify(exactly = 0) { deletion.deleteVerifiedBook(any(), any()) }
-    verify(exactly = 0) { gorse.syncNow(any(), any()) }
+    assertThat(context.resolutions.findResolutionMembers(result.id)).allMatch {
+      it.action == DedupResolutionAction.KEEP && it.state == DedupResolutionMemberState.COMPLETED
+    }
+    verify(exactly = 0) { context.deletion.captureStrongIdentity(any(), any()) }
+    verify(exactly = 0) { context.deletion.deleteVerifiedBook(any(), any(), any()) }
+    verify { context.clusters.finalizeProcessed("cluster", result.id, "admin", setOf("A", "B"), any()) }
   }
 
   @Test
-  fun `partial deletion records irreversible progress and retry never unlinks a successful member twice`() {
-    val dedup = mockk<DedupRepository>()
-    val resolutions = FakeResolutionRepository()
-    val books = mockk<BookRepository>()
-    val suggestions = mockk<DedupSuggestionPlanner>()
-    val policy = mockk<DedupEligibilityPolicy>()
-    val localState = mockk<DedupLocalStateLifecycle>()
-    val cover = mockk<DedupCoverLifecycle>()
-    val deletion = mockk<DedupPhysicalBookDeletionLifecycle>()
-    val clusters = mockk<DedupClusterLifecycle>()
-    val gorse = mockk<GorseDesiredStateLifecycle>()
-    val value = cluster("A", "B", "C", "D")
-    val relations = listOf(relation("A", "B"), relation("A", "C"))
-    val plan =
-      DedupResolutionPlan(
-        "plan",
-        listOf(
-          DedupPlanMember("A", DedupResolutionAction.KEEP),
-          DedupPlanMember("B", DedupResolutionAction.DELETE, "A", relations[0].id),
-          DedupPlanMember("C", DedupResolutionAction.DELETE, "A", relations[1].id),
-          DedupPlanMember("D", DedupResolutionAction.KEEP),
-        ),
-      )
-    val report = DedupEligibilityReport(true, true, true, true, 1, "state", "plan", LocalDateTime.now(), emptyList(), emptyList(), emptyList())
-    val snapshots = listOf("A", "B", "C", "D").associateWith { DedupLocalStateSnapshot(it, "local-$it", emptySet(), emptyMap()) }
-    val paths = listOf("A", "B", "C", "D").associateWith { Files.writeString(directory.resolve("$it.cbz"), "archive-$it") }
-    val softDeleted = mutableSetOf<String>()
-    var clusterStatus = DedupClusterStatus.UNPROCESSED
-    var cAttempts = 0
+  fun `custom deletion stores no keeper or direct relation and keeps strong identity deletion`() {
+    val context = context("A", "B")
+    context.successfulDeletion("B")
 
-    every { policy.validateCustom(any(), any(), any(), any(), any()) } returns plan
-    every { suggestions.evaluate("cluster") } returns DedupSuggestion(plan, report, snapshots)
-    every { dedup.findCluster("cluster") } answers { value.copy(cluster = value.cluster.copy(status = clusterStatus)) }
-    every { dedup.claimCluster("cluster", 1, "state", any()) } answers {
-      clusterStatus = DedupClusterStatus.PROCESSING
-      true
-    }
-    every { dedup.findRelationsForBooks(any()) } returns relations
-    every { dedup.findRelation(any(), any()) } answers {
-      val ids = setOf(firstArg<String>(), secondArg<String>())
-      relations.firstOrNull { setOf(it.bookLowId, it.bookHighId) == ids }
-    }
-    every { dedup.updateClusterState(any(), any(), any(), any(), any(), any()) } answers {
-      clusterStatus = thirdArg()
-      true
-    }
-    every { clusters.rebuildLibrary("library", any()) } returns 1
-    every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("topology", "evidence", "state")
-    every { clusters.finalizeProcessed("cluster", any(), setOf("A", "D"), any()) } answers {
-      clusterStatus = DedupClusterStatus.PROCESSED
-      value.cluster.copy(status = clusterStatus, processedRevision = 2, lastResolutionId = secondArg())
-    }
-    listOf("A", "B", "C", "D").forEach { id ->
-      every { books.findByIdOrNull(id) } answers {
-        book(id, paths.getValue(id))
-          .copy(seriesId = if (id == "A") "series-A" else "series-delete")
-          .let { if (id in softDeleted) it.copy(deletedDate = LocalDateTime.now()) else it }
-      }
-      every { cover.currentSourceIdentity(id) } returns
-        if (id == "D") identity(id).copy(archiveHashState = org.gotson.komga.domain.model.DedupArchiveHashState.MISSING, archiveHash = null) else identity(id)
-      every { localState.snapshot(id) } returns snapshots.getValue(id)
-    }
-    every { deletion.precheck(any()) } returns DedupFilePrecheck(DedupFilePrecheckStatus.AVAILABLE, "unused", 9, 9)
-    every { deletion.captureStrongIdentity(any(), any()) } answers {
-      val item = firstArg<Book>()
-      DedupStrongFileIdentity(paths.getValue(item.id).toString(), Files.size(paths.getValue(item.id)), "hash-${item.id}")
-    }
-    every { deletion.deleteVerifiedBook(any(), any(), any()) } answers {
-      val item = firstArg<Book>()
-      if (item.id == "C" && cAttempts++ == 0) {
-        DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETE_FAILED, false, false, "transient unlink failure")
-      } else {
-        Files.deleteIfExists(paths.getValue(item.id))
-        thirdArg<() -> Unit>().invoke()
-        softDeleted += item.id
-        DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETED, true, true)
-      }
-    }
-    every { deletion.confirmPathAbsentAndSoftDelete(match { it.id == "B" }) } returns
-      DedupPhysicalDeletionResult(DedupDeletionResultCode.ALREADY_DELETED_BY_THIS_RESOLUTION, true, true)
-    every { gorse.syncNow(any(), any()) } answers { GorseSyncNowResult(firstArg(), GorseSyncNowState.CONFIRMED, true, null) }
-    val lifecycle = DedupResolutionLifecycle(dedup, resolutions, books, suggestions, policy, localState, cover, deletion, clusters, gorse, jacksonObjectMapper().findAndRegisterModules())
+    val result = context.lifecycle.createCustom("cluster", 1, listOf("B"), "admin")
+
+    val deleted = context.resolutions.findResolutionMembers(result.id).single { it.bookId == "B" }
+    assertThat(deleted.keeperBookId).isNull()
+    assertThat(deleted.directRelationId).isNull()
+    assertThat(deleted.expectedArchiveHash).isEqualTo("hash-B")
+    assertThat(deleted.state).isEqualTo(DedupResolutionMemberState.COMPLETED)
+    verify(exactly = 0) { context.deletion.captureStrongIdentity(match { it.id == "A" }, any()) }
+    verify(exactly = 1) { context.deletion.deleteVerifiedBook(match { it.id == "B" }, match { it.archiveHash == "hash-B" }, any()) }
+  }
+
+  @Test
+  fun `all delete targets finish preflight before any unlink`() {
+    val context = context("A", "B", "C")
+    every { context.deletion.precheck(match { it.id == "B" }) } returns available("B")
+    every { context.deletion.captureStrongIdentity(match { it.id == "B" }, any()) } returns context.identityOnDisk("B")
+    every { context.deletion.precheck(match { it.id == "C" }) } returns
+      DedupFilePrecheck(DedupFilePrecheckStatus.UNAVAILABLE, context.paths.getValue("C").toString(), Files.size(context.paths.getValue("C")), detail = "not writable")
 
     val failure =
       catchThrowableOfType(
-        {
-          lifecycle.createCustom(
-            "cluster",
-            1,
-            "state",
-            plan.members.map { DedupCustomMemberSelection(it.bookId, it.action, it.keeperBookId) },
-            emptySet(),
-            "admin",
-          )
-        },
+        { context.lifecycle.createCustom("cluster", 1, listOf("B", "C"), "admin") },
+        DedupResolutionExecutionException::class.java,
+      )
+
+    assertThat(failure.partial).isFalse()
+    assertThat(context.clusterStatus).isEqualTo(DedupClusterStatus.UNPROCESSED)
+    verify(exactly = 0) { context.deletion.deleteVerifiedBook(any(), any(), any()) }
+  }
+
+  @Test
+  fun `partial deletion retry never unlinks a successful member twice`() {
+    val context = context("A", "B", "C")
+    var cAttempts = 0
+    listOf("B", "C").forEach { id ->
+      every { context.deletion.precheck(match { it.id == id }) } returns available(id)
+      every { context.deletion.captureStrongIdentity(match { it.id == id }, any()) } answers { context.identityOnDisk(id) }
+    }
+    every { context.deletion.deleteVerifiedBook(match { it.id == "B" }, any(), any()) } answers {
+      Files.deleteIfExists(context.paths.getValue("B"))
+      thirdArg<() -> Unit>().invoke()
+      context.softDeleted += "B"
+      DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETED, true, true)
+    }
+    every { context.deletion.deleteVerifiedBook(match { it.id == "C" }, any(), any()) } answers {
+      if (cAttempts++ == 0) {
+        DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETE_FAILED, false, false, "transient unlink failure")
+      } else {
+        Files.deleteIfExists(context.paths.getValue("C"))
+        thirdArg<() -> Unit>().invoke()
+        context.softDeleted += "C"
+        DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETED, true, true)
+      }
+    }
+    every { context.deletion.confirmPathAbsentAndSoftDelete(match { it.id == "B" }) } returns
+      DedupPhysicalDeletionResult(DedupDeletionResultCode.ALREADY_DELETED_BY_THIS_RESOLUTION, true, true)
+
+    val failure =
+      catchThrowableOfType(
+        { context.lifecycle.createCustom("cluster", 1, listOf("B", "C"), "admin") },
         DedupResolutionExecutionException::class.java,
       )
 
     assertThat(failure.partial).isTrue()
-    assertThat(resolutions.findResolution(failure.resolutionId!!)!!.state).isEqualTo(DedupResolutionState.PARTIALLY_COMPLETED)
-    assertThat(resolutions.findResolutionMembers(failure.resolutionId!!).single { it.bookId == "B" }.state).isEqualTo(DedupResolutionMemberState.KOMGA_SAVED)
+    assertThat(context.resolutions.findResolution(failure.resolutionId!!)!!.state).isEqualTo(DedupResolutionState.PARTIALLY_COMPLETED)
 
-    val result = lifecycle.retry(failure.resolutionId!!)
+    val result = context.lifecycle.retry(failure.resolutionId!!)
 
     assertThat(result.state).isEqualTo(DedupResolutionState.PROCESSED)
-    verify(exactly = 1) { deletion.deleteVerifiedBook(match { it.id == "B" }, any(), any()) }
-    verify(exactly = 2) { deletion.deleteVerifiedBook(match { it.id == "C" }, any(), any()) }
-    verify(exactly = 1) { deletion.confirmPathAbsentAndSoftDelete(match { it.id == "B" }) }
-    verify(exactly = 1) { gorse.syncNow("series-delete", "library") }
-    verify(exactly = 3) { deletion.captureStrongIdentity(match { it.id == "A" }, any()) }
-    verify(exactly = 0) { deletion.captureStrongIdentity(match { it.id == "D" }, any()) }
+    verify(exactly = 1) { context.deletion.deleteVerifiedBook(match { it.id == "B" }, any(), any()) }
+    verify(exactly = 2) { context.deletion.deleteVerifiedBook(match { it.id == "C" }, any(), any()) }
+    verify(exactly = 1) { context.deletion.confirmPathAbsentAndSoftDelete(match { it.id == "B" }) }
   }
 
-  private fun cluster(vararg requestedIds: String): DedupClusterWithMembers {
-    val ids = requestedIds.toList().ifEmpty { listOf("A", "B") }
+  @Test
+  fun `deleting every active member is rejected before cluster claim`() {
+    val context = context("A", "B")
+
+    org.assertj.core.api.Assertions
+      .assertThatThrownBy {
+        context.lifecycle.createCustom("cluster", 1, listOf("A", "B"), "admin")
+      }.isInstanceOf(DedupResolutionValidationException::class.java)
+      .hasMessageContaining("retained")
+    verify(exactly = 0) { context.dedup.claimCluster(any(), any(), any(), any()) }
+  }
+
+  private fun available(id: String): DedupFilePrecheck {
+    val path = directory.resolve("$id.cbz")
+    return DedupFilePrecheck(DedupFilePrecheckStatus.AVAILABLE, path.toString(), Files.size(path), Files.size(path))
+  }
+
+  private fun context(vararg ids: String): TestContext {
+    val dedup = mockk<DedupRepository>()
+    val resolutions = FakeResolutionRepository()
+    val books = mockk<BookRepository>()
+    val suggestions = mockk<DedupSuggestionPlanner>()
+    val cover = mockk<DedupCoverLifecycle>()
+    val deletion = mockk<DedupPhysicalBookDeletionLifecycle>()
+    val clusters = mockk<DedupClusterLifecycle>()
+    val value = cluster(*ids)
+    val paths = ids.associateWith { Files.writeString(directory.resolve("$it.cbz"), "archive-$it") }
+    val context = TestContext(dedup, resolutions, books, suggestions, cover, deletion, clusters, value, paths)
+
+    every { dedup.findCluster("cluster") } answers { value.copy(cluster = value.cluster.copy(status = context.clusterStatus, lastResolutionId = context.lastResolutionId)) }
+    every { clusters.rebuildLibrary("library", any()) } returns 1
+    every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("topology", "evidence", "state")
+    every { dedup.claimCluster("cluster", 1, "state", any()) } answers {
+      context.clusterStatus = DedupClusterStatus.PROCESSING
+      true
+    }
+    every { dedup.updateClusterState(any(), any(), any(), any(), any(), any()) } answers {
+      context.clusterStatus = thirdArg()
+      (invocation.args[3] as String?)?.let { context.lastResolutionId = it }
+      true
+    }
+    every { clusters.currentReviewRelations(any()) } returns emptyList()
+    every { clusters.finalizeProcessed("cluster", any(), "admin", any(), any()) } answers {
+      context.clusterStatus = DedupClusterStatus.PROCESSED
+      value.cluster.copy(status = DedupClusterStatus.PROCESSED, lastResolutionId = secondArg(), processedDate = LocalDateTime.now())
+    }
+    ids.forEach { id ->
+      every { books.findByIdOrNull(id) } answers {
+        book(id, paths.getValue(id)).let { if (id in context.softDeleted) it.copy(deletedDate = LocalDateTime.now()) else it }
+      }
+      every { cover.currentSourceIdentity(id) } returns identity(id)
+    }
+    return context
+  }
+
+  private fun cluster(vararg ids: String): DedupClusterWithMembers {
     val now = LocalDateTime.now()
-    val cluster = DedupCluster("cluster", "library", 1, DedupClusterStatus.UNPROCESSED, true, ids.first(), "topology", "evidence", "state", null, null, null, null, now, now, null)
-    return DedupClusterWithMembers(cluster, ids.map { DedupClusterMember("cluster", it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
+    val value = DedupCluster("cluster", "library", 1, DedupClusterStatus.UNPROCESSED, true, ids.first(), "topology", "evidence", "state", null, null, null, null, now, now, null)
+    return DedupClusterWithMembers(value, ids.map { DedupClusterMember("cluster", it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
   }
 
-  private fun identity(id: String) =
-    DedupSourceIdentity(
-      id,
-      "series-$id",
-      "library",
-      "content-$id",
-      "cover-$id",
-      "metadata-$id",
-      "scope-$id",
-      10,
-      org.gotson.komga.domain.model.DedupArchiveHashState.READY,
-      "hash-$id",
-    )
-
-  private fun book(id: String) = Book(id, URL("file:/tmp/$id.cbz"), LocalDateTime.MIN, 10, id = id, seriesId = "series-$id", libraryId = "library")
+  private fun identity(id: String) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", 10)
 
   private fun book(
     id: String,
     path: Path,
   ) = Book(id, path.toUri().toURL(), LocalDateTime.MIN, runCatching { Files.size(path) }.getOrDefault(9), id = id, seriesId = "series-$id", libraryId = "library")
 
-  private fun relation(
-    left: String,
-    right: String,
-  ) = org.gotson.komga.domain.model.DedupRelation(
-    "relation-$left-$right",
-    "library",
-    minOf(left, right),
-    maxOf(left, right),
-    "content-${minOf(left, right)}",
-    "content-${maxOf(left, right)}",
-    type = org.gotson.komga.domain.model.DedupRelationType.EXACT_FILE,
-  )
+  private inner class TestContext(
+    val dedup: DedupRepository,
+    val resolutions: FakeResolutionRepository,
+    val books: BookRepository,
+    val suggestions: DedupSuggestionPlanner,
+    val cover: DedupCoverLifecycle,
+    val deletion: DedupPhysicalBookDeletionLifecycle,
+    val clusters: DedupClusterLifecycle,
+    val cluster: DedupClusterWithMembers,
+    val paths: Map<String, Path>,
+  ) {
+    var clusterStatus = DedupClusterStatus.UNPROCESSED
+    var lastResolutionId: String? = null
+    val softDeleted = mutableSetOf<String>()
+    val lifecycle = DedupResolutionLifecycle(dedup, resolutions, books, suggestions, cover, deletion, clusters, jacksonObjectMapper().findAndRegisterModules())
 
-  private fun lifecycle(
-    dedup: DedupRepository,
-    resolutions: DedupResolutionRepository,
-  ) = DedupResolutionLifecycle(
-    dedup,
-    resolutions,
-    mockk(),
-    mockk(),
-    mockk(),
-    mockk(),
-    mockk(),
-    mockk(),
-    mockk(),
-    mockk(),
-    jacksonObjectMapper().findAndRegisterModules(),
-  )
+    fun identityOnDisk(id: String) = DedupStrongFileIdentity(paths.getValue(id).toString(), Files.size(paths.getValue(id)), "hash-$id")
 
-  private fun resolution(
-    id: String,
-    state: DedupResolutionState,
-    now: LocalDateTime,
-  ) = DedupResolution(id, "cluster", 1, org.gotson.komga.domain.model.DedupResolutionMode.CUSTOM, "plan", "{}", "{}", "{}", 2, state, "admin", "{}", "token", now.plusMinutes(5), now, now, null)
-
-  private fun resolutionMember(
-    resolutionId: String,
-    state: DedupResolutionMemberState,
-    now: LocalDateTime,
-  ) = DedupResolutionMember(
-    resolutionId = resolutionId,
-    bookId = "A",
-    seriesId = "series-A",
-    libraryId = "library",
-    action = DedupResolutionAction.KEEP,
-    keeperBookId = null,
-    titleSnapshot = "A",
-    pathSnapshot = "/tmp/A.cbz",
-    sourceGenerationsJson = "{}",
-    localStateSnapshotJson = "{}",
-    directRelationId = null,
-    directRelationSnapshotJson = null,
-    expectedPath = null,
-    expectedSize = null,
-    expectedArchiveHash = null,
-    state = state,
-    resultCode = null,
-    resultJson = null,
-    lastError = null,
-    createdDate = now,
-    lastModifiedDate = now,
-  )
+    fun successfulDeletion(id: String) {
+      every { deletion.precheck(match { it.id == id }) } returns available(id)
+      every { deletion.captureStrongIdentity(match { it.id == id }, any()) } answers { identityOnDisk(id) }
+      every { deletion.deleteVerifiedBook(match { it.id == id }, any(), any()) } answers {
+        Files.deleteIfExists(paths.getValue(id))
+        thirdArg<() -> Unit>().invoke()
+        softDeleted += id
+        DedupPhysicalDeletionResult(DedupDeletionResultCode.DELETED, true, true)
+      }
+    }
+  }
 }
 
 private class FakeResolutionRepository : DedupResolutionRepository {
@@ -395,6 +248,16 @@ private class FakeResolutionRepository : DedupResolutionRepository {
 
   override fun countResolutions() = resolutions.size.toLong()
 
+  override fun findProcessedResolutions(
+    offset: Int,
+    limit: Int,
+  ) = resolutions.values
+    .filter { it.state == DedupResolutionState.PROCESSED }
+    .drop(offset)
+    .take(limit)
+
+  override fun countProcessedResolutions() = resolutions.values.count { it.state == DedupResolutionState.PROCESSED }.toLong()
+
   override fun countResolutionsByState() = resolutions.values.groupingBy { it.state }.eachCount()
 
   override fun findResolutionMembers(resolutionId: String) = members[resolutionId].orEmpty().toList()
@@ -413,15 +276,7 @@ private class FakeResolutionRepository : DedupResolutionRepository {
   ): Boolean {
     val current = resolutions[resolutionId] ?: return false
     if (current.state !in expectedStates) return false
-    resolutions[resolutionId] =
-      current.copy(
-        state = state,
-        resultJson = resultJson,
-        completedDate = completedDate,
-        leaseToken = leaseToken ?: current.leaseToken,
-        leaseUntil = leaseUntil ?: current.leaseUntil,
-        lastModifiedDate = now,
-      )
+    resolutions[resolutionId] = current.copy(state = state, resultJson = resultJson, completedDate = completedDate, leaseToken = leaseToken ?: current.leaseToken, leaseUntil = leaseUntil ?: current.leaseUntil, lastModifiedDate = now)
     return true
   }
 
@@ -448,8 +303,8 @@ private class FakeResolutionRepository : DedupResolutionRepository {
         expectedPath = expectedPath ?: current.expectedPath,
         expectedSize = expectedSize ?: current.expectedSize,
         expectedArchiveHash = expectedArchiveHash ?: current.expectedArchiveHash,
-        resultCode = resultCode,
-        resultJson = resultJson,
+        resultCode = resultCode ?: current.resultCode,
+        resultJson = resultJson ?: current.resultJson,
         lastError = lastError,
         lastModifiedDate = now,
       )

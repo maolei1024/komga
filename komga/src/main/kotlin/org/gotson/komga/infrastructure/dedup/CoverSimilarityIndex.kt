@@ -1,6 +1,7 @@
 package org.gotson.komga.infrastructure.dedup
 
 import org.gotson.komga.domain.model.DedupFeature
+import org.gotson.komga.domain.model.DedupFeatureState
 import org.springframework.stereotype.Service
 import java.util.concurrent.atomic.AtomicReference
 
@@ -35,33 +36,55 @@ class CoverSimilarityIndex(
 
   fun count(libraryId: String): Int = snapshots.get()[libraryId]?.entries?.size ?: 0
 
-  fun findAllNeighbors(
+  fun upsertFeature(
     libraryId: String,
+    feature: DedupFeature,
+    threshold: Int,
+  ) {
+    snapshots.updateAndGet { current ->
+      val previous = current[libraryId]
+      val entries = previous?.entries.orEmpty().toMutableMap()
+      if (feature.coverState == DedupFeatureState.READY && feature.coverHash?.size == 32) {
+        entries[feature.bookId] = IndexedCover(feature.bookId, feature.sourceCoverGeneration, feature.coverHash)
+      } else {
+        entries.remove(feature.bookId)
+      }
+      current + (libraryId to Snapshot(entries, threshold))
+    }
+  }
+
+  fun removeFeature(
+    libraryId: String,
+    bookId: String,
+    threshold: Int,
+  ) {
+    snapshots.updateAndGet { current ->
+      val entries = current[libraryId]?.entries.orEmpty() - bookId
+      current + (libraryId to Snapshot(entries, threshold))
+    }
+  }
+
+  fun findNeighbors(
+    libraryId: String,
+    bookId: String,
     topK: Int,
   ): List<CoverNeighbor> {
     val snapshot = snapshots.get()[libraryId] ?: return emptyList()
-    val pairs = mutableMapOf<Pair<String, String>, Int>()
-
-    snapshot.entries.values.forEach { entry ->
-      snapshot
-        .candidateIds(entry)
-        .asSequence()
-        .filter { it != entry.bookId }
-        .mapNotNull { candidateId ->
-          val candidate = snapshot.entries[candidateId] ?: return@mapNotNull null
-          val distance = hasher.distance(entry.hash, candidate.hash)
-          candidate.takeIf { distance <= snapshot.threshold }?.let { it to distance }
-        }.sortedWith(compareBy<Pair<IndexedCover, Int>> { it.second }.thenBy { it.first.bookId })
-        .take(topK)
-        .forEach { (candidate, distance) ->
-          val pair = listOf(entry.bookId, candidate.bookId).sorted().let { it[0] to it[1] }
-          pairs.merge(pair, distance, ::minOf)
+    val entry = snapshot.entries[bookId] ?: return emptyList()
+    return snapshot
+      .candidateIds(entry)
+      .asSequence()
+      .filter { it != bookId }
+      .mapNotNull { candidateId ->
+        val candidate = snapshot.entries[candidateId] ?: return@mapNotNull null
+        val distance = hasher.distance(entry.hash, candidate.hash)
+        candidate.takeIf { distance <= snapshot.threshold }?.let {
+          val (low, high) = if (bookId < candidateId) bookId to candidateId else candidateId to bookId
+          CoverNeighbor(low, high, distance)
         }
-    }
-
-    return pairs
-      .map { (pair, distance) -> CoverNeighbor(pair.first, pair.second, distance) }
-      .sortedWith(compareBy<CoverNeighbor> { it.distance }.thenBy { it.bookLowId }.thenBy { it.bookHighId })
+      }.sortedWith(compareBy<CoverNeighbor> { it.distance }.thenBy { it.bookLowId }.thenBy { it.bookHighId })
+      .take(topK)
+      .toList()
   }
 
   private data class IndexedCover(
@@ -87,7 +110,7 @@ class CoverSimilarityIndex(
         }
       }.mapValues { it.value.toSet() }
 
-    fun candidateIds(entry: IndexedCover): Set<String> = bandKeys(entry.hash).flatMapTo(mutableSetOf()) { buckets[it].orEmpty() }
+    fun candidateIds(entry: IndexedCover): Set<String> = if (threshold >= 256) entries.keys else bandKeys(entry.hash).flatMapTo(mutableSetOf()) { buckets[it].orEmpty() }
 
     private fun bandKeys(hash: ByteArray): List<BandKey> =
       (0 until bandCount).map { band ->

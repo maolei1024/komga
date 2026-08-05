@@ -5,7 +5,10 @@ import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupEvidenceMaturity
+import org.gotson.komga.domain.model.DedupFeature
+import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupLibrarySettings
+import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionAction
 import org.gotson.komga.domain.model.DedupResolutionMember
@@ -18,11 +21,13 @@ import org.gotson.komga.domain.model.Library
 import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.model.makeLibrary
 import org.gotson.komga.domain.model.makeSeries
+import org.gotson.komga.domain.service.DedupCoverLifecycle
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.annotation.DirtiesContext
+import java.net.URL
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
@@ -31,6 +36,7 @@ import java.util.UUID
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class DedupDaoTest(
   @Autowired private val dao: DedupDao,
+  @Autowired private val exactDuplicateBookDao: ExactDuplicateBookDao,
   @Autowired private val libraryDao: LibraryDao,
   @Autowired private val seriesDao: SeriesDao,
   @Autowired private val bookDao: BookDao,
@@ -48,6 +54,81 @@ class DedupDaoTest(
     val value = DedupLibrarySettings(library.id, enabled = true, paused = true, batchSize = 25, maxDurationSeconds = 45, quietPeriodSeconds = 120)
     dao.saveLibrarySettings(value)
     assertThat(dao.findLibrarySettings(library.id)).usingRecursiveComparison().ignoringFields("createdDate", "lastModifiedDate").isEqualTo(value)
+  }
+
+  @Test
+  fun `unscanned CBZ query applies a stable DAO-level limit`() {
+    val series = makeSeries("series-${UUID.randomUUID()}", library.id)
+    seriesDao.insert(series)
+    val now = LocalDateTime.now()
+    val books =
+      listOf(
+        org.gotson.komga.domain.model
+          .Book("A", URL("file:/A.cbz"), now, 100, id = "A-${library.id}", seriesId = series.id, libraryId = library.id, createdDate = now, lastModifiedDate = now),
+        org.gotson.komga.domain.model
+          .Book("B", URL("file:/B.cbz"), now, 100, id = "B-${library.id}", seriesId = series.id, libraryId = library.id, createdDate = now.plusSeconds(1), lastModifiedDate = now.plusSeconds(1)),
+        org.gotson.komga.domain.model
+          .Book("C", URL("file:/C.cbz"), now, 100, id = "C-${library.id}", seriesId = series.id, libraryId = library.id, createdDate = now.plusSeconds(2), lastModifiedDate = now.plusSeconds(2)),
+        org.gotson.komga.domain.model
+          .Book("PDF", URL("file:/D.pdf"), now, 100, id = "D-${library.id}", seriesId = series.id, libraryId = library.id, createdDate = now.plusSeconds(3), lastModifiedDate = now.plusSeconds(3)),
+      )
+    bookDao.insert(books)
+    dao.saveFeature(
+      DedupFeature(
+        bookId = books[0].id,
+        seriesId = series.id,
+        libraryId = library.id,
+        sourceContentGeneration = "content",
+        sourceCoverGeneration = "cover",
+        sourceMetadataGeneration = "metadata",
+        seriesScopeRevision = "scope",
+        featureSchemaVersion = DedupCoverLifecycle.FEATURE_SCHEMA_VERSION,
+        coverState = DedupFeatureState.WAITING,
+        coverSource = null,
+        coverHash = null,
+        coverQuality = null,
+        pageCount = null,
+        analyzedDate = now,
+        lastModifiedDate = now,
+      ),
+    )
+
+    assertThat(dao.findUnscannedBookIds(library.id, DedupCoverLifecycle.FEATURE_SCHEMA_VERSION, 1)).containsExactly(books[1].id)
+    assertThat(dao.findUnscannedBookIds(library.id, DedupCoverLifecycle.FEATURE_SCHEMA_VERSION, 10)).containsExactly(books[1].id, books[2].id)
+  }
+
+  @Test
+  fun `Book-scoped exact duplicate lookup never crosses Library boundaries`() {
+    val otherLibrary = makeLibrary("dedup-other-${UUID.randomUUID()}")
+    libraryDao.insert(otherLibrary)
+    val series = makeSeries("series-${UUID.randomUUID()}", library.id)
+    val otherSeries = makeSeries("series-${UUID.randomUUID()}", otherLibrary.id)
+    seriesDao.insert(series)
+    seriesDao.insert(otherSeries)
+    val target = makeBook("target.cbz", libraryId = library.id, seriesId = series.id).copy(fileHash = "same-hash", fileSize = 100)
+    val sameLibrary = makeBook("same.cbz", libraryId = library.id, seriesId = series.id).copy(fileHash = "same-hash", fileSize = 100)
+    val other = makeBook("other.cbz", libraryId = otherLibrary.id, seriesId = otherSeries.id).copy(fileHash = "same-hash", fileSize = 100)
+    bookDao.insert(listOf(target, sameLibrary, other))
+
+    assertThat(exactDuplicateBookDao.findExactDuplicatesForBook(target.id).map { it.id })
+      .containsExactlyInAnyOrder(target.id, sameLibrary.id)
+  }
+
+  @Test
+  fun `KEEP_BOTH decisions use canonical unique pairs and cascade with Book deletion`() {
+    val series = makeSeries("series-${UUID.randomUUID()}", library.id)
+    seriesDao.insert(series)
+    val low = makeBook("low.cbz", libraryId = library.id, seriesId = series.id, id = "A-${UUID.randomUUID()}")
+    val high = makeBook("high.cbz", libraryId = library.id, seriesId = series.id, id = "B-${UUID.randomUUID()}")
+    bookDao.insert(listOf(low, high))
+    val decision = DedupPairDecision(low.id, high.id, resolutionId = null, actorId = "admin")
+
+    dao.savePairDecisions(listOf(decision))
+    dao.savePairDecisions(listOf(decision.copy(actorId = "other")))
+
+    assertThat(dao.findPairDecisions(library.id)).singleElement().extracting("actorId").isEqualTo("other")
+    bookDao.delete(low.id)
+    assertThat(dao.findPairDecisions(library.id)).isEmpty()
   }
 
   @Test

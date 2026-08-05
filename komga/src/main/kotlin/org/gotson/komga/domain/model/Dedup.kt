@@ -14,6 +14,8 @@ data class DedupLibrarySettings(
   val coverTopK: Int = 20,
   val createdDate: LocalDateTime = LocalDateTime.now(),
   val lastModifiedDate: LocalDateTime = createdDate,
+  val lastBatchDate: LocalDateTime? = null,
+  val lastBatchBookCount: Int = 0,
 ) {
   init {
     require(scanInterval != Library.ScanInterval.DISABLED) { "Use enabled=false instead of a disabled interval" }
@@ -22,13 +24,12 @@ data class DedupLibrarySettings(
     require(quietPeriodSeconds >= 0) { "Quiet period cannot be negative" }
     require(coverCandidateDistance in 0..256) { "Cover candidate distance must be between 0 and 256" }
     require(coverTopK > 0) { "Cover top-K must be positive" }
+    require(lastBatchBookCount >= 0) { "Last batch Book count cannot be negative" }
   }
 }
 
 enum class DedupWorkType {
-  RECONCILE_EXACT_DUPLICATES,
-  COMPUTE_COVER,
-  FIND_COVER_NEIGHBORS,
+  SCAN_BOOK,
   VERIFY_RELATION,
   REBUILD_CLUSTERS,
 }
@@ -134,6 +135,23 @@ enum class DedupRelationStatus {
   FAILED_REVIEW,
 }
 
+enum class DedupPairDecisionType {
+  KEEP_BOTH,
+}
+
+data class DedupPairDecision(
+  val bookLowId: String,
+  val bookHighId: String,
+  val decision: DedupPairDecisionType = DedupPairDecisionType.KEEP_BOTH,
+  val resolutionId: String?,
+  val actorId: String,
+  val createdDate: LocalDateTime = LocalDateTime.now(),
+) {
+  init {
+    require(bookLowId < bookHighId) { "Dedup pair decision Book IDs must use canonical order" }
+  }
+}
+
 data class DedupFeature(
   val bookId: String,
   val seriesId: String,
@@ -189,7 +207,8 @@ const val DEDUP_ARCHIVE_HASH_SCHEMA_VERSION = 1
 fun dedupContentGeneration(
   fileSize: Long,
   archiveHash: String?,
-): String = "dedup-v2:$fileSize:${archiveHash ?: "UNHASHED"}"
+  sourceFingerprint: String? = null,
+): String = "dedup-v2:$fileSize:${sourceFingerprint?.takeIf(String::isNotBlank) ?: "UNHASHED"}:${archiveHash ?: "UNHASHED"}"
 
 data class DedupPageFeature(
   val bookId: String,
@@ -285,11 +304,4 @@ data class DedupGorseSync(
   val createdDate: LocalDateTime,
   val lastModifiedDate: LocalDateTime,
   val completedDate: LocalDateTime?,
-)
-
-data class DedupLocalStateSnapshot(
-  val bookId: String,
-  val revision: String,
-  val reasonCodes: Set<String>,
-  val details: Map<String, Any>,
 )

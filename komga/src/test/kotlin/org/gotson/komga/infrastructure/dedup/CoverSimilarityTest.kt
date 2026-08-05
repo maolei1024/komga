@@ -28,20 +28,37 @@ class CoverSimilarityTest {
   }
 
   @Test
-  fun `pairwise neighbors do not turn a similarity bridge into a transitive cluster`() {
+  fun `target lookup returns only the requested Books nearest neighbors`() {
     val a = ByteArray(32)
     val b = a.copyOf().also { it[0] = 0b10000000.toByte() }
     val c = b.copyOf().also { it[31] = 0b00000001.toByte() }
     val index = CoverSimilarityIndex(hasher)
     index.replaceLibrary("library", listOf(feature("A", a), feature("B", b), feature("C", c)), threshold = 1)
 
-    assertThat(index.findAllNeighbors("library", topK = 1))
+    assertThat(index.findNeighbors("library", "A", topK = 1))
       .extracting("bookLowId", "bookHighId", "distance")
-      .containsExactlyInAnyOrder(
+      .containsExactly(
         org.assertj.core.groups.Tuple
           .tuple("A", "B", 1),
+      )
+    assertThat(index.findNeighbors("library", "C", topK = 1))
+      .extracting("bookLowId", "bookHighId", "distance")
+      .containsExactly(
         org.assertj.core.groups.Tuple
           .tuple("B", "C", 1),
+      )
+  }
+
+  @Test
+  fun `maximum distance threshold considers complementary hashes`() {
+    val index = CoverSimilarityIndex(hasher)
+    index.replaceLibrary("library", listOf(feature("A", ByteArray(32)), feature("B", ByteArray(32) { 0xff.toByte() })), threshold = 256)
+
+    assertThat(index.findNeighbors("library", "A", topK = 1))
+      .extracting("bookLowId", "bookHighId", "distance")
+      .containsExactly(
+        org.assertj.core.groups.Tuple
+          .tuple("A", "B", 256),
       )
   }
 

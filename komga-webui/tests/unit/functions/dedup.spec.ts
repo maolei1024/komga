@@ -1,59 +1,34 @@
-import {currentPageVerificationRequests, formatBytes, isCurrentClusterEligibility, mergeEligibilityReasons, resolutionSeriesResults} from '@/functions/dedup'
-import {DedupClusterSummaryDto, DedupEligibilityReasonDto} from '@/types/komga-dedup'
+import {customActionKey, formatDedupBytes, resolutionCounts} from '@/functions/dedup'
+import {DedupResolutionDto} from '@/types/komga-dedup'
 
-describe('duplicate cluster helpers', () => {
-  it('rejects stale eligibility for a newer cluster revision', () => {
-    const cluster = summary('cluster', 2, true)
-    expect(isCurrentClusterEligibility(cluster, {clusterId: 'cluster', expectedRevision: 1} as any)).toBe(false)
-    expect(isCurrentClusterEligibility(cluster, {clusterId: 'cluster', expectedRevision: 2} as any)).toBe(true)
+describe('dedup helpers', () => {
+  it('formats file sizes without implying precision that is not available', () => {
+    expect(formatDedupBytes(null)).toBe('—')
+    expect(formatDedupBytes(512)).toBe('512 B')
+    expect(formatDedupBytes(1536)).toBe('1.5 KiB')
+    expect(formatDedupBytes(12 * 1024 * 1024)).toBe('12 MiB')
   })
 
-  it('freezes every reviewable current-page cluster id and revision', () => {
-    const clusters = [summary('cover', 3, true), summary('verified', 7, true), summary('dormant', 2, false)]
-
-    expect(currentPageVerificationRequests(clusters)).toEqual([
-      {clusterId: 'cover', expectedRevision: 3},
-      {clusterId: 'verified', expectedRevision: 7},
-    ])
+  it('counts retained and removed audit snapshots', () => {
+    expect(resolutionCounts(resolution())).toEqual({kept: 2, deleted: 1})
   })
 
-  it('merges repeated reasons and preserves a real zero while omitting null detail', () => {
-    const merged = mergeEligibilityReasons([
-      reason('LOW_COVERAGE', 'WARNING', ['B', 'A'], 0, null),
-      reason('LOW_COVERAGE', 'BLOCKER', ['A', 'B'], null, 0.9),
-    ])
-
-    expect(merged).toHaveLength(1)
-    expect(merged[0].severity).toBe('BLOCKER')
-    expect(merged[0].memberIds).toEqual(['A', 'B'])
-    expect(merged[0].actual).toBe(0)
-    expect(merged[0].threshold).toBe(0.9)
-  })
-
-  it('formats zero and unavailable file sizes explicitly', () => {
-    expect(formatBytes(0)).toBe('0 B')
-    expect(formatBytes(null)).toBe('—')
-    expect(formatBytes(1024 * 1024)).toBe('1.0 MB')
-  })
-
-  it('exposes every persisted per-Series Gorse result in stable order', () => {
-    expect(resolutionSeriesResults({series: {
-      z: {seriesId: 'z', state: 'FAILED', expectedHidden: true, error: 'readback mismatch'},
-      a: {seriesId: 'a', state: 'NOT_APPLICABLE', expectedHidden: null, error: null},
-    }})).toEqual([
-      {seriesId: 'a', state: 'NOT_APPLICABLE', expectedHidden: null, error: null},
-      {seriesId: 'z', state: 'FAILED', expectedHidden: true, error: 'readback mismatch'},
-    ])
+  it('uses an explicit retain-all label when no Book is marked', () => {
+    expect(customActionKey(0)).toBe('dedup.keepAll')
+    expect(customActionKey(2)).toBe('dedup.applySelection')
   })
 })
 
-function summary(id: string, revision: number, reviewable: boolean): DedupClusterSummaryDto {
+function resolution(): DedupResolutionDto {
   return {
-    id, revision, reviewable, libraryId: 'library', status: 'UNPROCESSED', memberCount: 2, coverMembers: [],
-    verifiedPairs: 0, totalPairs: 1, evidenceMaturity: 'COVER_ONLY', lastModified: '2026-08-04T00:00:00Z',
+    id: 'resolution', clusterId: 'cluster', clusterRevision: 1, mode: 'CUSTOM', state: 'PROCESSED', actorId: 'admin',
+    result: {}, created: '2026-08-05T00:00:00Z', lastModified: '2026-08-05T00:00:00Z', completed: '2026-08-05T00:00:01Z',
+    members: [
+      member('A', 'KEEP'), member('B', 'DELETE'), member('C', 'KEEP'),
+    ],
   }
 }
 
-function reason(code: string, severity: 'BLOCKER' | 'WARNING', memberIds: string[], actual: unknown, threshold: unknown): DedupEligibilityReasonDto {
-  return {code, severity, memberIds, actual, threshold, appliesTo: ['SUGGESTED'], confirmationRequired: false, scope: 'PAIR'}
+function member(bookId: string, action: 'KEEP' | 'DELETE') {
+  return {bookId, seriesId: `series-${bookId}`, action, title: bookId, path: `/${bookId}.cbz`, state: 'COMPLETED'}
 }

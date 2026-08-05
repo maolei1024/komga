@@ -50,18 +50,49 @@ class ExactDuplicateBookDao(
       .where(DSL.row(b.FILE_HASH, b.FILE_SIZE).`in`(duplicateIdentities))
       .and(condition)
       .orderBy(b.FILE_HASH, b.FILE_SIZE, b.ID)
-      .fetch {
-        ExactDuplicateBook(
-          id = it[b.ID]!!,
-          seriesId = it[b.SERIES_ID]!!,
-          libraryId = it[b.LIBRARY_ID]!!,
-          name = it[b.NAME]!!,
-          url = it[b.URL]!!,
-          fileHash = it[b.FILE_HASH]!!,
-          fileSize = it[b.FILE_SIZE]!!,
-          oneshot = it[b.ONESHOT]!!,
-          deleted = it[b.DELETED_DATE] != null,
-        )
-      }
+      .fetch(::toDomain)
   }
+
+  override fun findExactDuplicatesForBook(bookId: String): List<ExactDuplicateBook> {
+    val target =
+      dslRO
+        .select(b.FILE_HASH, b.FILE_SIZE, b.LIBRARY_ID)
+        .from(b)
+        .where(b.ID.eq(bookId))
+        .and(b.DELETED_DATE.isNull)
+        .fetchOne() ?: return emptyList()
+    val hash = target[b.FILE_HASH].orEmpty()
+    if (hash.isBlank()) return emptyList()
+    return dslRO
+      .select(
+        b.ID,
+        b.SERIES_ID,
+        b.LIBRARY_ID,
+        b.NAME,
+        b.URL,
+        b.FILE_HASH,
+        b.FILE_SIZE,
+        b.ONESHOT,
+        b.DELETED_DATE,
+      ).from(b)
+      .where(b.FILE_HASH.eq(hash))
+      .and(b.FILE_SIZE.eq(target[b.FILE_SIZE]))
+      .and(b.LIBRARY_ID.eq(target[b.LIBRARY_ID]))
+      .and(b.DELETED_DATE.isNull)
+      .orderBy(b.ID)
+      .fetch(::toDomain)
+  }
+
+  private fun toDomain(record: org.jooq.Record): ExactDuplicateBook =
+    ExactDuplicateBook(
+      id = record[b.ID]!!,
+      seriesId = record[b.SERIES_ID]!!,
+      libraryId = record[b.LIBRARY_ID]!!,
+      name = record[b.NAME]!!,
+      url = record[b.URL]!!,
+      fileHash = record[b.FILE_HASH]!!,
+      fileSize = record[b.FILE_SIZE]!!,
+      oneshot = record[b.ONESHOT]!!,
+      deleted = record[b.DELETED_DATE] != null,
+    )
 }

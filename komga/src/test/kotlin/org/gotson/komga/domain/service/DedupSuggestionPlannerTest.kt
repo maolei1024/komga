@@ -8,14 +8,12 @@ import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
-import org.gotson.komga.domain.model.DedupLocalStateSnapshot
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupResolutionAction
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
-import org.gotson.komga.domain.persistence.DedupResolutionRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URL
@@ -23,92 +21,114 @@ import java.time.LocalDateTime
 
 class DedupSuggestionPlannerTest {
   private val repository = mockk<DedupRepository>()
-  private val resolutions = mockk<DedupResolutionRepository>()
   private val books = mockk<BookRepository>()
   private val cover = mockk<DedupCoverLifecycle>()
-  private val localState = mockk<DedupLocalStateLifecycle>()
-  private val deletion = mockk<DedupPhysicalBookDeletionLifecycle>()
   private val clusters = mockk<DedupClusterLifecycle>()
-  private val planner = DedupSuggestionPlanner(repository, resolutions, books, cover, localState, deletion, clusters)
+  private val planner = DedupSuggestionPlanner(repository, books, cover, clusters)
 
   @BeforeEach
   fun defaults() {
-    every { resolutions.hasActiveResolutionForBooks(any()) } returns false
-    every { books.findByIdOrNull(any()) } answers { book(firstArg()) }
-    every { deletion.precheck(any()) } returns DedupFilePrecheck(DedupFilePrecheckStatus.AVAILABLE, "/tmp/book.cbz", 10, 10)
-    every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
-    every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("topology", "evidence", "state")
+    every { repository.findPageFeatures(any(), any(), any()) } returns emptyList()
   }
 
   @Test
-  fun `two directly safe subgroups produce multiple keepers and every delete keeps direct evidence`() {
-    val value = cluster("A", "B", "C", "D")
-    identities("A", "B", "C", "D")
-    val relations = listOf(exact("A", "B"), exact("C", "D"))
-    every { repository.findRelationsForBooks(any()) } returns relations
+  fun `contained 1 to 5 sequence keeps the 1 to 20 container`() {
+    setup(listOf(identity("short", 5), identity("long", 20)), listOf(relation("short", "long", DedupRelationType.CONTAINED_IN).copy(containedBookId = "short", containerBookId = "long")))
 
-    val plan = planner.evaluate(value).plan!!
+    val plan = planner.evaluate(cluster("short", "long")).plan!!
 
-    assertThat(plan.keepCount).isEqualTo(2)
-    assertThat(plan.deleteCount).isEqualTo(2)
-    plan.members.filter { it.action == DedupResolutionAction.DELETE }.forEach { member ->
-      assertThat(relations).anyMatch { it.id == member.directRelationId && setOf(it.bookLowId, it.bookHighId) == setOf(member.bookId, member.keeperBookId) }
+    assertThat(plan.members.single { it.action == DedupResolutionAction.KEEP }.bookId).isEqualTo("long")
+    assertThat(plan.members.single { it.action == DedupResolutionAction.DELETE }.bookId).isEqualTo("short")
+  }
+
+  @Test
+  fun `similar titles without verified containment do not produce a suggestion`() {
+    setup(listOf(identity("A", 5), identity("B", 20)), emptyList(), names = mapOf("A" to "Story 1-5", "B" to "Story 1-20"))
+
+    assertThat(planner.evaluate(cluster("A", "B")).plan).isNull()
+  }
+
+  @Test
+  fun `exact page duplicates choose the unique higher bytes per page Book`() {
+    setup(
+      listOf(identity("A", 10), identity("B", 10)),
+      listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
+      sizes = mapOf("A" to 1_000L, "B" to 2_000L),
+    )
+
+    val plan = planner.evaluate(cluster("A", "B")).plan!!
+
+    assertThat(plan.members.single { it.action == DedupResolutionAction.KEEP }.bookId).isEqualTo("B")
+  }
+
+  @Test
+  fun `semantic quality tie returns no suggestion instead of breaking it by Book ID`() {
+    setup(
+      listOf(identity("A", 10), identity("B", 10)),
+      listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
+      sizes = mapOf("A" to 1_000L, "B" to 1_000L),
+    )
+
+    assertThat(planner.evaluate(cluster("A", "B")).plan).isNull()
+  }
+
+  @Test
+  fun `risk relation types never create automatic deletion suggestions`() {
+    setup(listOf(identity("A", 10), identity("B", 10)), listOf(relation("A", "B", DedupRelationType.PARTIAL_OVERLAP)))
+
+    assertThat(planner.evaluate(cluster("A", "B")).plan).isNull()
+  }
+
+  private fun setup(
+    identities: List<DedupSourceIdentity>,
+    relations: List<DedupRelation>,
+    sizes: Map<String, Long> = emptyMap(),
+    names: Map<String, String> = emptyMap(),
+  ) {
+    identities.forEach { identity ->
+      every { cover.currentSourceIdentity(identity.bookId) } returns identity
+      every { books.findByIdOrNull(identity.bookId) } returns
+        Book(
+          name = names[identity.bookId] ?: identity.bookId,
+          url = URL("file:/tmp/${identity.bookId}.cbz"),
+          fileLastModified = LocalDateTime.MIN,
+          fileSize = sizes[identity.bookId] ?: 1_000,
+          id = identity.bookId,
+          seriesId = identity.seriesId,
+          libraryId = identity.libraryId,
+        )
     }
-  }
-
-  @Test
-  fun `local reading state wins an exact pair keeper tie`() {
-    val value = cluster("A", "B")
-    identities("A", "B")
-    every { repository.findRelationsForBooks(any()) } returns listOf(exact("A", "B"))
-    every { localState.snapshot("B") } returns DedupLocalStateSnapshot("B", "state-B", setOf("READ_PROGRESS_PRESENT"), emptyMap())
-
-    val plan = planner.evaluate(value).plan!!
-
-    assertThat(plan.members.single { it.bookId == "B" }.action).isEqualTo(DedupResolutionAction.KEEP)
-    assertThat(plan.members.single { it.bookId == "A" }.keeperBookId).isEqualTo("B")
-  }
-
-  @Test
-  fun `contained relation can only remove the subset`() {
-    val value = cluster("A", "B")
-    identities("A", "B")
-    every { repository.findRelationsForBooks(any()) } returns listOf(exact("A", "B").copy(type = DedupRelationType.CONTAINED_IN, containedBookId = "A", containerBookId = "B", classifierRuleVersion = 2))
-
-    val plan = planner.evaluate(value).plan!!
-
-    assertThat(plan.members.single { it.action == DedupResolutionAction.DELETE }.bookId).isEqualTo("A")
-    assertThat(plan.members.single { it.bookId == "A" }.keeperBookId).isEqualTo("B")
+    every { clusters.currentReviewRelations(any()) } returns relations
   }
 
   private fun cluster(vararg ids: String): DedupClusterWithMembers {
     val now = LocalDateTime.now()
-    val cluster = DedupCluster("cluster", "library", 1, DedupClusterStatus.UNPROCESSED, true, ids.first(), "topology", "evidence", "state", null, null, null, null, now, now, null)
-    return DedupClusterWithMembers(cluster, ids.map { DedupClusterMember("cluster", it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
+    val value = DedupCluster("cluster", "library", 1, DedupClusterStatus.UNPROCESSED, true, ids.first(), "topology", "evidence", "state", null, null, null, null, now, now, null)
+    return DedupClusterWithMembers(value, ids.map { DedupClusterMember("cluster", it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
   }
 
-  private fun identities(vararg ids: String) {
-    ids.forEach { id -> every { cover.currentSourceIdentity(id) } returns identity(id) }
-  }
+  private fun identity(
+    id: String,
+    pages: Int,
+  ) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", pages)
 
-  private fun identity(id: String) =
-    DedupSourceIdentity(
-      id,
-      "series-$id",
+  private fun relation(
+    first: String,
+    second: String,
+    type: DedupRelationType,
+  ): DedupRelation {
+    val low = minOf(first, second)
+    val high = maxOf(first, second)
+    return DedupRelation(
+      "relation-$low-$high",
       "library",
-      "content-$id",
-      "cover-$id",
-      "metadata-$id",
-      "scope-$id",
-      10,
-      org.gotson.komga.domain.model.DedupArchiveHashState.READY,
-      "hash-$id",
+      low,
+      high,
+      "content-$low",
+      "content-$high",
+      type = type,
+      featureSchemaVersion = DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION,
+      classifierRuleVersion = DedupDeepVerificationLifecycle.CLASSIFIER_RULE_VERSION,
     )
-
-  private fun exact(
-    left: String,
-    right: String,
-  ) = DedupRelation("relation-$left-$right", "library", left, right, "content-$left", "content-$right", type = DedupRelationType.EXACT_FILE)
-
-  private fun book(id: String) = Book(id, URL("file:/tmp/$id.cbz"), LocalDateTime.MIN, 10, id = id, seriesId = "series-$id", libraryId = "library")
+  }
 }

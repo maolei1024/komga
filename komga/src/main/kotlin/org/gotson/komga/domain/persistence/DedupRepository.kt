@@ -9,6 +9,7 @@ import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupPageFeature
+import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupWork
 import org.gotson.komga.domain.model.DedupWorkState
@@ -22,6 +23,12 @@ interface DedupRepository {
   fun findAllLibrarySettings(): List<DedupLibrarySettings>
 
   fun saveLibrarySettings(settings: DedupLibrarySettings)
+
+  fun updateLibraryBatchResult(
+    libraryId: String,
+    processedBookCount: Int,
+    completedDate: LocalDateTime = LocalDateTime.now(),
+  )
 
   fun enqueueWork(
     id: String,
@@ -70,18 +77,26 @@ interface DedupRepository {
 
   fun countWorkByState(): Map<DedupWorkState, Int>
 
+  fun countPendingWork(type: DedupWorkType): Int
+
+  /** Stable DAO-level LIMIT query for active CBZ Books without the current feature schema. */
+  fun findUnscannedBookIds(
+    libraryId: String,
+    featureSchemaVersion: Int,
+    limit: Int,
+  ): List<String>
+
   fun findFeature(bookId: String): DedupFeature?
 
   fun findFeatures(bookIds: Set<String>): List<DedupFeature>
 
   fun findReadyCoverFeatures(libraryId: String): List<DedupFeature>
 
+  fun findFeaturesByLibrary(libraryId: String): List<DedupFeature>
+
   fun saveFeature(feature: DedupFeature)
 
-  fun deleteFeaturesNotIn(
-    libraryId: String,
-    activeBookIds: Set<String>,
-  ): Int
+  fun deleteBookData(bookId: String)
 
   fun findPageFeatures(
     bookId: String,
@@ -107,17 +122,21 @@ interface DedupRepository {
 
   fun saveRelation(relation: DedupRelation)
 
-  fun replaceExactRelations(
-    libraryId: String,
+  fun replaceExactRelationsForBook(
+    bookId: String,
     relations: Collection<DedupRelation>,
     now: LocalDateTime = LocalDateTime.now(),
   )
 
-  fun replaceCoverRelations(
-    libraryId: String,
+  fun replaceCoverRelationsForBook(
+    bookId: String,
     relations: Collection<DedupRelation>,
     now: LocalDateTime = LocalDateTime.now(),
   )
+
+  fun findPairDecisions(libraryId: String): List<DedupPairDecision>
+
+  fun savePairDecisions(decisions: Collection<DedupPairDecision>)
 
   fun findCluster(clusterId: String): DedupClusterWithMembers?
 
@@ -140,6 +159,14 @@ interface DedupRepository {
   ): Long
 
   fun countClustersByStatus(): Map<DedupClusterStatus, Int>
+
+  fun findUnresolvedClusters(
+    libraryId: String? = null,
+    offset: Int = 0,
+    limit: Int = 20,
+  ): List<DedupClusterWithMembers>
+
+  fun countUnresolvedClusters(libraryId: String? = null): Long
 
   fun lockLibraryForClusterRebuild(libraryId: String)
 

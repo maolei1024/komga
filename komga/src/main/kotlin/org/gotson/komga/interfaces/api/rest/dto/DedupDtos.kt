@@ -1,32 +1,22 @@
 package org.gotson.komga.interfaces.api.rest.dto
 
-import com.fasterxml.jackson.annotation.JsonFormat
 import com.fasterxml.jackson.databind.JsonNode
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
-import jakarta.validation.constraints.Size
-import org.gotson.komga.domain.model.DedupClusterStatus
-import org.gotson.komga.domain.model.DedupEligibilityReport
-import org.gotson.komga.domain.model.DedupEvidenceMaturity
-import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupResolutionAction
-import org.gotson.komga.domain.model.DedupResolutionMemberState
 import org.gotson.komga.domain.model.DedupResolutionMode
 import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.model.Library
 import java.time.LocalDateTime
 
-data class DedupSettingsDto(
-  val libraries: List<DedupLibrarySettingsDto>,
-)
-
 data class DedupLibrarySettingsDto(
   val libraryId: String,
+  val libraryName: String,
   val enabled: Boolean,
   val paused: Boolean,
   val scanInterval: Library.ScanInterval,
@@ -35,67 +25,53 @@ data class DedupLibrarySettingsDto(
   val quietPeriodSeconds: Int,
   val coverCandidateDistance: Int,
   val coverTopK: Int,
-) {
-  constructor(value: DedupLibrarySettings) : this(
-    value.libraryId,
-    value.enabled,
-    value.paused,
-    value.scanInterval,
-    value.batchSize,
-    value.maxDurationSeconds,
-    value.quietPeriodSeconds,
-    value.coverCandidateDistance,
-    value.coverTopK,
-  )
-}
+  val lastBatchDate: LocalDateTime?,
+  val lastBatchBookCount: Int,
+)
 
-data class DedupSettingsUpdateDto(
-  @field:NotEmpty @field:Valid val libraries: List<DedupLibrarySettingsUpdateDto>,
+data class DedupSettingsDto(
+  val libraries: List<DedupLibrarySettingsDto>,
 )
 
 data class DedupLibrarySettingsUpdateDto(
   @field:NotBlank val libraryId: String,
   val enabled: Boolean,
   val paused: Boolean = false,
-  val scanInterval: Library.ScanInterval = Library.ScanInterval.DAILY,
-  @field:Min(1) val batchSize: Int = 100,
-  @field:Min(1) val maxDurationSeconds: Int = 300,
-  @field:Min(0) val quietPeriodSeconds: Int = 180,
-  @field:Min(0) @field:Max(256) val coverCandidateDistance: Int = 15,
-  @field:Min(1) val coverTopK: Int = 20,
+  val scanInterval: Library.ScanInterval,
+  @field:Min(1) @field:Max(10_000) val batchSize: Int,
+  @field:Min(1) @field:Max(86_400) val maxDurationSeconds: Int = 300,
+  @field:Min(0) @field:Max(86_400) val quietPeriodSeconds: Int = 180,
+  @field:Min(0) @field:Max(256) val coverCandidateDistance: Int,
+  @field:Min(1) @field:Max(1_000) val coverTopK: Int,
+)
+
+data class DedupSettingsUpdateDto(
+  @field:Valid @field:NotEmpty val libraries: List<DedupLibrarySettingsUpdateDto>,
+)
+
+data class DedupLibraryRunStatusDto(
+  val libraryId: String,
+  val libraryName: String,
+  val lastBatchDate: LocalDateTime?,
+  val lastBatchBookCount: Int,
+  val nextBatchDate: LocalDateTime?,
+)
+
+data class DedupStatusDto(
+  val pendingScanBooks: Int,
+  val automaticVerificationPairs: Int,
+  val unresolvedClusters: Long,
+  val processedResolutions: Long,
+  val enabledLibraries: Int,
+  val libraries: List<DedupLibraryRunStatusDto>,
 )
 
 data class DedupLibrarySelectionDto(
-  val libraryIds: Set<String> = emptySet(),
+  val libraryIds: List<String> = emptyList(),
 )
 
 data class DedupScanResultDto(
   val requestedLibraries: Int,
-)
-
-data class DedupStatusDto(
-  val work: Map<String, Int>,
-  val clusters: Map<String, Int>,
-  val resolutions: Map<String, Int>,
-  val gorseSync: Map<String, Int>,
-  val enabledLibraries: Int,
-  val pausedLibraries: Int,
-)
-
-data class DedupClusterSummaryDto(
-  val id: String,
-  val libraryId: String,
-  val revision: Long,
-  val status: DedupClusterStatus,
-  val reviewable: Boolean,
-  val memberCount: Int,
-  val coverMembers: List<DedupClusterCoverMemberDto>,
-  val verifiedPairs: Int,
-  val totalPairs: Int,
-  val evidenceMaturity: DedupEvidenceMaturity,
-  val reopenReason: String?,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val lastModified: LocalDateTime,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val processed: LocalDateTime?,
 )
 
 data class DedupClusterCoverMemberDto(
@@ -104,11 +80,16 @@ data class DedupClusterCoverMemberDto(
   val thumbnailUrl: String,
 )
 
-data class DedupClusterDetailDto(
-  val summary: DedupClusterSummaryDto,
-  val members: List<DedupClusterMemberDto>,
-  val relations: List<DedupRelationDto>,
-  val lastResolution: DedupResolutionSummaryDto?,
+data class DedupClusterSummaryDto(
+  val id: String,
+  val libraryId: String,
+  val revision: Long,
+  val title: String?,
+  val memberCount: Int,
+  val coverMembers: List<DedupClusterCoverMemberDto>,
+  val hasSuggestion: Boolean,
+  val lastModified: LocalDateTime,
+  val lastAttemptError: String? = null,
 )
 
 data class DedupClusterMemberDto(
@@ -118,51 +99,7 @@ data class DedupClusterMemberDto(
   val path: String?,
   val fileSize: Long?,
   val pageCount: Int?,
-  val activeBookCountInSeries: Int,
-  val inMvpScope: Boolean,
   val thumbnailUrl: String,
-)
-
-data class DedupClusterProcessingDto(
-  val clusterId: String,
-  val revision: Long,
-  val stateRevision: String,
-  val members: List<DedupClusterMemberProcessingDto>,
-  val suggestedPlan: DedupPlanDto?,
-  val eligibility: DedupEligibilityReport,
-  val recovery: DedupResolutionRecoveryDto?,
-)
-
-data class DedupClusterMemberProcessingDto(
-  val bookId: String,
-  val archiveHashState: String,
-  val localStateReasonCodes: Set<String>,
-  val localState: Map<String, Any>,
-)
-
-data class DedupResolutionRecoveryDto(
-  val resolutionId: String,
-  val action: String,
-)
-
-data class DedupClusterEligibilityRequestDto(
-  @field:Size(min = 1, max = 20) @field:Valid val clusters: List<DedupClusterVerificationRequestDto>,
-)
-
-data class DedupClusterEligibilityBatchDto(
-  val items: List<DedupClusterEligibilityDto>,
-)
-
-data class DedupClusterEligibilityDto(
-  val clusterId: String,
-  val expectedRevision: Long,
-  val status: String,
-  val suggestionPlanAvailable: Boolean = false,
-  val suggestedPlanEligible: Boolean = false,
-  val suggestedKeepCount: Int = 0,
-  val suggestedDeleteCount: Int = 0,
-  val blockerCodes: List<String> = emptyList(),
-  val error: String? = null,
 )
 
 data class DedupRelationDto(
@@ -185,115 +122,23 @@ data class DedupRelationDto(
   val evidence: JsonNode?,
 )
 
+data class DedupPlanMemberDto(
+  val bookId: String,
+  val action: DedupResolutionAction,
+)
+
 data class DedupPlanDto(
-  val revision: String,
   val keepCount: Int,
   val deleteCount: Int,
   val members: List<DedupPlanMemberDto>,
 )
 
-data class DedupPlanMemberDto(
-  val bookId: String,
-  val action: DedupResolutionAction,
-  val keeperBookId: String?,
-  val directRelationId: String?,
-)
-
-data class DedupBulkVerificationRequestDto(
-  @field:Size(min = 1, max = 100) @field:Valid val clusters: List<DedupClusterVerificationRequestDto>,
-)
-
-data class DedupClusterVerificationRequestDto(
-  @field:NotBlank val clusterId: String,
-  @field:Min(1) val expectedRevision: Long,
-)
-
-data class DedupSingleVerificationRequestDto(
-  @field:Min(1) val expectedRevision: Long,
-)
-
-data class DedupBulkVerificationResultDto(
-  val requestedClusters: Int,
-  val queuedClusters: Int,
-  val staleClusters: Int,
-  val failedClusters: Int,
-  val queuedPairs: Int,
-  val skippedPairs: Int,
-  val failedPairs: Int,
-  val results: List<DedupClusterVerificationResultDto>,
-)
-
-data class DedupClusterVerificationResultDto(
-  val clusterId: String,
-  val status: String,
-  val memberCount: Int,
-  val pairCount: Int,
-  val queuedPairs: Int,
-  val skippedPairs: Int,
-  val failedPairs: Int,
-)
-
-data class DedupSuggestedResolutionRequestDto(
-  @field:Min(1) val expectedRevision: Long,
-  @field:NotBlank val stateRevision: String,
-  @field:NotBlank val planRevision: String,
-)
-
-data class DedupCustomResolutionRequestDto(
-  @field:Min(1) val expectedRevision: Long,
-  @field:NotBlank val stateRevision: String,
-  @field:Size(min = 1) @field:Valid val members: List<DedupCustomResolutionMemberDto>,
-  val acknowledgedReasonCodes: List<String> = emptyList(),
-)
-
-data class DedupCustomResolutionMemberDto(
-  @field:NotBlank val bookId: String,
-  val action: DedupResolutionAction,
-  val keeperBookId: String? = null,
-)
-
-data class DedupResolutionDto(
-  val id: String,
-  val clusterId: String,
-  val clusterRevision: Long,
-  val mode: DedupResolutionMode,
-  val planRevision: String,
-  val state: DedupResolutionState,
-  val members: List<DedupResolutionMemberDto>,
-  val result: JsonNode?,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val created: LocalDateTime,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val lastModified: LocalDateTime,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val completed: LocalDateTime?,
-)
-
-data class DedupResolutionSummaryDto(
-  val id: String,
-  val mode: DedupResolutionMode,
-  val state: DedupResolutionState,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val created: LocalDateTime,
-  @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'") val completed: LocalDateTime?,
-)
-
-data class DedupResolutionMemberDto(
-  val bookId: String,
-  val seriesId: String,
-  val action: DedupResolutionAction,
-  val keeperBookId: String?,
-  val title: String,
-  val path: String,
-  val expectedSize: Long?,
-  val expectedArchiveHash: String?,
-  val state: DedupResolutionMemberState,
-  val resultCode: String?,
-  val result: JsonNode?,
-  val lastError: String?,
-)
-
-data class DedupPageComparisonDto(
-  val leftBookId: String,
-  val rightBookId: String,
-  val relationType: DedupRelationType,
-  val pages: Map<String, List<DedupPageEvidenceDto>>,
+data class DedupClusterDetailDto(
+  val summary: DedupClusterSummaryDto,
+  val members: List<DedupClusterMemberDto>,
+  val relations: List<DedupRelationDto>,
+  val suggestion: DedupPlanDto?,
+  val retryResolutionId: String? = null,
 )
 
 data class DedupPageEvidenceDto(
@@ -305,11 +150,53 @@ data class DedupPageEvidenceDto(
   val thumbnailUrl: String,
 )
 
+data class DedupPageComparisonDto(
+  val leftBookId: String,
+  val rightBookId: String,
+  val relationType: DedupRelationType,
+  val pages: Map<String, List<DedupPageEvidenceDto>>,
+)
+
+data class DedupSuggestedResolutionRequestDto(
+  @field:Min(1) val expectedRevision: Long,
+)
+
+data class DedupCustomResolutionRequestDto(
+  @field:Min(1) val expectedRevision: Long,
+  val deleteBookIds: List<String> = emptyList(),
+)
+
+data class DedupResolutionMemberDto(
+  val bookId: String,
+  val seriesId: String,
+  val action: DedupResolutionAction,
+  val title: String,
+  val path: String,
+  val expectedSize: Long?,
+  val state: String,
+  val resultCode: String?,
+  val result: JsonNode?,
+  val lastError: String?,
+)
+
+data class DedupResolutionDto(
+  val id: String,
+  val clusterId: String,
+  val clusterRevision: Long,
+  val mode: DedupResolutionMode,
+  val state: DedupResolutionState,
+  val actorId: String,
+  val members: List<DedupResolutionMemberDto>,
+  val result: JsonNode?,
+  val created: LocalDateTime,
+  val lastModified: LocalDateTime,
+  val completed: LocalDateTime?,
+)
+
 data class DedupConflictDto(
   val code: String,
   val message: String,
-  val resolutionId: String?,
-  val clusterState: DedupClusterStatus?,
-  val partial: Boolean,
-  val resolution: DedupResolutionDto?,
+  val resolutionId: String? = null,
+  val partial: Boolean = false,
+  val resolution: DedupResolutionDto? = null,
 )

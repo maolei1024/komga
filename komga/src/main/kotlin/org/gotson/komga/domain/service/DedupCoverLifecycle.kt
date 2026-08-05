@@ -7,13 +7,13 @@ import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupRelation
+import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.model.ThumbnailBook
 import org.gotson.komga.domain.model.dedupContentGeneration
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
-import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ThumbnailBookRepository
 import org.gotson.komga.infrastructure.dedup.CoverPerceptualHasher
@@ -28,43 +28,30 @@ class DedupCoverLifecycle(
   private val bookRepository: BookRepository,
   private val mediaRepository: MediaRepository,
   private val thumbnailBookRepository: ThumbnailBookRepository,
-  private val exactDuplicateBookRepository: ExactDuplicateBookRepository,
   private val dedupRepository: DedupRepository,
   private val coverHasher: CoverPerceptualHasher,
   private val coverIndex: CoverSimilarityIndex,
   private val objectMapper: ObjectMapper,
 ) {
   companion object {
-    const val FEATURE_SCHEMA_VERSION = 1
+    const val FEATURE_SCHEMA_VERSION = 2
   }
 
-  fun findDirtyBookIds(libraryId: String): List<String> {
-    val eligible = eligibleBooks(libraryId)
-    dedupRepository.deleteFeaturesNotIn(libraryId, eligible.map { it.id }.toSet())
-    return eligible
-      .filter { book ->
-        val source = sourceSnapshot(book) ?: return@filter false
-        val current = dedupRepository.findFeature(book.id)
-        current == null ||
-          current.featureSchemaVersion != FEATURE_SCHEMA_VERSION ||
-          current.sourceContentGeneration != source.contentGeneration ||
-          current.sourceCoverGeneration != source.coverGeneration ||
-          current.sourceMetadataGeneration != source.metadataGeneration ||
-          current.seriesScopeRevision != source.scopeRevision ||
-          current.coverState == DedupFeatureState.STALE
-      }.map { it.id }
+  fun rebuildIndex(libraryId: String) {
+    val settings = dedupRepository.findLibrarySettings(libraryId) ?: return
+    coverIndex.replaceLibrary(libraryId, dedupRepository.findReadyCoverFeatures(libraryId), settings.coverCandidateDistance)
   }
 
-  fun computeCover(bookId: String) {
-    val book = bookRepository.findByIdOrNull(bookId) ?: return
-    val before = sourceSnapshot(book) ?: return
+  fun computeCover(bookId: String): DedupFeature? {
+    val book = bookRepository.findByIdOrNull(bookId) ?: return null
+    val before = sourceSnapshot(book) ?: return null
     val now = LocalDateTime.now()
     val bytes = before.thumbnail?.thumbnail
     val hashResult = bytes?.let(coverHasher::hash)
     val after = bookRepository.findByIdOrNull(bookId)?.let(::sourceSnapshot)
     check(after != null && before.matches(after)) { "Book or selected thumbnail changed during cover analysis" }
 
-    dedupRepository.saveFeature(
+    val feature =
       DedupFeature(
         bookId = book.id,
         seriesId = book.seriesId,
@@ -91,29 +78,30 @@ class DedupCoverLifecycle(
         archiveHashSize = before.archiveHashSize,
         archiveHashSchemaVersion = before.archiveHashSchemaVersion,
         archiveHashDate = before.archiveHashDate,
-      ),
-    )
+      )
+    dedupRepository.saveFeature(feature)
+    dedupRepository.findLibrarySettings(book.libraryId)?.let { settings ->
+      coverIndex.upsertFeature(book.libraryId, feature, settings.coverCandidateDistance)
+    }
+    return feature
   }
 
-  fun rebuildCandidates(libraryId: String): Int {
-    val settings = dedupRepository.findLibrarySettings(libraryId) ?: return 0
-    val features = dedupRepository.findReadyCoverFeatures(libraryId)
-    coverIndex.replaceLibrary(libraryId, features, settings.coverCandidateDistance)
-    val byBookId = features.associateBy { it.bookId }
-    val exactPairs = exactPairs(libraryId)
+  fun refreshCandidatesForBook(bookId: String): List<Pair<String, String>> {
+    val target = dedupRepository.findFeature(bookId) ?: return emptyList()
+    val settings = dedupRepository.findLibrarySettings(target.libraryId) ?: return emptyList()
+    val neighbors = coverIndex.findNeighbors(target.libraryId, bookId, settings.coverTopK)
+    val features = dedupRepository.findFeatures(neighbors.flatMap { listOf(it.bookLowId, it.bookHighId) }.toSet()).associateBy { it.bookId }
     val now = LocalDateTime.now()
     val relations =
-      coverIndex
-        .findAllNeighbors(libraryId, settings.coverTopK)
-        .filterNot { (it.bookLowId to it.bookHighId) in exactPairs }
+      neighbors
         .mapNotNull { neighbor ->
-          val low = byBookId[neighbor.bookLowId] ?: return@mapNotNull null
-          val high = byBookId[neighbor.bookHighId] ?: return@mapNotNull null
+          val low = features[neighbor.bookLowId] ?: return@mapNotNull null
+          val high = features[neighbor.bookHighId] ?: return@mapNotNull null
           val pairIdentity = "${neighbor.bookLowId}|${neighbor.bookHighId}"
           val candidateRelation =
             DedupRelation(
               id = "cover-relation-${stableHash(pairIdentity)}",
-              libraryId = libraryId,
+              libraryId = target.libraryId,
               bookLowId = neighbor.bookLowId,
               bookHighId = neighbor.bookHighId,
               lowContentGeneration = low.sourceContentGeneration,
@@ -123,6 +111,7 @@ class DedupCoverLifecycle(
               lowMetadataGeneration = low.sourceMetadataGeneration,
               highMetadataGeneration = high.sourceMetadataGeneration,
               type = DedupRelationType.VISUALLY_SIMILAR,
+              status = DedupRelationStatus.CANDIDATE,
               coverDistance = neighbor.distance,
               evidenceJson =
                 objectMapper.writeValueAsString(
@@ -136,12 +125,15 @@ class DedupCoverLifecycle(
               lastModifiedDate = now,
             )
           val currentRelation = dedupRepository.findRelation(neighbor.bookLowId, neighbor.bookHighId)
+          val identities =
+            mapOf(
+              low.bookId to low.toSourceIdentity(),
+              high.bookId to high.toSourceIdentity(),
+            )
           val relation =
             currentRelation
               ?.takeIf {
-                it.type != DedupRelationType.VISUALLY_SIMILAR &&
-                  it.lowContentGeneration == low.sourceContentGeneration &&
-                  it.highContentGeneration == high.sourceContentGeneration
+                it.isCurrent(identities)
               }?.copy(
                 lowCoverGeneration = low.sourceCoverGeneration,
                 highCoverGeneration = high.sourceCoverGeneration,
@@ -151,8 +143,25 @@ class DedupCoverLifecycle(
           relation
         }
 
-    dedupRepository.replaceCoverRelations(libraryId, relations, now)
-    return relations.size
+    dedupRepository.replaceCoverRelationsForBook(bookId, relations, now)
+    return relations
+      .filterNot { relation ->
+        val identities =
+          buildMap {
+            features[relation.bookLowId]?.let { put(it.bookId, it.toSourceIdentity()) }
+            features[relation.bookHighId]?.let { put(it.bookId, it.toSourceIdentity()) }
+          }
+        relation.isCurrent(identities)
+      }.map { it.bookLowId to it.bookHighId }
+  }
+
+  fun cleanupBook(
+    libraryId: String,
+    bookId: String,
+  ) {
+    dedupRepository.deleteBookData(bookId)
+    val threshold = dedupRepository.findLibrarySettings(libraryId)?.coverCandidateDistance ?: 15
+    coverIndex.removeFeature(libraryId, bookId, threshold)
   }
 
   fun currentContentGeneration(bookId: String): String? = bookRepository.findByIdOrNull(bookId)?.let(::sourceSnapshot)?.contentGeneration
@@ -188,7 +197,7 @@ class DedupCoverLifecycle(
     check(identity.path == expectedPath) { "Book path changed during archive hashing" }
     check(identity.size == book.fileSize) { "Archive size no longer matches Komga" }
     val feature = requireNotNull(dedupRepository.findFeature(bookId)) { "Dedup feature is unavailable" }
-    val generation = dedupContentGeneration(identity.size, identity.archiveHash)
+    val generation = dedupContentGeneration(identity.size, identity.archiveHash, book.contentFingerprint())
     dedupRepository.saveFeature(
       feature.copy(
         sourceContentGeneration = generation,
@@ -203,26 +212,10 @@ class DedupCoverLifecycle(
     )
   }
 
-  fun currentSourceIdentities(libraryId: String): List<DedupSourceIdentity> = eligibleBooks(libraryId).mapNotNull { currentSourceIdentity(it.id) }
-
-  private fun eligibleBooks(libraryId: String): List<Book> {
-    val active =
-      bookRepository
-        .findAll()
-        .filter { it.libraryId == libraryId && it.deletedDate == null && it.url.path.endsWith(".cbz", ignoreCase = true) }
-    val activeBySeries = active.groupBy { it.seriesId }
-    return active.filter { activeBySeries[it.seriesId].orEmpty().size == 1 }
-  }
+  fun currentSourceIdentities(libraryId: String): List<DedupSourceIdentity> = dedupRepository.findFeaturesByLibrary(libraryId).mapNotNull { currentSourceIdentity(it.bookId) }
 
   private fun sourceSnapshot(book: Book): CoverSourceSnapshot? {
     if (book.deletedDate != null || !book.url.path.endsWith(".cbz", ignoreCase = true)) return null
-    val activeIds =
-      bookRepository
-        .findAllBySeriesId(book.seriesId)
-        .filter { it.deletedDate == null }
-        .map { it.id }
-        .sorted()
-    if (activeIds != listOf(book.id)) return null
     val thumbnail = thumbnailBookRepository.findSelectedByBookIdOrNull(book.id)
     val feature = dedupRepository.findFeature(book.id)
     val expectedPath =
@@ -234,7 +227,8 @@ class DedupCoverLifecycle(
       when {
         feature?.archiveHash.isNullOrBlank() -> DedupArchiveHashState.MISSING
         feature.archiveHashPath != expectedPath || feature.archiveHashSize != book.fileSize ||
-          feature.archiveHashSchemaVersion != DEDUP_ARCHIVE_HASH_SCHEMA_VERSION -> DedupArchiveHashState.STALE
+          feature.archiveHashSchemaVersion != DEDUP_ARCHIVE_HASH_SCHEMA_VERSION ||
+          feature.sourceContentGeneration != dedupContentGeneration(book.fileSize, feature.archiveHash, book.contentFingerprint()) -> DedupArchiveHashState.STALE
         else -> DedupArchiveHashState.READY
       }
     val archiveHash = feature?.archiveHash?.takeIf { archiveHashState == DedupArchiveHashState.READY }
@@ -245,10 +239,10 @@ class DedupCoverLifecycle(
         else -> "${thumbnail.id}|${thumbnail.url}|${thumbnail.fileSize}"
       }
     return CoverSourceSnapshot(
-      contentGeneration = dedupContentGeneration(book.fileSize, archiveHash),
+      contentGeneration = dedupContentGeneration(book.fileSize, archiveHash, book.contentFingerprint()),
       coverGeneration = stableHash(coverIdentity),
       metadataGeneration = stableHash("${book.name}|${book.seriesId}"),
-      scopeRevision = stableHash("${book.seriesId}|${activeIds.joinToString() }"),
+      scopeRevision = stableHash(book.seriesId),
       pageCount = mediaRepository.findByIdOrNull(book.id)?.pages?.size,
       thumbnail = thumbnail,
       archiveHashState = archiveHashState,
@@ -260,17 +254,9 @@ class DedupCoverLifecycle(
     )
   }
 
-  private fun exactPairs(libraryId: String): Set<Pair<String, String>> =
-    exactDuplicateBookRepository
-      .findAllExactDuplicates(libraryId, includeDeleted = false)
-      .groupBy { it.fileHash to it.fileSize }
-      .values
-      .flatMap { books ->
-        val sorted = books.map { it.id }.sorted()
-        sorted.flatMapIndexed { index, left -> sorted.drop(index + 1).map { right -> left to right } }
-      }.toSet()
-
   private fun stableHash(value: String): String = stableHash(value.toByteArray(StandardCharsets.UTF_8))
+
+  private fun Book.contentFingerprint(): String = fileHash.ifBlank { fileLastModified.toString() }
 
   private fun stableHash(value: ByteArray): String =
     MessageDigest
@@ -299,4 +285,19 @@ class DedupCoverLifecycle(
         metadataGeneration == other.metadataGeneration &&
         scopeRevision == other.scopeRevision
   }
+
+  private fun DedupFeature.toSourceIdentity() =
+    DedupSourceIdentity(
+      bookId = bookId,
+      seriesId = seriesId,
+      libraryId = libraryId,
+      contentGeneration = sourceContentGeneration,
+      coverGeneration = sourceCoverGeneration,
+      metadataGeneration = sourceMetadataGeneration,
+      seriesScopeRevision = seriesScopeRevision,
+      pageCount = pageCount,
+      archiveHashState =
+        if (!archiveHash.isNullOrBlank() && archiveHashSchemaVersion == DEDUP_ARCHIVE_HASH_SCHEMA_VERSION) DedupArchiveHashState.READY else DedupArchiveHashState.MISSING,
+      archiveHash = archiveHash,
+    )
 }

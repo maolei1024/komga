@@ -9,7 +9,6 @@ import org.gotson.komga.domain.model.DedupResolutionState
 import org.gotson.komga.domain.service.DedupResolutionExecutionException
 import org.gotson.komga.domain.service.DedupResolutionLifecycle
 import org.gotson.komga.domain.service.DedupResolutionValidationException
-import org.gotson.komga.domain.service.DedupSuggestionPlanner
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -29,93 +28,53 @@ class DedupControllerTest(
   @MockkBean
   private lateinit var resolutionLifecycle: DedupResolutionLifecycle
 
-  @MockkBean
-  private lateinit var suggestionPlanner: DedupSuggestionPlanner
-
-  @Test
-  @WithMockCustomUser(roles = ["ADMIN"])
-  fun `cluster base list never evaluates live processing eligibility`() {
-    mockMvc.get("/api/v1/dedup/clusters?page=0&size=100&status=UNPROCESSED").andExpect { status { isOk() } }
-
-    verify(exactly = 0) { suggestionPlanner.evaluate(any<org.gotson.komga.domain.model.DedupClusterWithMembers>()) }
-  }
-
   @Test
   @WithMockUser(roles = ["USER"])
   fun `non administrators cannot read or mutate Dedup resources`() {
     mockMvc.get("/api/v1/dedup/status").andExpect { status { isForbidden() } }
     mockMvc
-      .post("/api/v1/dedup/clusters/verify") {
+      .post("/api/v1/dedup/clusters/cluster/resolutions/custom") {
         contentType = MediaType.APPLICATION_JSON
-        content = """{"clusters":[{"clusterId":"cluster","expectedRevision":1}]}"""
+        content = keepAllRequest()
       }.andExpect { status { isForbidden() } }
   }
 
   @Test
   @WithMockCustomUser(roles = ["ADMIN"])
-  fun `bulk cluster verification reports missing clusters and rejects duplicate or oversized input`() {
-    mockMvc
-      .post("/api/v1/dedup/clusters/verify") {
-        contentType = MediaType.APPLICATION_JSON
-        content = """{"clusters":[{"clusterId":"missing","expectedRevision":1}]}"""
-      }.andExpect {
-        status { isAccepted() }
-        jsonPath("$.requestedClusters") { value(1) }
-        jsonPath("$.queuedClusters") { value(0) }
-        jsonPath("$.failedClusters") { value(1) }
-        jsonPath("$.results[0].status") { value("NOT_FOUND") }
-      }
-
-    mockMvc
-      .post("/api/v1/dedup/clusters/verify") {
-        contentType = MediaType.APPLICATION_JSON
-        content = """{"clusters":[{"clusterId":"duplicate","expectedRevision":1},{"clusterId":"duplicate","expectedRevision":1}]}"""
-      }.andExpect { status { isBadRequest() } }
-
-    val oversized =
-      (1..101).joinToString(prefix = "{\"clusters\":[", postfix = "]}") { index ->
-        "{\"clusterId\":\"cluster-$index\",\"expectedRevision\":1}"
-      }
-    mockMvc
-      .post("/api/v1/dedup/clusters/verify") {
-        contentType = MediaType.APPLICATION_JSON
-        content = oversized
-      }.andExpect { status { isBadRequest() } }
-  }
-
-  @Test
-  @WithMockCustomUser(roles = ["ADMIN"])
-  fun `custom keep-all returns 201 with a processed resolution`() {
-    every { resolutionLifecycle.createCustom("cluster", 1, "state", any(), emptySet(), any()) } returns resolution()
+  fun `custom contract contains only revision and delete IDs`() {
+    every { resolutionLifecycle.createCustom("cluster", 1, listOf("B"), any()) } returns resolution()
 
     mockMvc
       .post("/api/v1/dedup/clusters/cluster/resolutions/custom") {
         contentType = MediaType.APPLICATION_JSON
-        content =
-          """
-          {
-            "expectedRevision": 1,
-            "stateRevision": "state",
-            "members": [
-              {"bookId": "A", "action": "KEEP"},
-              {"bookId": "B", "action": "KEEP"}
-            ],
-            "acknowledgedReasonCodes": []
-          }
-          """.trimIndent()
+        content = """{"expectedRevision":1,"deleteBookIds":["B"]}"""
       }.andExpect {
         status { isCreated() }
         jsonPath("$.id") { value("resolution") }
         jsonPath("$.state") { value("PROCESSED") }
       }
+
+    verify(exactly = 1) { resolutionLifecycle.createCustom("cluster", 1, listOf("B"), any()) }
+  }
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `empty delete IDs are accepted as keep-all`() {
+    every { resolutionLifecycle.createCustom("cluster", 1, emptyList(), any()) } returns resolution()
+
+    mockMvc
+      .post("/api/v1/dedup/clusters/cluster/resolutions/custom") {
+        contentType = MediaType.APPLICATION_JSON
+        content = keepAllRequest()
+      }.andExpect { status { isCreated() } }
   }
 
   @Test
   @WithMockCustomUser(roles = ["ADMIN"])
   fun `resolution conflicts return structured 409 bodies`() {
-    every { resolutionLifecycle.createCustom("stale", any(), any(), any(), any(), any()) } throws
+    every { resolutionLifecycle.createCustom("stale", any(), any(), any()) } throws
       DedupResolutionValidationException("CLUSTER_STALE", "Cluster revision changed")
-    every { resolutionLifecycle.createCustom("partial", any(), any(), any(), any(), any()) } throws
+    every { resolutionLifecycle.createCustom("partial", any(), any(), any()) } throws
       DedupResolutionExecutionException("resolution-partial", "DELETE_FAILED", true, "Second unlink failed")
 
     mockMvc
@@ -142,41 +101,15 @@ class DedupControllerTest(
 
   @Test
   @WithMockCustomUser(roles = ["ADMIN"])
-  fun `abandon endpoint returns the preserved audit in abandoned state`() {
-    every { resolutionLifecycle.abandon("resolution") } returns resolution().copy(state = DedupResolutionState.ABANDONED)
-
-    mockMvc.post("/api/v1/dedup/resolutions/resolution/abandon").andExpect {
-      status { isOk() }
-      jsonPath("$.id") { value("resolution") }
-      jsonPath("$.state") { value("ABANDONED") }
-    }
+  fun `manual verification eligibility processing and abandon endpoints are absent`() {
+    mockMvc.post("/api/v1/dedup/clusters/cluster/verify").andExpect { status { isNotFound() } }
+    mockMvc.post("/api/v1/dedup/clusters/verify").andExpect { status { isMethodNotAllowed() } }
+    mockMvc.post("/api/v1/dedup/clusters/eligibility").andExpect { status { isMethodNotAllowed() } }
+    mockMvc.get("/api/v1/dedup/clusters/cluster/processing").andExpect { status { isNotFound() } }
+    mockMvc.post("/api/v1/dedup/resolutions/resolution/abandon").andExpect { status { isNotFound() } }
   }
 
-  @Test
-  @WithMockCustomUser(roles = ["ADMIN"])
-  fun `duplicate acknowledgements are 400 and legacy pair routes are absent`() {
-    mockMvc
-      .post("/api/v1/dedup/clusters/cluster/resolutions/custom") {
-        contentType = MediaType.APPLICATION_JSON
-        content = keepAllRequest("[\"RISK\",\"RISK\"]")
-      }.andExpect { status { isBadRequest() } }
-
-    mockMvc.get("/api/v1/dedup/cases").andExpect { status { isNotFound() } }
-    mockMvc.post("/api/v1/dedup/overrides").andExpect { status { isNotFound() } }
-  }
-
-  private fun keepAllRequest(acknowledgements: String = "[]") =
-    """
-    {
-      "expectedRevision": 1,
-      "stateRevision": "state",
-      "members": [
-        {"bookId": "A", "action": "KEEP"},
-        {"bookId": "B", "action": "KEEP"}
-      ],
-      "acknowledgedReasonCodes": $acknowledgements
-    }
-    """.trimIndent()
+  private fun keepAllRequest() = """{"expectedRevision":1,"deleteBookIds":[]}"""
 
   private fun resolution(): DedupResolution {
     val now = LocalDateTime.now()
@@ -189,7 +122,7 @@ class DedupControllerTest(
       planJson = "{}",
       evidenceJson = "{}",
       eligibilityJson = "{}",
-      ruleVersion = 1,
+      ruleVersion = 3,
       state = DedupResolutionState.PROCESSED,
       actorId = "admin",
       resultJson = "{}",

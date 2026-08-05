@@ -10,6 +10,8 @@ import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupPageFeature
+import org.gotson.komga.domain.model.DedupPairDecision
+import org.gotson.komga.domain.model.DedupPairDecisionType
 import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
@@ -56,7 +58,9 @@ class DedupDao(
   private val clusterMember = Tables.DEDUP_CLUSTER_MEMBER
   private val resolution = Tables.DEDUP_RESOLUTION
   private val resolutionMember = Tables.DEDUP_RESOLUTION_MEMBER
+  private val pairDecision = Tables.DEDUP_PAIR_DECISION
   private val gorseSync = Tables.DEDUP_GORSE_SYNC
+  private val book = Tables.BOOK
 
   override fun findLibrarySettings(libraryId: String): DedupLibrarySettings? =
     dslRO
@@ -87,6 +91,8 @@ class DedupDao(
         settings.COVER_TOP_K,
         settings.CREATED_DATE,
         settings.LAST_MODIFIED_DATE,
+        settings.LAST_BATCH_DATE,
+        settings.LAST_BATCH_BOOK_COUNT,
       ).values(
         value.libraryId,
         value.enabled,
@@ -99,6 +105,8 @@ class DedupDao(
         value.coverTopK,
         value.createdDate,
         value.lastModifiedDate,
+        value.lastBatchDate,
+        value.lastBatchBookCount,
       ).onDuplicateKeyUpdate()
       .set(settings.ENABLED, value.enabled)
       .set(settings.PAUSED, value.paused)
@@ -109,7 +117,26 @@ class DedupDao(
       .set(settings.COVER_CANDIDATE_DISTANCE, value.coverCandidateDistance)
       .set(settings.COVER_TOP_K, value.coverTopK)
       .set(settings.LAST_MODIFIED_DATE, value.lastModifiedDate)
+      .set(settings.LAST_BATCH_DATE, value.lastBatchDate)
+      .set(settings.LAST_BATCH_BOOK_COUNT, value.lastBatchBookCount)
       .execute()
+  }
+
+  override fun updateLibraryBatchResult(
+    libraryId: String,
+    processedBookCount: Int,
+    completedDate: LocalDateTime,
+  ) {
+    require(processedBookCount >= 0)
+    check(
+      dslRW
+        .update(settings)
+        .set(settings.LAST_BATCH_DATE, completedDate)
+        .set(settings.LAST_BATCH_BOOK_COUNT, processedBookCount)
+        .set(settings.LAST_MODIFIED_DATE, completedDate)
+        .where(settings.LIBRARY_ID.eq(libraryId))
+        .execute() == 1,
+    ) { "Dedup Library settings disappeared while recording a batch" }
   }
 
   override fun enqueueWork(
@@ -325,6 +352,42 @@ class DedupDao(
       .fetch()
       .associate { DedupWorkState.valueOf(it.value1()) to it.value2() }
 
+  override fun countPendingWork(type: DedupWorkType): Int =
+    dslRO
+      .selectCount()
+      .from(work)
+      .where(work.TYPE.eq(type.name))
+      .and(work.STATE.`in`(DedupWorkState.WAITING.name, DedupWorkState.PENDING.name, DedupWorkState.RUNNING.name, DedupWorkState.FAILED_REVIEW.name))
+      .fetchOne(0, Int::class.java) ?: 0
+
+  override fun findUnscannedBookIds(
+    libraryId: String,
+    featureSchemaVersion: Int,
+    limit: Int,
+  ): List<String> {
+    require(limit > 0)
+    return dslRO
+      .select(book.ID)
+      .from(book)
+      .leftJoin(feature)
+      .on(feature.BOOK_ID.eq(book.ID))
+      .where(book.LIBRARY_ID.eq(libraryId))
+      .and(book.DELETED_DATE.isNull)
+      .and(DSL.lower(book.URL).like("%.cbz"))
+      .and(feature.BOOK_ID.isNull.or(feature.FEATURE_SCHEMA_VERSION.ne(featureSchemaVersion)))
+      .andNotExists(
+        dslRO
+          .selectOne()
+          .from(work)
+          .where(work.LIBRARY_ID.eq(libraryId))
+          .and(work.TYPE.eq(DedupWorkType.SCAN_BOOK.name))
+          .and(work.TARGET_KEY.eq(book.ID))
+          .and(work.STATE.`in`(DedupWorkState.WAITING.name, DedupWorkState.PENDING.name, DedupWorkState.RUNNING.name)),
+      ).orderBy(book.CREATED_DATE, book.ID)
+      .limit(limit)
+      .fetch(book.ID)
+  }
+
   override fun findFeature(bookId: String): DedupFeature? =
     dslRO
       .selectFrom(feature)
@@ -348,6 +411,14 @@ class DedupDao(
       .where(feature.LIBRARY_ID.eq(libraryId))
       .and(feature.COVER_STATE.eq(DedupFeatureState.READY.name))
       .and(feature.COVER_HASH.isNotNull)
+      .orderBy(feature.BOOK_ID)
+      .fetch()
+      .map { it.toDomain() }
+
+  override fun findFeaturesByLibrary(libraryId: String): List<DedupFeature> =
+    dslRO
+      .selectFrom(feature)
+      .where(feature.LIBRARY_ID.eq(libraryId))
       .orderBy(feature.BOOK_ID)
       .fetch()
       .map { it.toDomain() }
@@ -423,18 +494,11 @@ class DedupDao(
       .execute()
   }
 
-  override fun deleteFeaturesNotIn(
-    libraryId: String,
-    activeBookIds: Set<String>,
-  ): Int {
-    val stale =
-      dslRO
-        .select(feature.BOOK_ID)
-        .from(feature)
-        .where(feature.LIBRARY_ID.eq(libraryId))
-        .fetch(feature.BOOK_ID)
-        .filterNot(activeBookIds::contains)
-    return stale.chunked(500).sumOf { dslRW.deleteFrom(feature).where(feature.BOOK_ID.`in`(it)).execute() }
+  @Transactional
+  override fun deleteBookData(bookId: String) {
+    dslRW.deleteFrom(relation).where(relation.BOOK_LOW_ID.eq(bookId).or(relation.BOOK_HIGH_ID.eq(bookId))).execute()
+    dslRW.deleteFrom(pageFeature).where(pageFeature.BOOK_ID.eq(bookId)).execute()
+    dslRW.deleteFrom(feature).where(feature.BOOK_ID.eq(bookId)).execute()
   }
 
   override fun findPageFeatures(
@@ -599,27 +663,35 @@ class DedupDao(
   }
 
   @Transactional
-  override fun replaceExactRelations(
-    libraryId: String,
+  override fun replaceExactRelationsForBook(
+    bookId: String,
     relations: Collection<DedupRelation>,
     now: LocalDateTime,
   ) {
-    val currentIds = relations.map { it.id }.toSet()
-    var update =
-      dslRW
-        .update(relation)
-        .set(relation.STATUS, DedupRelationStatus.STALE.name)
-        .set(relation.LAST_MODIFIED_DATE, now)
-        .where(relation.LIBRARY_ID.eq(libraryId))
-        .and(relation.RELATION_TYPE.eq(DedupRelationType.EXACT_FILE.name))
-    if (currentIds.isNotEmpty()) update = update.and(relation.ID.notIn(currentIds))
-    update.execute()
+    val currentPairs = relations.map { it.bookLowId to it.bookHighId }.toSet()
+    dslRW
+      .select(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
+      .from(relation)
+      .where(relation.RELATION_TYPE.eq(DedupRelationType.EXACT_FILE.name))
+      .and(relation.BOOK_LOW_ID.eq(bookId).or(relation.BOOK_HIGH_ID.eq(bookId)))
+      .fetch()
+      .map { it.value1() to it.value2() }
+      .filterNot(currentPairs::contains)
+      .forEach { (low, high) ->
+        dslRW
+          .update(relation)
+          .set(relation.STATUS, DedupRelationStatus.STALE.name)
+          .set(relation.LAST_MODIFIED_DATE, now)
+          .where(relation.BOOK_LOW_ID.eq(low))
+          .and(relation.BOOK_HIGH_ID.eq(high))
+          .execute()
+      }
     relations.forEach(::saveRelation)
   }
 
   @Transactional
-  override fun replaceCoverRelations(
-    libraryId: String,
+  override fun replaceCoverRelationsForBook(
+    bookId: String,
     relations: Collection<DedupRelation>,
     now: LocalDateTime,
   ) {
@@ -627,8 +699,8 @@ class DedupDao(
     dslRW
       .select(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
       .from(relation)
-      .where(relation.LIBRARY_ID.eq(libraryId))
-      .and(relation.COVER_DISTANCE.isNotNull)
+      .where(relation.COVER_DISTANCE.isNotNull)
+      .and(relation.BOOK_LOW_ID.eq(bookId).or(relation.BOOK_HIGH_ID.eq(bookId)))
       .fetch()
       .map { it.value1() to it.value2() }
       .filterNot(pairs::contains)
@@ -638,12 +710,57 @@ class DedupDao(
           .set(relation.COVER_DISTANCE, null as Int?)
           .set(relation.LOW_COVER_GENERATION, "")
           .set(relation.HIGH_COVER_GENERATION, "")
-          .set(relation.LAST_MODIFIED_DATE, now)
+          .set(
+            relation.STATUS,
+            DSL
+              .`when`(relation.RELATION_TYPE.eq(DedupRelationType.VISUALLY_SIMILAR.name), DedupRelationStatus.STALE.name)
+              .otherwise(relation.STATUS),
+          ).set(relation.LAST_MODIFIED_DATE, now)
           .where(relation.BOOK_LOW_ID.eq(low))
           .and(relation.BOOK_HIGH_ID.eq(high))
           .execute()
       }
     relations.forEach(::saveRelation)
+  }
+
+  override fun findPairDecisions(libraryId: String): List<DedupPairDecision> =
+    dslRO
+      .select(pairDecision.fields().toList())
+      .from(pairDecision)
+      .join(book)
+      .on(book.ID.eq(pairDecision.BOOK_LOW_ID))
+      .where(book.LIBRARY_ID.eq(libraryId))
+      .orderBy(pairDecision.BOOK_LOW_ID, pairDecision.BOOK_HIGH_ID)
+      .fetch {
+        DedupPairDecision(
+          bookLowId = it[pairDecision.BOOK_LOW_ID]!!,
+          bookHighId = it[pairDecision.BOOK_HIGH_ID]!!,
+          decision = DedupPairDecisionType.valueOf(it[pairDecision.DECISION]!!),
+          resolutionId = it[pairDecision.RESOLUTION_ID],
+          actorId = it[pairDecision.ACTOR_ID]!!,
+          createdDate = it[pairDecision.CREATED_DATE]!!,
+        )
+      }
+
+  @Transactional
+  override fun savePairDecisions(decisions: Collection<DedupPairDecision>) {
+    decisions.forEach { value ->
+      dslRW
+        .insertInto(
+          pairDecision,
+          pairDecision.BOOK_LOW_ID,
+          pairDecision.BOOK_HIGH_ID,
+          pairDecision.DECISION,
+          pairDecision.RESOLUTION_ID,
+          pairDecision.ACTOR_ID,
+          pairDecision.CREATED_DATE,
+        ).values(value.bookLowId, value.bookHighId, value.decision.name, value.resolutionId, value.actorId, value.createdDate)
+        .onDuplicateKeyUpdate()
+        .set(pairDecision.DECISION, value.decision.name)
+        .set(pairDecision.RESOLUTION_ID, value.resolutionId)
+        .set(pairDecision.ACTOR_ID, value.actorId)
+        .execute()
+    }
   }
 
   override fun findCluster(clusterId: String): DedupClusterWithMembers? {
@@ -718,6 +835,38 @@ class DedupDao(
       .groupBy(cluster.STATUS)
       .fetch()
       .associate { DedupClusterStatus.valueOf(it.value1()) to it.value2() }
+
+  override fun findUnresolvedClusters(
+    libraryId: String?,
+    offset: Int,
+    limit: Int,
+  ): List<DedupClusterWithMembers> {
+    require(offset >= 0 && limit in 1..100)
+    val values =
+      dslRO
+        .selectFrom(cluster)
+        .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
+        .and(cluster.STATUS.`in`(DedupClusterStatus.UNPROCESSED.name, DedupClusterStatus.NEEDS_ATTENTION.name))
+        .and(cluster.REVIEWABLE.eq(true))
+        .and(cluster.SUPERSEDED_BY.isNull)
+        .orderBy(cluster.LAST_MODIFIED_DATE.desc(), cluster.ID)
+        .offset(offset)
+        .limit(limit)
+        .fetch()
+        .map { it.toCluster() }
+    val members = findClusterMembers(values.map { it.id }.toSet())
+    return values.map { DedupClusterWithMembers(it, members[it.id].orEmpty()) }
+  }
+
+  override fun countUnresolvedClusters(libraryId: String?): Long =
+    dslRO
+      .selectCount()
+      .from(cluster)
+      .where(libraryId?.let { cluster.LIBRARY_ID.eq(it) } ?: DSL.noCondition())
+      .and(cluster.STATUS.`in`(DedupClusterStatus.UNPROCESSED.name, DedupClusterStatus.NEEDS_ATTENTION.name))
+      .and(cluster.REVIEWABLE.eq(true))
+      .and(cluster.SUPERSEDED_BY.isNull)
+      .fetchOne(0, Long::class.java) ?: 0L
 
   override fun lockLibraryForClusterRebuild(libraryId: String) {
     check(
@@ -1020,6 +1169,26 @@ class DedupDao(
 
   override fun countResolutions(): Long = dslRO.selectCount().from(resolution).fetchOne(0, Long::class.java) ?: 0L
 
+  override fun findProcessedResolutions(
+    offset: Int,
+    limit: Int,
+  ): List<DedupResolution> =
+    dslRO
+      .selectFrom(resolution)
+      .where(resolution.STATE.eq(DedupResolutionState.PROCESSED.name))
+      .orderBy(resolution.COMPLETED_DATE.desc(), resolution.ID)
+      .offset(offset)
+      .limit(limit)
+      .fetch()
+      .map { it.toResolution() }
+
+  override fun countProcessedResolutions(): Long =
+    dslRO
+      .selectCount()
+      .from(resolution)
+      .where(resolution.STATE.eq(DedupResolutionState.PROCESSED.name))
+      .fetchOne(0, Long::class.java) ?: 0L
+
   override fun countResolutionsByState(): Map<DedupResolutionState, Int> =
     dslRO
       .select(resolution.STATE, DSL.count())
@@ -1297,6 +1466,8 @@ class DedupDao(
       coverTopK = coverTopK!!,
       createdDate = createdDate!!,
       lastModifiedDate = lastModifiedDate!!,
+      lastBatchDate = lastBatchDate,
+      lastBatchBookCount = lastBatchBookCount!!,
     )
 
   private fun DedupWorkRecord.toDomain() =

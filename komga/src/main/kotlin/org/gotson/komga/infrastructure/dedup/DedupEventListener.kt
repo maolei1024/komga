@@ -13,16 +13,23 @@ class DedupEventListener(
 ) {
   @EventListener
   fun handleEvent(event: DomainEvent) {
-    val libraryId =
-      when (event) {
-        is DomainEvent.BookAdded -> event.book.libraryId
-        is DomainEvent.BookUpdated -> event.book.libraryId
-        is DomainEvent.BookDeleted -> event.book.libraryId
-        is DomainEvent.LibraryScanned -> event.library.id
-        is DomainEvent.ThumbnailBookAdded -> bookRepository.getLibraryIdOrNull(event.thumbnail.bookId) ?: return
-        is DomainEvent.ThumbnailBookDeleted -> bookRepository.getLibraryIdOrNull(event.thumbnail.bookId) ?: return
-        else -> return
+    when (event) {
+      is DomainEvent.BookAdded ->
+        dedupWorkLifecycle.requestBookScan(event.book.libraryId, event.book.id, DedupWorkLifecycle.PRIORITY_ADDED)
+      is DomainEvent.BookUpdated ->
+        dedupWorkLifecycle.requestBookScan(event.book.libraryId, event.book.id, DedupWorkLifecycle.PRIORITY_UPDATED)
+      is DomainEvent.BookDeleted ->
+        dedupWorkLifecycle.requestBookScan(event.book.libraryId, event.book.id, DedupWorkLifecycle.PRIORITY_DELETED)
+      is DomainEvent.ThumbnailBookAdded -> {
+        val libraryId = bookRepository.getLibraryIdOrNull(event.thumbnail.bookId) ?: return
+        dedupWorkLifecycle.requestBookScan(libraryId, event.thumbnail.bookId, DedupWorkLifecycle.PRIORITY_UPDATED)
       }
-    dedupWorkLifecycle.requestExactReconciliation(libraryId)
+      is DomainEvent.ThumbnailBookDeleted -> {
+        val libraryId = bookRepository.getLibraryIdOrNull(event.thumbnail.bookId) ?: return
+        dedupWorkLifecycle.requestBookScan(libraryId, event.thumbnail.bookId, DedupWorkLifecycle.PRIORITY_UPDATED)
+      }
+      is DomainEvent.LibraryScanned -> dedupWorkLifecycle.requestLibraryBatch(event.library.id)
+      else -> Unit
+    }
   }
 }

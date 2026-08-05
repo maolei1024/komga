@@ -17,7 +17,6 @@ import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
-import org.gotson.komga.domain.persistence.ExactDuplicateBookRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ThumbnailBookRepository
 import org.gotson.komga.infrastructure.dedup.CoverNeighbor
@@ -29,7 +28,7 @@ import java.time.LocalDateTime
 
 class DedupCoverLifecycleTest {
   @Test
-  fun `book and thumbnail timestamps do not affect source generations`() {
+  fun `Book audit time is ignored while an unhashed file timestamp changes content generation`() {
     val books = mockk<BookRepository>()
     val media = mockk<MediaRepository>()
     val thumbnails = mockk<ThumbnailBookRepository>()
@@ -56,7 +55,6 @@ class DedupCoverLifecycleTest {
         books,
         media,
         thumbnails,
-        mockk(),
         dedup,
         mockk(),
         mockk(),
@@ -64,32 +62,37 @@ class DedupCoverLifecycleTest {
       )
 
     val before = lifecycle.currentSourceIdentity("book")!!
-    book = book.copy(fileLastModified = LocalDateTime.MAX, lastModifiedDate = LocalDateTime.MAX)
+    book = book.copy(lastModifiedDate = LocalDateTime.MAX)
     val after = lifecycle.currentSourceIdentity("book")!!
 
     assertThat(after.contentGeneration).isEqualTo(before.contentGeneration)
     assertThat(after.coverGeneration).isEqualTo(before.coverGeneration)
     assertThat(after.metadataGeneration).isEqualTo(before.metadataGeneration)
 
+    book = book.copy(fileLastModified = LocalDateTime.MAX)
+    assertThat(lifecycle.currentSourceIdentity("book")!!.contentGeneration).isNotEqualTo(before.contentGeneration)
+    book = book.copy(fileLastModified = LocalDateTime.MIN)
+
     feature = feature("book").copy(pageState = DedupFeatureState.READY)
     lifecycle.persistArchiveIdentity("book", DedupStrongFileIdentity("/tmp/book.cbz", 42, "archive-hash"))
-    assertThat(feature!!.sourceContentGeneration).isEqualTo("dedup-v2:42:archive-hash")
+    assertThat(feature!!.sourceContentGeneration).isEqualTo("dedup-v2:42:${LocalDateTime.MIN}:archive-hash")
     assertThat(feature!!.pageState).isEqualTo(DedupFeatureState.WAITING)
     assertThat(feature!!.archiveHashDate).isNotNull()
 
-    val readyFeature =
-      feature("book").copy(
-        archiveHash = "archive-hash",
-        archiveHashPath = "/tmp/book.cbz",
-        archiveHashSize = 42,
-        archiveHashSchemaVersion = DEDUP_ARCHIVE_HASH_SCHEMA_VERSION,
-      )
+    val readyFeature = feature!!
     feature = readyFeature
     val ready = lifecycle.currentSourceIdentity("book")!!
     assertThat(ready.archiveHashState).isEqualTo(DedupArchiveHashState.READY)
     assertThat(ready.archiveHash).isEqualTo("archive-hash")
     assertThat(ready.contentGeneration).isNotEqualTo(before.contentGeneration)
 
+    book = book.copy(fileHash = "changed-file-hash")
+    val modified = lifecycle.currentSourceIdentity("book")!!
+    assertThat(modified.archiveHashState).isEqualTo(DedupArchiveHashState.STALE)
+    assertThat(modified.archiveHash).isNull()
+    assertThat(modified.contentGeneration).isNotEqualTo(ready.contentGeneration)
+
+    book = book.copy(fileHash = "")
     listOf(
       readyFeature.copy(archiveHashPath = "/tmp/moved.cbz"),
       readyFeature.copy(archiveHashSize = 43),
@@ -108,11 +111,10 @@ class DedupCoverLifecycleTest {
     val books = mockk<BookRepository>()
     val media = mockk<MediaRepository>()
     val thumbnails = mockk<ThumbnailBookRepository>()
-    val exactBooks = mockk<ExactDuplicateBookRepository>()
     val dedup = mockk<DedupRepository>()
     val hasher = mockk<CoverPerceptualHasher>()
     val index = mockk<CoverSimilarityIndex>()
-    val lifecycle = DedupCoverLifecycle(books, media, thumbnails, exactBooks, dedup, hasher, index, jacksonObjectMapper())
+    val lifecycle = DedupCoverLifecycle(books, media, thumbnails, dedup, hasher, index, jacksonObjectMapper())
     val features = listOf(feature("A"), feature("B"))
     val deep =
       DedupRelation(
@@ -122,20 +124,23 @@ class DedupCoverLifecycleTest {
         "B",
         "content-A",
         "content-B",
+        lowCoverGeneration = "cover-A",
+        highCoverGeneration = "cover-B",
+        lowMetadataGeneration = "metadata-A",
+        highMetadataGeneration = "metadata-B",
         type = DedupRelationType.EXACT_PAGE_SEQUENCE,
         featureSchemaVersion = DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION,
         classifierRuleVersion = DedupDeepVerificationLifecycle.CLASSIFIER_RULE_VERSION,
       )
     every { dedup.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { dedup.findReadyCoverFeatures("library") } returns features
-    every { index.replaceLibrary("library", features, 15) } just Runs
-    every { index.findAllNeighbors("library", 20) } returns listOf(CoverNeighbor("A", "B", 0))
-    every { exactBooks.findAllExactDuplicates("library", false) } returns emptyList()
+    every { dedup.findFeature("A") } returns features.first()
+    every { dedup.findFeatures(setOf("A", "B")) } returns features
+    every { index.findNeighbors("library", "A", 20) } returns listOf(CoverNeighbor("A", "B", 0))
     every { dedup.findRelation("A", "B") } returns deep
     val captured = slot<Collection<DedupRelation>>()
-    every { dedup.replaceCoverRelations("library", capture(captured), any()) } just Runs
+    every { dedup.replaceCoverRelationsForBook("A", capture(captured), any()) } just Runs
 
-    assertThat(lifecycle.rebuildCandidates("library")).isEqualTo(1)
+    assertThat(lifecycle.refreshCandidatesForBook("A")).isEmpty()
     assertThat(captured.captured.single())
       .extracting("id", "type", "coverDistance", "lowCoverGeneration", "highCoverGeneration")
       .containsExactly("deep", DedupRelationType.EXACT_PAGE_SEQUENCE, 0, "cover-A", "cover-B")

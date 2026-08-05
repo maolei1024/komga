@@ -1,195 +1,198 @@
 package org.gotson.komga.domain.service
 
 import io.mockk.Runs
+import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.domain.model.DedupCluster
 import org.gotson.komga.domain.model.DedupClusterMember
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupLibrarySettings
-import org.gotson.komga.domain.model.DedupLocalStateSnapshot
+import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupRelation
+import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.persistence.DedupRepository
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
 
 class DedupClusterLifecycleTest {
   private val repository = mockk<DedupRepository>()
   private val cover = mockk<DedupCoverLifecycle>()
-  private val localState = mockk<DedupLocalStateLifecycle>()
-  private val lifecycle = DedupClusterLifecycle(repository, cover, localState)
+  private val lifecycle = DedupClusterLifecycle(repository, cover)
+
+  @BeforeEach
+  fun clearInteractions() {
+    clearMocks(repository, cover)
+  }
 
   @Test
-  fun `A-B and B-C form one connected cluster without treating A-C as direct evidence`() {
-    val identities = listOf(identity("A"), identity("B"), identity("C"))
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { cover.currentSourceIdentities("library") } returns identities
-    every { repository.findRelations("library") } returns listOf(relation("A", "B"), relation("B", "C"))
-    every { repository.findAllClusters("library") } returns emptyList()
-    every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
-    val clusterSlot = slot<DedupCluster>()
-    val membersSlot = slot<Collection<DedupClusterMember>>()
-    every { repository.saveCluster(capture(clusterSlot), capture(membersSlot)) } just Runs
-    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
+  fun `verified supported edges form one current unresolved component`() {
+    defaults(listOf(identity("A"), identity("B"), identity("C")), listOf(relation("A", "B"), relation("B", "C")))
+    val members = slot<Collection<DedupClusterMember>>()
+    every { repository.saveCluster(any(), capture(members)) } just Runs
 
     assertThat(lifecycle.rebuildLibrary("library")).isEqualTo(1)
-    assertThat(membersSlot.captured.map { it.bookId }).containsExactlyInAnyOrder("A", "B", "C")
-    assertThat(clusterSlot.captured.status).isEqualTo(DedupClusterStatus.UNPROCESSED)
-    assertThat(repository.findRelations("library")).hasSize(2)
+    assertThat(members.captured.map { it.bookId }).containsExactlyInAnyOrder("A", "B", "C")
   }
 
   @Test
-  fun `unchanged fingerprints preserve stable id revision and timestamp`() {
-    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
-    val identities = listOf(identity("A"), identity("B"))
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { cover.currentSourceIdentities("library") } returns identities
-    every { repository.findRelations("library") } returns listOf(relation("A", "B"))
-    every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
-    every { repository.findAllClusters("library") } returns emptyList()
-    val clusters = mutableListOf<DedupCluster>()
-    val memberLists = mutableListOf<Collection<DedupClusterMember>>()
-    every { repository.saveCluster(capture(clusters), capture(memberLists)) } just Runs
-    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
+  fun `cover candidates and unrelated verification never create review clusters`() {
+    val candidate = relation("A", "B").copy(type = DedupRelationType.VISUALLY_SIMILAR, status = DedupRelationStatus.CANDIDATE)
+    defaults(listOf(identity("A"), identity("B")), listOf(candidate))
+    assertThat(lifecycle.rebuildLibrary("library")).isZero()
+    verify(exactly = 0) { repository.saveCluster(any(), any()) }
 
-    lifecycle.rebuildLibrary("library", now)
-    every { repository.findAllClusters("library") } returns listOf(DedupClusterWithMembers(clusters.first(), memberLists.first().toList()))
-    lifecycle.rebuildLibrary("library", now.plusHours(1))
-
-    assertThat(clusters.last().id).isEqualTo(clusters.first().id)
-    assertThat(clusters.last().revision).isEqualTo(1)
-    assertThat(clusters.last().lastModifiedDate).isEqualTo(now)
+    every { repository.findRelations("library") } returns listOf(relation("A", "B").copy(type = DedupRelationType.UNRELATED))
+    assertThat(lifecycle.rebuildLibrary("library")).isZero()
+    verify(exactly = 0) { repository.saveCluster(any(), any()) }
   }
 
   @Test
-  fun `merge reuses the oldest cluster and supersedes every other overlap`() {
-    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
-    val identities = listOf("A", "B", "C", "D").map(::identity)
-    val oldest = storedCluster("oldest", listOf("A", "B"), "A", now.minusDays(2))
-    val newer = storedCluster("newer", listOf("C", "D"), "C", now.minusDays(1))
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { cover.currentSourceIdentities("library") } returns identities
-    every { repository.findRelations("library") } returns listOf(relation("A", "B"), relation("B", "C"), relation("C", "D"))
-    every { repository.findAllClusters("library") } returns listOf(newer, oldest)
-    every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
-    val saved = mutableListOf<DedupCluster>()
-    every { repository.saveCluster(capture(saved), any()) } just Runs
-    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
+  fun `verified deep edge with stale metadata generation never creates a review cluster`() {
+    val stale = relation("A", "B").copy(type = DedupRelationType.ALT_EDITION)
+    defaults(listOf(identity("A"), identity("B").copy(metadataGeneration = "new-metadata-B")), listOf(stale))
 
-    lifecycle.rebuildLibrary("library", now)
-
-    val merged = saved.single()
-    assertThat(merged.id).isEqualTo("oldest")
-    assertThat(merged.status).isEqualTo(DedupClusterStatus.UNPROCESSED)
-    assertThat(merged.reopenReason).isEqualTo("CLUSTERS_MERGED")
-    io.mockk.verify(exactly = 1) { repository.markClusterSuperseded("newer", "oldest", now) }
+    assertThat(lifecycle.rebuildLibrary("library")).isZero()
+    verify(exactly = 0) { repository.saveCluster(any(), any()) }
   }
 
   @Test
-  fun `split keeps the anchor component id and marks every child as split`() {
-    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
-    val identities = listOf("A", "B", "C", "D").map(::identity)
-    val old = storedCluster("original", listOf("A", "B", "C", "D"), "A", now.minusDays(1))
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { cover.currentSourceIdentities("library") } returns identities
-    every { repository.findRelations("library") } returns listOf(relation("A", "B"), relation("C", "D"))
-    every { repository.findAllClusters("library") } returns listOf(old)
-    every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
-    val saved = mutableListOf<DedupCluster>()
-    val members = mutableListOf<Collection<DedupClusterMember>>()
-    every { repository.saveCluster(capture(saved), capture(members)) } just Runs
-    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
+  fun `KEEP_BOTH suppresses the canonical pair across Book generation changes`() {
+    val changed = listOf(identity("A").copy(contentGeneration = "new-A"), identity("B").copy(metadataGeneration = "new-B"))
+    val current = relation("A", "B").copy(lowContentGeneration = "new-A")
+    defaults(changed, listOf(current), decisions = listOf(DedupPairDecision("A", "B", resolutionId = "resolution", actorId = "admin")))
 
-    lifecycle.rebuildLibrary("library", now)
-
-    assertThat(saved).hasSize(2).allMatch { it.status == DedupClusterStatus.UNPROCESSED && it.reopenReason == "CLUSTER_SPLIT" }
-    val anchorIndex = saved.indexOfFirst { it.id == "original" }
-    assertThat(anchorIndex).isNotNegative()
-    assertThat(members[anchorIndex].map { it.bookId }).containsExactlyInAnyOrder("A", "B")
-    assertThat(saved.single { it.id != "original" }.id).startsWith("cluster-")
+    assertThat(lifecycle.rebuildLibrary("library")).isZero()
+    verify(exactly = 0) { repository.saveCluster(any(), any()) }
   }
 
   @Test
-  fun `a dormant processed cluster reuses its id when a new candidate joins the keeper`() {
-    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
-    val dormant = storedCluster("dormant", listOf("A"), "A", now.minusDays(1), DedupClusterStatus.PROCESSED)
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { cover.currentSourceIdentities("library") } returns listOf(identity("A"), identity("B"))
-    every { repository.findRelations("library") } returns listOf(relation("A", "B"))
-    every { repository.findAllClusters("library") } returns listOf(dormant)
-    every { localState.snapshot(any()) } answers { DedupLocalStateSnapshot(firstArg(), "state-${firstArg<String>()}", emptySet(), emptyMap()) }
+  fun `new edge beside an old survivor creates a new cluster without rewriting processed history`() {
+    val now = LocalDateTime.now()
+    val processed = storedCluster("processed", listOf("A", "B"), DedupClusterStatus.PROCESSED, now.minusDays(1))
+    defaults(listOf(identity("A"), identity("C")), listOf(relation("A", "C")), existing = listOf(processed))
     val saved = slot<DedupCluster>()
     every { repository.saveCluster(capture(saved), any()) } just Runs
-    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
 
     lifecycle.rebuildLibrary("library", now)
 
-    assertThat(saved.captured.id).isEqualTo("dormant")
-    assertThat(saved.captured.reviewable).isTrue()
+    assertThat(saved.captured.id).isNotEqualTo("processed")
     assertThat(saved.captured.status).isEqualTo(DedupClusterStatus.UNPROCESSED)
+    verify(exactly = 0) { repository.saveCluster(match { it.id == "processed" }, any()) }
   }
 
   @Test
-  fun `finalized survivor fingerprint does not reopen on the next rebuild`() {
-    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
-    val processing = storedCluster("cluster", listOf("A", "B"), "A", now.minusDays(1), DedupClusterStatus.PROCESSING)
-    every { repository.findCluster("cluster") } returns processing
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.findRelationsForBooks(setOf("A")) } returns emptyList()
-    every { cover.currentSourceIdentity("A") } returns identity("A")
-    every { localState.snapshot("A") } returns DedupLocalStateSnapshot("A", "state-A", emptySet(), emptyMap())
-    val saved = mutableListOf<DedupCluster>()
-    val members = mutableListOf<Collection<DedupClusterMember>>()
-    every { repository.saveCluster(capture(saved), capture(members)) } just Runs
+  fun `a component with one active member leaves the pending projection`() {
+    val now = LocalDateTime.now()
+    val old = storedCluster("cluster", listOf("A", "B"), DedupClusterStatus.UNPROCESSED, now.minusDays(1))
+    defaults(listOf(identity("A")), emptyList(), existing = listOf(old))
+    val saved = slot<DedupCluster>()
+    every { repository.saveCluster(capture(saved), any()) } just Runs
 
-    val finalized = lifecycle.finalizeProcessed("cluster", "resolution", setOf("A"), now)
+    lifecycle.rebuildLibrary("library", now)
+
+    assertThat(saved.captured.reviewable).isFalse()
+    assertThat(saved.captured.memberCount).isEqualTo(1)
+  }
+
+  @Test
+  fun `successful finalization writes survivor KEEP_BOTH decisions before rebuilding`() {
+    val now = LocalDateTime.now()
+    var stored = storedCluster("cluster", listOf("A", "B"), DedupClusterStatus.PROCESSING, now.minusMinutes(1))
+    val decisions = mutableListOf<DedupPairDecision>()
+    every { repository.findCluster("cluster") } answers { stored }
+    every { cover.currentSourceIdentity("A") } returns identity("A")
+    every { cover.currentSourceIdentity("B") } returns identity("B")
+    every { cover.currentSourceIdentities("library") } returns listOf(identity("A"), identity("B"))
+    every { repository.findRelations("library") } returns listOf(relation("A", "B"))
+    every { repository.findPairDecisions("library") } answers { decisions.toList() }
+    every { repository.savePairDecisions(any()) } answers { decisions += firstArg<Collection<DedupPairDecision>>() }
+    every { repository.saveCluster(any(), any()) } answers { stored = DedupClusterWithMembers(firstArg(), secondArg<Collection<DedupClusterMember>>().toList()) }
+    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
     every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { cover.currentSourceIdentities("library") } returns listOf(identity("A"))
-    every { repository.findRelations("library") } returns emptyList()
-    every { repository.findAllClusters("library") } returns listOf(DedupClusterWithMembers(finalized, members.first().toList()))
+    every { repository.findAllClusters("library") } answers { listOf(stored) }
     every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
 
-    lifecycle.rebuildLibrary("library", now.plusHours(1))
+    val result = lifecycle.finalizeProcessed("cluster", "resolution", "admin", setOf("A", "B"), now)
 
-    assertThat(saved.last().status).isEqualTo(DedupClusterStatus.PROCESSED)
-    assertThat(saved.last().revision).isEqualTo(finalized.revision)
-    assertThat(saved.last().processedRevision).isEqualTo(finalized.processedRevision)
+    assertThat(result.status).isEqualTo(DedupClusterStatus.PROCESSED)
+    val decision = decisions.single()
+    assertThat(decision.bookLowId to decision.bookHighId).isEqualTo("A" to "B")
+    assertThat(decision.resolutionId).isEqualTo("resolution")
+    assertThat(decision.actorId).isEqualTo("admin")
+  }
+
+  private fun defaults(
+    identities: List<DedupSourceIdentity>,
+    relations: List<DedupRelation>,
+    decisions: List<DedupPairDecision> = emptyList(),
+    existing: List<DedupClusterWithMembers> = emptyList(),
+  ) {
+    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
+    every { repository.lockLibraryForClusterRebuild("library") } just Runs
+    every { cover.currentSourceIdentities("library") } returns identities
+    every { repository.findRelations("library") } returns relations
+    every { repository.findPairDecisions("library") } returns decisions
+    every { repository.findAllClusters("library") } returns existing
+    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
   }
 
   private fun identity(id: String) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", 10)
 
+  private fun relation(
+    first: String,
+    second: String,
+  ): DedupRelation {
+    val low = minOf(first, second)
+    val high = maxOf(first, second)
+    return DedupRelation(
+      id = "relation-$low-$high",
+      libraryId = "library",
+      bookLowId = low,
+      bookHighId = high,
+      lowContentGeneration = "content-$low",
+      highContentGeneration = "content-$high",
+      lowCoverGeneration = "cover-$low",
+      highCoverGeneration = "cover-$high",
+      lowMetadataGeneration = "metadata-$low",
+      highMetadataGeneration = "metadata-$high",
+      type = DedupRelationType.EXACT_FILE,
+    )
+  }
+
   private fun storedCluster(
     id: String,
     ids: List<String>,
-    anchor: String,
-    created: LocalDateTime,
-    status: DedupClusterStatus = DedupClusterStatus.PROCESSED,
+    status: DedupClusterStatus,
+    now: LocalDateTime,
   ): DedupClusterWithMembers {
-    val cluster = DedupCluster(id, "library", 3, status, ids.size >= 2, anchor, "old-topology", "old-evidence", "old-state", 3, "resolution", null, null, created, created, created)
-    return DedupClusterWithMembers(cluster, ids.map { DedupClusterMember(id, it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", created, created) })
+    val cluster =
+      DedupCluster(
+        id,
+        "library",
+        1,
+        status,
+        ids.size >= 2,
+        ids.first(),
+        "topology",
+        "evidence",
+        "state",
+        if (status == DedupClusterStatus.PROCESSED) 1 else null,
+        if (status == DedupClusterStatus.PROCESSED) "resolution" else null,
+        null,
+        null,
+        now,
+        now,
+        if (status == DedupClusterStatus.PROCESSED) now else null,
+      )
+    return DedupClusterWithMembers(cluster, ids.map { DedupClusterMember(id, it, true, "content-$it", "cover-$it", "metadata-$it", "scope-$it", now, now) })
   }
-
-  private fun relation(
-    left: String,
-    right: String,
-  ) = DedupRelation(
-    id = "relation-$left-$right",
-    libraryId = "library",
-    bookLowId = left,
-    bookHighId = right,
-    lowContentGeneration = "content-$left",
-    highContentGeneration = "content-$right",
-    type = DedupRelationType.EXACT_FILE,
-  )
 }

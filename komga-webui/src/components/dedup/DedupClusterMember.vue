@@ -1,60 +1,56 @@
 <template>
-  <article class="member-row" :class="{'delete-selected': selection.action === 'DELETE'}">
-    <DedupLazyImage :src="bookThumbnailUrl(member.bookId)" class="member-cover" :width="74" :height="104"/>
-    <div class="member-info">
+  <div class="member-row" :class="{'marked-delete': markedForDeletion}">
+    <DedupLazyImage :src="member.thumbnailUrl" :alt="member.title || member.bookId" :width="58" :height="84"/>
+    <div class="member-copy">
       <strong>{{ member.title || member.bookId }}</strong>
-      <span class="path" :title="member.path || ''">{{ member.path || '—' }}</span>
-      <span>{{ formatBytes(member.fileSize) }} · {{ member.pageCount == null ? $t('dedup.pageCountUnknown') : $tc('dedup.pageCount', member.pageCount, {count: member.pageCount}) }}</span>
-      <div class="state-chips">
-        <v-chip v-for="code in processing.localStateReasonCodes" :key="code" x-small label>{{ reasonLabel(code) }}</v-chip>
-        <v-chip v-if="processing.archiveHashState !== 'READY'" x-small color="warning" label>{{ $t('dedup.deepVerificationRequired') }}</v-chip>
-        <v-chip v-if="!member.inMvpScope" x-small color="warning" label>{{ $t('dedup.outOfScope') }}</v-chip>
-      </div>
+      <span class="member-path" :title="member.path || ''">{{ member.path || '—' }}</span>
+      <span class="member-meta">{{ pageLabel }} · {{ formatDedupBytes(member.fileSize) }}</span>
     </div>
-    <div class="member-action">
-      <v-btn-toggle :value="selection.action" mandatory dense :disabled="disabled" @change="setAction">
-        <v-btn value="KEEP" small>{{ $t('dedup.keep') }}</v-btn>
-        <v-btn value="DELETE" small color="error">{{ $t('dedup.delete') }}</v-btn>
-      </v-btn-toggle>
-      <v-select v-if="selection.action === 'DELETE'" :value="selection.keeperBookId" :items="keeperOptions"
-                item-text="title" item-value="bookId" dense outlined hide-details :disabled="disabled"
-                :label="$t('dedup.keeperForDelete')" @change="$emit('keeper', $event)"/>
+    <div class="member-actions">
+      <v-btn small text :disabled="comparisonBase" @click="$emit('compare', member.bookId)">
+        <v-icon left small>mdi-compare-horizontal</v-icon>{{ comparisonBase ? $t('dedup.comparisonBase') : $t('dedup.comparePages') }}
+      </v-btn>
+      <v-btn small :outlined="!markedForDeletion" :color="markedForDeletion ? 'error' : undefined" @click="$emit('toggle', member.bookId)">
+        <v-icon left small>{{ markedForDeletion ? 'mdi-undo-variant' : 'mdi-delete-outline' }}</v-icon>
+        {{ markedForDeletion ? $t('dedup.cancelDelete') : $t('dedup.markDelete') }}
+      </v-btn>
     </div>
-  </article>
+  </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
-import {DedupClusterMemberDto, DedupClusterMemberProcessingDto, DedupResolutionAction} from '@/types/komga-dedup'
-import {bookThumbnailUrl} from '@/functions/urls'
-import {formatBytes} from '@/functions/dedup'
+import {DedupClusterMemberDto} from '@/types/komga-dedup'
+import {formatDedupBytes} from '@/functions/dedup'
 import DedupLazyImage from './DedupLazyImage.vue'
+
 export default Vue.extend({
   name: 'DedupClusterMember',
   components: {DedupLazyImage},
   props: {
     member: {type: Object as () => DedupClusterMemberDto, required: true},
-    processing: {type: Object as () => DedupClusterMemberProcessingDto, default: () => ({bookId: '', archiveHashState: 'MISSING', localStateReasonCodes: [], localState: {}})},
-    selection: {type: Object as () => {action: DedupResolutionAction; keeperBookId?: string}, required: true},
-    keeperOptions: {type: Array as () => Array<{bookId: string; title: string}>, default: () => []},
-    disabled: {type: Boolean, default: false},
+    markedForDeletion: {type: Boolean, default: false},
+    comparisonBase: {type: Boolean, default: false},
   },
-  methods: {
-    bookThumbnailUrl, formatBytes,
-    setAction(action: DedupResolutionAction) { if (action) this.$emit('action', action) },
-    reasonLabel(code: string): string { const key = `dedup.localState.${code}`; return this.$te(key) ? this.$t(key).toString() : code },
+  computed: {
+    pageLabel(): string { return this.member.pageCount == null ? this.$t('dedup.pageCountUnknown').toString() : this.$tc('dedup.pageCount', this.member.pageCount, {count: this.member.pageCount}) },
   },
+  methods: {formatDedupBytes},
 })
 </script>
 
 <style scoped>
-.member-row { display: flex; gap: 14px; align-items: center; min-height: 128px; padding: 12px; border-bottom: 1px solid var(--v-contrast-1-base); transition: background-color 180ms ease-out; }
-.member-row.delete-selected { background: rgba(255, 3, 53, .07); }
-.member-cover { flex: 0 0 74px; background: var(--v-contrast-1-base); }
-.member-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: .8125rem; color: var(--v-contrast-light-2-base); }
-.member-info strong { color: var(--v-base-contrast); font-size: .9375rem; }
-.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.state-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
-.member-action { flex: 0 0 250px; display: flex; flex-direction: column; gap: 10px; }
-@media (max-width: 700px) { .member-row { align-items: flex-start; flex-wrap: wrap; } .member-action { flex-basis: 100%; padding-left: 88px; } }
+.member-row { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--v-contrast-1-base); transition: background-color 180ms ease-out; }
+.member-row:last-child { border-bottom: 0; }
+.member-row.marked-delete { background: color-mix(in srgb, var(--v-error-base) 9%, var(--v-base-base)); }
+.member-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.member-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-path { overflow: hidden; color: var(--v-contrast-light-2-base); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.member-meta { color: var(--v-contrast-light-2-base); font-size: .78rem; }
+.member-actions { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) {
+  .member-row { grid-template-columns: 48px minmax(0, 1fr); padding: 10px; }
+  .member-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}
+@media (prefers-reduced-motion: reduce) { .member-row { transition: none; } }
 </style>

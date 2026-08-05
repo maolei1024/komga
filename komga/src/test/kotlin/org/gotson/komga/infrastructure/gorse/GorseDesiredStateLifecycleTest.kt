@@ -7,6 +7,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.model.makeSeries
 import org.gotson.komga.domain.persistence.BookMetadataAggregationRepository
@@ -14,6 +15,7 @@ import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
 
@@ -26,6 +28,11 @@ class GorseDesiredStateLifecycleTest {
   private val settings = mockk<GorseSettingsProvider>()
   private val client = mockk<GorseClient>()
   private val lifecycle = GorseDesiredStateLifecycle(dedupRepository, seriesRepository, bookRepository, seriesMetadataRepository, aggregationRepository, settings, client)
+
+  @BeforeEach
+  fun resetMocks() {
+    clearMocks(dedupRepository, seriesRepository, bookRepository, seriesMetadataRepository, aggregationRepository, settings, client)
+  }
 
   @Test
   fun `full item is hidden only when a Series has no active Books`() {
@@ -75,6 +82,26 @@ class GorseDesiredStateLifecycleTest {
 
     assertThat(lifecycle.syncNow(series.id).state).isEqualTo(GorseSyncNowState.FAILED)
     verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, match { it.contains("expected true") }, any()) }
+  }
+
+  @Test
+  fun `reconcile persists remote failure for retry`() {
+    val now = LocalDateTime.now()
+    val series = makeSeries("pending", "library")
+    val work = DedupGorseSync(series.id, series.libraryId, true, "RUNNING", 0, null, null, now, now, null)
+    every { settings.enabled } returns true
+    every { dedupRepository.findPendingGorseSync(any()) } returns work
+    every { seriesRepository.findByIdOrNull(series.id) } returns series
+    every { bookRepository.findAllBySeriesId(series.id) } returns emptyList()
+    every { seriesMetadataRepository.findByIdOrNull(series.id) } returns null
+    every { aggregationRepository.findByIdOrNull(series.id) } returns null
+    every { client.upsertItemChecked(any()) } throws IllegalStateException("Gorse unavailable")
+    every { dedupRepository.failGorseSync(series.id, true, any(), any()) } returns true
+
+    assertThat(lifecycle.reconcile(1)).isEqualTo(1)
+
+    verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, match { it.contains("unavailable") }, any()) }
+    verify(exactly = 0) { dedupRepository.completeGorseSync(any(), any(), any()) }
   }
 
   @Test

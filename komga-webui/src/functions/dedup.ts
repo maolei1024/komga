@@ -1,71 +1,22 @@
-import {
-  DedupClusterEligibilityDto,
-  DedupClusterSummaryDto,
-  DedupClusterVerificationRequestDto,
-  DedupEligibilityReasonDto,
-  DedupGorseSeriesResultDto,
-  DedupResolutionResultPayloadDto,
-} from '@/types/komga-dedup'
+import {DedupResolutionDto} from '@/types/komga-dedup'
 
-export function isCurrentClusterEligibility(
-  cluster: DedupClusterSummaryDto | undefined,
-  eligibility: DedupClusterEligibilityDto,
-): boolean {
-  return cluster?.id === eligibility.clusterId && cluster.revision === eligibility.expectedRevision
+export function formatDedupBytes(value?: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  if (value < 1024) return `${value} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  let amount = value
+  let index = -1
+  do { amount /= 1024; index++ } while (amount >= 1024 && index < units.length - 1)
+  return `${amount >= 10 ? amount.toFixed(0) : amount.toFixed(1)} ${units[index]}`
 }
 
-export interface DedupEligibilityDisplayReason {
-  key: string
-  code: string
-  severity: 'BLOCKER' | 'WARNING'
-  memberIds: string[]
-  actual?: unknown
-  threshold?: unknown
-  actions: string[]
-  confirmationRequired: boolean
+export function resolutionCounts(value: DedupResolutionDto): {kept: number; deleted: number} {
+  return {
+    kept: value.members.filter(member => member.action === 'KEEP').length,
+    deleted: value.members.filter(member => member.action === 'DELETE').length,
+  }
 }
 
-export function currentPageVerificationRequests(clusters: DedupClusterSummaryDto[]): DedupClusterVerificationRequestDto[] {
-  return clusters.filter(cluster => cluster.reviewable).map(cluster => ({clusterId: cluster.id, expectedRevision: cluster.revision}))
-}
-
-export function mergeEligibilityReasons(reasons: DedupEligibilityReasonDto[]): DedupEligibilityDisplayReason[] {
-  const grouped = new Map<string, DedupEligibilityDisplayReason>()
-  reasons.forEach(reason => {
-    const memberIds = [...reason.memberIds].sort()
-    const key = `${reason.code}:${memberIds.join(',')}`
-    const current = grouped.get(key) || {
-      key,
-      code: reason.code,
-      severity: 'WARNING',
-      memberIds,
-      actions: [],
-      confirmationRequired: false,
-    } as DedupEligibilityDisplayReason
-    if (reason.severity === 'BLOCKER') current.severity = 'BLOCKER'
-    if (current.actual === undefined && reason.actual != null) current.actual = reason.actual
-    if (current.threshold === undefined && reason.threshold != null) current.threshold = reason.threshold
-    current.actions = [...new Set([...current.actions, ...(reason.action ? [reason.action] : [])])]
-    current.confirmationRequired = current.confirmationRequired || reason.confirmationRequired
-    grouped.set(key, current)
-  })
-  return [...grouped.values()]
-}
-
-export function formatBytes(bytes: number | null | undefined): string {
-  if (bytes == null) return '—'
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  return `${(bytes / Math.pow(1024, index)).toFixed(index > 1 ? 1 : 0)} ${units[index]}`
-}
-
-export function resolutionSeriesResults(result: DedupResolutionResultPayloadDto | null | undefined): DedupGorseSeriesResultDto[] {
-  if (!result?.series || typeof result.series !== 'object') return []
-  return Object.entries(result.series).map(([seriesId, value]) => ({
-    seriesId,
-    state: value.state,
-    expectedHidden: value.expectedHidden,
-    error: value.error,
-  })).sort((left, right) => left.seriesId.localeCompare(right.seriesId))
+export function customActionKey(deleteCount: number): 'dedup.keepAll' | 'dedup.applySelection' {
+  return deleteCount === 0 ? 'dedup.keepAll' : 'dedup.applySelection'
 }
