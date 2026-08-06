@@ -79,6 +79,12 @@ interface DedupRepository {
 
   fun countPendingWork(type: DedupWorkType): Int
 
+  /** Count distinct Books that still need a scan, whether discovered lazily or already queued. */
+  fun countPendingScanBooks(
+    libraryIds: Set<String>,
+    featureSchemaVersion: Int,
+  ): Int
+
   /** Stable DAO-level LIMIT query for active CBZ Books without the current feature schema. */
   fun findUnscannedBookIds(
     libraryId: String,

@@ -360,6 +360,34 @@ class DedupDao(
       .and(work.STATE.`in`(DedupWorkState.WAITING.name, DedupWorkState.PENDING.name, DedupWorkState.RUNNING.name, DedupWorkState.FAILED_REVIEW.name))
       .fetchOne(0, Int::class.java) ?: 0
 
+  override fun countPendingScanBooks(
+    libraryIds: Set<String>,
+    featureSchemaVersion: Int,
+  ): Int {
+    if (libraryIds.isEmpty()) return 0
+    val unscanned =
+      dslRO
+        .select(book.ID)
+        .from(book)
+        .leftJoin(feature)
+        .on(feature.BOOK_ID.eq(book.ID))
+        .where(book.LIBRARY_ID.`in`(libraryIds))
+        .and(book.DELETED_DATE.isNull)
+        .and(DSL.lower(book.URL).like("%.cbz"))
+        .and(feature.BOOK_ID.isNull.or(feature.FEATURE_SCHEMA_VERSION.ne(featureSchemaVersion)))
+    val queued =
+      dslRO
+        .select(work.TARGET_KEY)
+        .from(work)
+        .where(work.LIBRARY_ID.`in`(libraryIds))
+        .and(work.TYPE.eq(DedupWorkType.SCAN_BOOK.name))
+        .and(work.STATE.`in`(DedupWorkState.WAITING.name, DedupWorkState.PENDING.name, DedupWorkState.RUNNING.name, DedupWorkState.FAILED_REVIEW.name))
+    return dslRO
+      .selectCount()
+      .from(unscanned.union(queued).asTable("pending_scan_books"))
+      .fetchOne(0, Int::class.java) ?: 0
+  }
+
   override fun findUnscannedBookIds(
     libraryId: String,
     featureSchemaVersion: Int,

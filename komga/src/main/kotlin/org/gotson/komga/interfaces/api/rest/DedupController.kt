@@ -136,12 +136,17 @@ class DedupController(
   fun getStatus(): DedupStatusDto {
     val libraries = libraryRepository.findAll().associateBy { it.id }
     val settings = dedupRepository.findAllLibrarySettings()
+    val activeSettings = settings.filter { it.enabled && !it.paused }
     return DedupStatusDto(
-      pendingScanBooks = dedupRepository.countPendingWork(DedupWorkType.SCAN_BOOK),
+      pendingScanBooks =
+        dedupRepository.countPendingScanBooks(
+          activeSettings.mapTo(mutableSetOf()) { it.libraryId },
+          DedupCoverLifecycle.FEATURE_SCHEMA_VERSION,
+        ),
       automaticVerificationPairs = dedupRepository.countPendingWork(DedupWorkType.VERIFY_RELATION),
       unresolvedClusters = dedupRepository.countUnresolvedClusters(),
       processedResolutions = resolutionRepository.countProcessedResolutions(),
-      enabledLibraries = settings.count { it.enabled && !it.paused },
+      enabledLibraries = activeSettings.size,
       libraries =
         settings.filter { it.enabled }.map { value ->
           DedupLibraryRunStatusDto(

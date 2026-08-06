@@ -95,6 +95,12 @@ class DedupDaoTest(
 
     assertThat(dao.findUnscannedBookIds(library.id, DedupCoverLifecycle.FEATURE_SCHEMA_VERSION, 1)).containsExactly(books[1].id)
     assertThat(dao.findUnscannedBookIds(library.id, DedupCoverLifecycle.FEATURE_SCHEMA_VERSION, 10)).containsExactly(books[1].id, books[2].id)
+
+    assertThat(dao.countPendingScanBooks(setOf(library.id), DedupCoverLifecycle.FEATURE_SCHEMA_VERSION)).isEqualTo(2)
+    dao.enqueueWork("scan-current-${UUID.randomUUID()}", library.id, DedupWorkType.SCAN_BOOK, books[0].id)
+    dao.enqueueWork("scan-unscanned-${UUID.randomUUID()}", library.id, DedupWorkType.SCAN_BOOK, books[1].id)
+    assertThat(dao.countPendingScanBooks(setOf(library.id), DedupCoverLifecycle.FEATURE_SCHEMA_VERSION)).isEqualTo(3)
+    assertThat(dao.countPendingScanBooks(emptySet(), DedupCoverLifecycle.FEATURE_SCHEMA_VERSION)).isZero()
   }
 
   @Test
