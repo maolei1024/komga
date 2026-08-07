@@ -1106,6 +1106,7 @@
     "keepAll": "Retain all",
     "applySelection": "Remove selected {remove}, retain {keep}",
     "retryIncomplete": "Retry unfinished operation",
+    "resolutionQueued": "Queued for background processing; you can review the next cluster",
     "resolutionCompleted": "Duplicate review completed",
     "lastAttempt": "Last attempt",
     "book": "Book",

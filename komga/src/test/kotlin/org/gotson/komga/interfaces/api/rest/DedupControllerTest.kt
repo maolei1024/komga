@@ -51,7 +51,7 @@ class DedupControllerTest(
       }.andExpect {
         status { isCreated() }
         jsonPath("$.id") { value("resolution") }
-        jsonPath("$.state") { value("PROCESSED") }
+        jsonPath("$.state") { value("PROCESSING") }
       }
 
     verify(exactly = 1) { resolutionLifecycle.createCustom("cluster", 1, listOf("B"), any()) }
@@ -123,14 +123,14 @@ class DedupControllerTest(
       evidenceJson = "{}",
       eligibilityJson = "{}",
       ruleVersion = 3,
-      state = DedupResolutionState.PROCESSED,
+      state = DedupResolutionState.PROCESSING,
       actorId = "admin",
       resultJson = "{}",
       leaseToken = "lease",
       leaseUntil = now,
       createdDate = now,
       lastModifiedDate = now,
-      completedDate = now,
+      completedDate = null,
     )
   }
 }

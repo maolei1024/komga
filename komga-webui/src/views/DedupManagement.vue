@@ -117,7 +117,7 @@
       </v-tab-item>
     </v-tabs-items>
 
-    <DedupClusterDialog v-model="dialogOpen" :cluster-id="selectedClusterId" @updated="refreshAfterAction" @notify="notify($event, 'success')"/>
+    <DedupClusterDialog v-model="dialogOpen" :cluster-id="selectedClusterId" @updated="refreshAfterAction" @notify="notify($event.text, $event.color)"/>
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4500">
       {{ snackbar.text }}
       <template v-slot:action="{attrs}"><v-btn text v-bind="attrs" @click="snackbar.show = false">{{ $t('common.close') }}</v-btn></template>

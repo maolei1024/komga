@@ -182,7 +182,11 @@ export default Vue.extend({
       this.busyAction = action; this.actionError = ''
       try {
         this.resolutionResult = await operation()
-        this.$emit('notify', this.$t('dedup.resolutionCompleted').toString())
+        const queued = this.resolutionResult.state === 'PROCESSING'
+        this.$emit('notify', {
+          text: this.$t(queued ? 'dedup.resolutionQueued' : 'dedup.resolutionCompleted').toString(),
+          color: queued ? 'info' : 'success',
+        })
         this.$emit('updated')
         this.$emit('input', false)
       } catch (error) {

@@ -2,6 +2,7 @@ package org.gotson.komga.application.tasks
 
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
@@ -9,6 +10,7 @@ import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.service.BookLifecycle
+import org.gotson.komga.domain.service.DedupResolutionLifecycle
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -26,6 +28,9 @@ class TaskProcessorTest(
 
   @MockkBean
   private lateinit var mockBookRepository: BookRepository
+
+  @MockkBean
+  private lateinit var mockDedupResolutionLifecycle: DedupResolutionLifecycle
 
   fun testTasks(
     sleep: Duration = 3.seconds,
@@ -84,6 +89,18 @@ class TaskProcessorTest(
     }
 
     verify(exactly = 1) { mockBookLifecycle.analyzeAndPersist(any()) }
+    assertThat(tasksRepository.count()).isZero()
+  }
+
+  @Test
+  fun `queued Dedup resolutions execute through the persistent task processor`() {
+    every { mockDedupResolutionLifecycle.executeQueued("resolution") } returns mockk()
+
+    testTasks {
+      taskEmitter.executeDedupResolution("resolution", "library")
+    }
+
+    verify(exactly = 1) { mockDedupResolutionLifecycle.executeQueued("resolution") }
     assertThat(tasksRepository.count()).isZero()
   }
 }

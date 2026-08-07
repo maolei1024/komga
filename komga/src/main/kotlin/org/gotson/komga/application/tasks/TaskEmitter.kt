@@ -288,6 +288,14 @@ class TaskEmitter(
     submitTask(Task.DrainDedupQueue(libraryId, priority))
   }
 
+  fun executeDedupResolution(
+    resolutionId: String,
+    libraryId: String,
+    priority: Int = HIGHEST_PRIORITY,
+  ) {
+    submitTask(Task.ExecuteDedupResolution(resolutionId, libraryId, priority))
+  }
+
   private fun submitTask(task: Task) {
     logger.info { "Sending task: $task" }
     tasksRepository.save(task)

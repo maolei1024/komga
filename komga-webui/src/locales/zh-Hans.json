@@ -1106,6 +1106,7 @@
     "keepAll": "全部保留",
     "applySelection": "删除已选 {remove} 本，保留 {keep} 本",
     "retryIncomplete": "重试未完成操作",
+    "resolutionQueued": "已提交后台处理，可以继续审核下一簇",
     "resolutionCompleted": "相似簇处理完成",
     "lastAttempt": "上次处理结果",
     "book": "Book",

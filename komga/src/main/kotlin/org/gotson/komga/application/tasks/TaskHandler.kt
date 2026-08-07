@@ -11,6 +11,7 @@ import org.gotson.komga.domain.service.BookImporter
 import org.gotson.komga.domain.service.BookLifecycle
 import org.gotson.komga.domain.service.BookMetadataLifecycle
 import org.gotson.komga.domain.service.BookPageEditor
+import org.gotson.komga.domain.service.DedupResolutionLifecycle
 import org.gotson.komga.domain.service.DedupWorkLifecycle
 import org.gotson.komga.domain.service.LibraryContentLifecycle
 import org.gotson.komga.domain.service.LocalArtworkLifecycle
@@ -45,6 +46,7 @@ class TaskHandler(
   private val searchIndexLifecycle: SearchIndexLifecycle,
   private val pageHashLifecycle: PageHashLifecycle,
   private val dedupWorkLifecycle: DedupWorkLifecycle,
+  private val dedupResolutionLifecycle: DedupResolutionLifecycle,
   private val meterRegistry: MeterRegistry,
 ) {
   fun handleTask(task: Task) {
@@ -185,6 +187,8 @@ class TaskHandler(
           }
 
           is Task.DrainDedupQueue -> dedupWorkLifecycle.drain(task.libraryId)
+
+          is Task.ExecuteDedupResolution -> dedupResolutionLifecycle.executeQueued(task.resolutionId)
         }
       }.also {
         logger.info { "Task $task executed in $it" }

@@ -2,6 +2,8 @@ package org.gotson.komga.domain.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.f4b6a3.tsid.TsidCreator
+import org.gotson.komga.application.tasks.TaskEmitter
+import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupPlanMember
 import org.gotson.komga.domain.model.DedupResolution
@@ -44,6 +46,7 @@ class DedupResolutionLifecycle(
   private val coverLifecycle: DedupCoverLifecycle,
   private val physicalDeletionLifecycle: DedupPhysicalBookDeletionLifecycle,
   private val clusterLifecycle: DedupClusterLifecycle,
+  private val taskEmitter: TaskEmitter,
   private val objectMapper: ObjectMapper,
 ) {
   private val leaseDuration = Duration.ofMinutes(30)
@@ -106,12 +109,47 @@ class DedupResolutionLifecycle(
     }
     val processing = requireNotNull(resolutionRepository.findResolution(resolutionId))
     return try {
-      prepareRetry(processing)
-      continueExecution(requireNotNull(resolutionRepository.findResolution(resolutionId)))
+      val cluster = dedupRepository.findCluster(value.clusterId) ?: validation("CLUSTER_NOT_FOUND", "Cluster was not found")
+      taskEmitter.executeDedupResolution(processing.id, cluster.cluster.libraryId)
+      processing
     } catch (exception: DedupResolutionExecutionException) {
       throw exception
     } catch (exception: Exception) {
       failResolution(processing, null, "RETRY_FAILED", exception.message ?: exception.javaClass.simpleName)
+    }
+  }
+
+  fun executeQueued(resolutionId: String): DedupResolution {
+    val current = resolutionRepository.findResolution(resolutionId) ?: validation("RESOLUTION_NOT_FOUND", "Resolution was not found")
+    if (current.state != DedupResolutionState.PROCESSING) return current
+    return try {
+      val token =
+        java.util.UUID
+          .randomUUID()
+          .toString()
+      if (!resolutionRepository.updateResolution(
+          current.id,
+          setOf(DedupResolutionState.PROCESSING),
+          DedupResolutionState.PROCESSING,
+          current.resultJson,
+          leaseToken = token,
+          leaseUntil = LocalDateTime.now().plus(leaseDuration),
+        )
+      ) {
+        return resolutionRepository.findResolution(resolutionId) ?: validation("RESOLUTION_NOT_FOUND", "Resolution was not found")
+      }
+      val processing = requireNotNull(resolutionRepository.findResolution(resolutionId))
+      val members = resolutionRepository.findResolutionMembers(processing.id)
+      if (members.any { it.state.requiresResumePreparation() }) {
+        prepareRetry(processing)
+      } else {
+        preflight(processing)
+      }
+      continueExecution(requireNotNull(resolutionRepository.findResolution(processing.id)))
+    } catch (exception: DedupResolutionExecutionException) {
+      throw exception
+    } catch (exception: Exception) {
+      failResolution(current, null, "EXECUTION_FAILED", exception.message ?: exception.javaClass.simpleName)
     }
   }
 
@@ -214,17 +252,17 @@ class DedupResolutionLifecycle(
         )
       resolutionRepository.insertResolution(value, memberRows)
       dedupRepository.updateClusterState(cluster.cluster.id, setOf(DedupClusterStatus.PROCESSING), DedupClusterStatus.PROCESSING, id)
-      preflight(value)
-      return continueExecution(requireNotNull(resolutionRepository.findResolution(id)))
+      taskEmitter.executeDedupResolution(id, cluster.cluster.libraryId)
+      return value
     } catch (exception: DedupResolutionExecutionException) {
       throw exception
     } catch (exception: Exception) {
       val persisted = resolutionRepository.findResolution(id)
       if (persisted == null) {
-        dedupRepository.updateClusterState(cluster.cluster.id, setOf(DedupClusterStatus.PROCESSING), DedupClusterStatus.UNPROCESSED, reopenReason = "PREFLIGHT_FAILED")
-        throw DedupResolutionExecutionException(null, "PREFLIGHT_FAILED", false, sanitize(exception.message ?: exception.javaClass.simpleName))
+        dedupRepository.updateClusterState(cluster.cluster.id, setOf(DedupClusterStatus.PROCESSING), DedupClusterStatus.UNPROCESSED, reopenReason = "SUBMISSION_FAILED")
+        throw DedupResolutionExecutionException(null, "SUBMISSION_FAILED", false, sanitize(exception.message ?: exception.javaClass.simpleName))
       }
-      failResolution(persisted, null, "PREFLIGHT_FAILED", exception.message ?: exception.javaClass.simpleName)
+      failResolution(persisted, null, "QUEUE_FAILED", exception.message ?: exception.javaClass.simpleName)
     }
   }
 
@@ -239,6 +277,8 @@ class DedupResolutionLifecycle(
     var firstFailure: Pair<String, String>? = null
     members.sortedBy { it.bookId }.forEach { member ->
       try {
+        if (member.state == DedupResolutionMemberState.PREFLIGHTED) return@forEach
+        check(member.state == DedupResolutionMemberState.PLANNED) { "Resolution member cannot enter preflight from ${member.state}" }
         if (member.action == DedupResolutionAction.KEEP) {
           check(
             resolutionRepository.updateResolutionMember(
@@ -255,7 +295,22 @@ class DedupResolutionLifecycle(
         val identity = requireNotNull(coverLifecycle.currentSourceIdentity(member.bookId)) { "Book is no longer active" }
         check(sourceMatches(member, identity)) { "Book source generation changed" }
         check(physicalDeletionLifecycle.precheck(book).status == DedupFilePrecheckStatus.AVAILABLE) { "Delete path precheck failed" }
-        val strong = physicalDeletionLifecycle.captureStrongIdentity(book)
+        check(identity.archiveHashState == DedupArchiveHashState.READY && !identity.archiveHash.isNullOrBlank()) {
+          "Current persisted archive hash is unavailable"
+        }
+        // Deep verification already read and persisted the complete archive hash. Use that
+        // approved identity here; deleteVerifiedBook still hashes the live path immediately
+        // before unlinking it, so the destructive boundary keeps its strong verification
+        // without reading every remote archive twice during one submission.
+        val strong =
+          DedupStrongFileIdentity(
+            book.path
+              .toAbsolutePath()
+              .normalize()
+              .toString(),
+            book.fileSize,
+            requireNotNull(identity.archiveHash),
+          )
         check(
           resolutionRepository.updateResolutionMember(
             value.id,
@@ -348,7 +403,7 @@ class DedupResolutionLifecycle(
     }
 
     members = resolutionRepository.findResolutionMembers(value.id)
-    members.forEach { member ->
+    members.filter { it.state != DedupResolutionMemberState.COMPLETED }.forEach { member ->
       val expected =
         if (member.action == DedupResolutionAction.KEEP) setOf(DedupResolutionMemberState.PREFLIGHTED) else setOf(DedupResolutionMemberState.KOMGA_SAVED)
       check(
@@ -363,7 +418,14 @@ class DedupResolutionLifecycle(
       ) { "Resolution member could not be finalized" }
     }
     val survivors = members.filter { it.action == DedupResolutionAction.KEEP }.map { it.bookId }.toSet()
-    clusterLifecycle.finalizeProcessed(value.clusterId, value.id, value.actorId, survivors)
+    val cluster = requireNotNull(dedupRepository.findCluster(value.clusterId)) { "Cluster no longer exists" }
+    if (cluster.cluster.status == DedupClusterStatus.PROCESSING) {
+      clusterLifecycle.finalizeProcessed(value.clusterId, value.id, value.actorId, survivors)
+    } else {
+      check(cluster.cluster.status == DedupClusterStatus.PROCESSED && cluster.cluster.lastResolutionId == value.id) {
+        "Cluster final state does not belong to this resolution"
+      }
+    }
     val resultJson = objectMapper.writeValueAsString(mapOf("deleted" to deletions.map { it.bookId }, "kept" to survivors.sorted()))
     if (!resolutionRepository.updateResolution(value.id, setOf(DedupResolutionState.PROCESSING), DedupResolutionState.PROCESSED, resultJson, LocalDateTime.now())) {
       throw DedupResolutionExecutionException(value.id, "FINALIZE_CONFLICT", deletions.isNotEmpty(), "Resolution final state could not be saved")
@@ -469,6 +531,16 @@ class DedupResolutionLifecycle(
   }
 
   private fun DedupResolutionMember.expectedIdentity() = DedupStrongFileIdentity(requireNotNull(expectedPath), requireNotNull(expectedSize), requireNotNull(expectedArchiveHash))
+
+  private fun DedupResolutionMemberState.requiresResumePreparation(): Boolean =
+    this in
+      setOf(
+        DedupResolutionMemberState.DELETED,
+        DedupResolutionMemberState.KOMGA_SAVED,
+        DedupResolutionMemberState.GORSE_CONFIRMED,
+        DedupResolutionMemberState.COMPLETED,
+        DedupResolutionMemberState.FAILED,
+      )
 
   private fun canonicalPlan(members: List<DedupPlanMember>): String = members.sortedBy { it.bookId }.joinToString("|") { "${it.bookId}:${it.action}:${it.keeperBookId.orEmpty()}:${it.directRelationId.orEmpty()}" }
 

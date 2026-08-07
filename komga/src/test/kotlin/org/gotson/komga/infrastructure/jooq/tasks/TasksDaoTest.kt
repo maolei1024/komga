@@ -24,14 +24,15 @@ class TasksDaoTest(
     val task2 = Task.ConvertBook("book2", 1, "group2")
     val task3 = Task.ScanLibrary("library1", true, 2)
     val task4 = Task.DrainDedupQueue("library1", 6)
+    val task5 = Task.ExecuteDedupResolution("resolution1", "library1")
 
-    tasksDao.save(listOf(task1, task2, task3, task4))
+    tasksDao.save(listOf(task1, task2, task3, task4, task5))
 
     // when
     val tasks = tasksDao.findAll()
 
     // then
-    assertThat(tasks).hasSize(4)
+    assertThat(tasks).hasSize(5)
     tasks.sortedBy { it.priority }.let {
       assertThat(it[0])
         .isInstanceOf(Task.AnalyzeBook::class.java)
@@ -57,6 +58,13 @@ class TasksDaoTest(
         .hasFieldOrPropertyWithValue("libraryId", task4.libraryId)
         .hasFieldOrPropertyWithValue("priority", task4.priority)
         .hasFieldOrPropertyWithValue("groupId", task4.groupId)
+
+      assertThat(it[4])
+        .isInstanceOf(Task.ExecuteDedupResolution::class.java)
+        .hasFieldOrPropertyWithValue("resolutionId", task5.resolutionId)
+        .hasFieldOrPropertyWithValue("libraryId", task5.libraryId)
+        .hasFieldOrPropertyWithValue("priority", task5.priority)
+        .hasFieldOrPropertyWithValue("groupId", task5.groupId)
     }
   }
 

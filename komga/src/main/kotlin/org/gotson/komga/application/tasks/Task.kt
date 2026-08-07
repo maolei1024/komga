@@ -254,4 +254,17 @@ sealed class Task(
 
     override fun toString(): String = "DrainDedupQueue(libraryId='$libraryId', priority='$priority')"
   }
+
+  /**
+   * A persistent wake-up for a resolution whose authoritative plan and progress are stored in database.sqlite.
+   */
+  class ExecuteDedupResolution(
+    val resolutionId: String,
+    val libraryId: String,
+    priority: Int = HIGHEST_PRIORITY,
+  ) : Task(priority, "DEDUP_$libraryId") {
+    override val uniqueId = "EXECUTE_DEDUP_RESOLUTION_$resolutionId"
+
+    override fun toString(): String = "ExecuteDedupResolution(resolutionId='$resolutionId', libraryId='$libraryId', priority='$priority')"
+  }
 }
