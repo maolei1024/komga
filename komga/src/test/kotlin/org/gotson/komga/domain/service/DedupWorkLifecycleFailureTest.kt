@@ -30,7 +30,7 @@ class DedupWorkLifecycleFailureTest {
     val first = work("work-A", "A")
     val second = work("work-B", "B")
     val scanTypes = setOf(DedupWorkType.SCAN_BOOK)
-    val internalTypes = setOf(DedupWorkType.VERIFY_RELATION, DedupWorkType.REBUILD_CLUSTERS)
+    val internalTypes = setOf(DedupWorkType.VERIFY_RELATION, DedupWorkType.REBUILD_CLUSTERS, DedupWorkType.AUTO_RESOLVE_SUGGESTIONS)
     val lifecycle =
       DedupWorkLifecycle(
         repository,
@@ -40,6 +40,7 @@ class DedupWorkLifecycleFailureTest {
         cover,
         mockk<DedupDeepVerificationLifecycle>(relaxed = true),
         mockk<DedupClusterLifecycle>(relaxed = true),
+        mockk<DedupAutoResolutionLifecycle>(relaxed = true),
         mockk<TaskEmitter>(relaxed = true),
         mockk<GorseDesiredStateLifecycle>(relaxed = true),
       )

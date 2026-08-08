@@ -180,6 +180,46 @@ class DedupMigrationTest {
     }
   }
 
+  @Test
+  fun `automatic suggestion migration preserves settings and defaults to disabled`() {
+    val database = directory.resolve("dedup-auto-suggestions.sqlite")
+    DriverManager.getConnection("jdbc:sqlite:$database").use { connection ->
+      connection.createStatement().use { statement ->
+        statement.execute("CREATE TABLE LIBRARY (ID varchar PRIMARY KEY)")
+        statement.execute("CREATE TABLE SERIES (ID varchar PRIMARY KEY)")
+        statement.execute("CREATE TABLE BOOK (ID varchar PRIMARY KEY)")
+        statement.execute("INSERT INTO LIBRARY VALUES ('library')")
+      }
+      executeMigration(connection, "V20260804120000__dedup_cluster_reset.sql")
+      connection.createStatement().use { statement ->
+        statement.execute("INSERT INTO DEDUP_LIBRARY_SETTINGS (LIBRARY_ID, ENABLED) VALUES ('library', true)")
+      }
+
+      executeMigration(connection, "V20260808120000__dedup_auto_resolve_suggestions.sql")
+
+      connection.createStatement().use { statement ->
+        statement.executeQuery("SELECT ENABLED, AUTO_RESOLVE_SUGGESTIONS FROM DEDUP_LIBRARY_SETTINGS WHERE LIBRARY_ID = 'library'").use { result ->
+          assertThat(result.next()).isTrue()
+          assertThat(result.getBoolean(1)).isTrue()
+          assertThat(result.getBoolean(2)).isFalse()
+        }
+        statement.execute("UPDATE DEDUP_LIBRARY_SETTINGS SET AUTO_RESOLVE_SUGGESTIONS = true WHERE LIBRARY_ID = 'library'")
+        assertThat(
+          statement.executeQuery("SELECT AUTO_RESOLVE_SUGGESTIONS FROM DEDUP_LIBRARY_SETTINGS WHERE LIBRARY_ID = 'library'").use {
+            it.next()
+            it.getBoolean(1)
+          },
+        ).isTrue()
+        assertThat(
+          statement.executeQuery("PRAGMA integrity_check").use {
+            it.next()
+            it.getString(1)
+          },
+        ).isEqualTo("ok")
+      }
+    }
+  }
+
   private fun executeMigration(
     connection: java.sql.Connection,
     fileName: String,

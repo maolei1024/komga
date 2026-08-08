@@ -3,12 +3,17 @@ package org.gotson.komga.interfaces.api.rest
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
 import io.mockk.verify
+import org.assertj.core.api.Assertions.assertThat
+import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionMode
 import org.gotson.komga.domain.model.DedupResolutionState
+import org.gotson.komga.domain.model.makeLibrary
 import org.gotson.komga.domain.service.DedupResolutionExecutionException
 import org.gotson.komga.domain.service.DedupResolutionLifecycle
 import org.gotson.komga.domain.service.DedupResolutionValidationException
+import org.gotson.komga.infrastructure.jooq.main.DedupDao
+import org.gotson.komga.infrastructure.jooq.main.LibraryDao
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -18,12 +23,16 @@ import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import java.time.LocalDateTime
+import java.util.UUID
 
 @SpringBootTest
 @AutoConfigureMockMvc(printOnlyOnFailure = false)
 class DedupControllerTest(
   @Autowired private val mockMvc: MockMvc,
+  @Autowired private val libraryDao: LibraryDao,
+  @Autowired private val dedupDao: DedupDao,
 ) {
   @MockkBean
   private lateinit var resolutionLifecycle: DedupResolutionLifecycle
@@ -33,10 +42,72 @@ class DedupControllerTest(
   fun `non administrators cannot read or mutate Dedup resources`() {
     mockMvc.get("/api/v1/dedup/status").andExpect { status { isForbidden() } }
     mockMvc
+      .put("/api/v1/dedup/settings") {
+        contentType = MediaType.APPLICATION_JSON
+        content =
+          """
+          {"libraries":[{"libraryId":"library","enabled":false,"paused":false,"scanInterval":"DAILY",
+          "batchSize":100,"maxDurationSeconds":300,"quietPeriodSeconds":180,"coverCandidateDistance":15,"coverTopK":20}]}
+          """.trimIndent()
+      }.andExpect { status { isForbidden() } }
+    mockMvc
       .post("/api/v1/dedup/clusters/cluster/resolutions/custom") {
         contentType = MediaType.APPLICATION_JSON
         content = keepAllRequest()
       }.andExpect { status { isForbidden() } }
+  }
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `settings preserve automatic resolution when an older client omits the field`() {
+    val library = makeLibrary("dedup-settings-${UUID.randomUUID()}")
+    libraryDao.insert(library)
+    dedupDao.saveLibrarySettings(DedupLibrarySettings(library.id, autoResolveSuggestions = true))
+
+    mockMvc
+      .put("/api/v1/dedup/settings") {
+        contentType = MediaType.APPLICATION_JSON
+        content =
+          """
+          {"libraries":[{"libraryId":"${library.id}","enabled":false,"paused":false,"scanInterval":"DAILY",
+          "batchSize":100,"maxDurationSeconds":300,"quietPeriodSeconds":180,"coverCandidateDistance":15,"coverTopK":20}]}
+          """.trimIndent()
+      }.andExpect {
+        status { isOk() }
+        jsonPath("$.libraries[?(@.libraryId == '${library.id}')].autoResolveSuggestions") { value(org.hamcrest.Matchers.contains(true)) }
+      }
+
+    assertThat(dedupDao.findLibrarySettings(library.id)?.autoResolveSuggestions).isTrue()
+  }
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `settings expose and update automatic resolution`() {
+    val library = makeLibrary("dedup-settings-auto-${UUID.randomUUID()}")
+    libraryDao.insert(library)
+
+    mockMvc
+      .get("/api/v1/dedup/settings")
+      .andExpect {
+        status { isOk() }
+        jsonPath("$.libraries[?(@.libraryId == '${library.id}')].autoResolveSuggestions") { value(org.hamcrest.Matchers.contains(false)) }
+      }
+
+    mockMvc
+      .put("/api/v1/dedup/settings") {
+        contentType = MediaType.APPLICATION_JSON
+        content =
+          """
+          {"libraries":[{"libraryId":"${library.id}","enabled":false,"paused":false,"scanInterval":"DAILY",
+          "batchSize":100,"maxDurationSeconds":300,"quietPeriodSeconds":180,"coverCandidateDistance":15,"coverTopK":20,
+          "autoResolveSuggestions":true}]}
+          """.trimIndent()
+      }.andExpect {
+        status { isOk() }
+        jsonPath("$.libraries[?(@.libraryId == '${library.id}')].autoResolveSuggestions") { value(org.hamcrest.Matchers.contains(true)) }
+      }
+
+    assertThat(dedupDao.findLibrarySettings(library.id)?.autoResolveSuggestions).isTrue()
   }
 
   @Test

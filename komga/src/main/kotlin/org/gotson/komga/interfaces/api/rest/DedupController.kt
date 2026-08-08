@@ -122,6 +122,7 @@ class DedupController(
           quietPeriodSeconds = value.quietPeriodSeconds,
           coverCandidateDistance = value.coverCandidateDistance,
           coverTopK = value.coverTopK,
+          autoResolveSuggestions = value.autoResolveSuggestions ?: current?.autoResolveSuggestions ?: false,
           createdDate = current?.createdDate ?: LocalDateTime.now(),
           lastModifiedDate = LocalDateTime.now(),
           lastBatchDate = current?.lastBatchDate,
@@ -317,6 +318,7 @@ class DedupController(
       quietPeriodSeconds,
       coverCandidateDistance,
       coverTopK,
+      autoResolveSuggestions,
       lastBatchDate,
       lastBatchBookCount,
     )

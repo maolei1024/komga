@@ -3,6 +3,7 @@ package org.gotson.komga.domain.persistence
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionMember
 import org.gotson.komga.domain.model.DedupResolutionMemberState
+import org.gotson.komga.domain.model.DedupResolutionMode
 import org.gotson.komga.domain.model.DedupResolutionState
 import java.time.LocalDateTime
 
@@ -33,6 +34,13 @@ interface DedupResolutionRepository {
   fun findResolutionMembers(resolutionId: String): List<DedupResolutionMember>
 
   fun hasActiveResolutionForBooks(bookIds: Set<String>): Boolean
+
+  fun hasResolutionAttempt(
+    clusterId: String,
+    clusterRevision: Long,
+    mode: DedupResolutionMode,
+    actorId: String,
+  ): Boolean
 
   fun updateResolution(
     resolutionId: String,

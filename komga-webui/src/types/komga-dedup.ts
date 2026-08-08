@@ -14,6 +14,7 @@ export interface DedupLibrarySettingsDto {
   quietPeriodSeconds: number
   coverCandidateDistance: number
   coverTopK: number
+  autoResolveSuggestions: boolean
   lastBatchDate?: string | null
   lastBatchBookCount: number
 }

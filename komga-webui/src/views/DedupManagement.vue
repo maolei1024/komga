@@ -37,7 +37,7 @@
             <v-expansion-panel v-for="resolution in resolutions" :key="resolution.id">
               <v-expansion-panel-header>
                 <div class="history-header">
-                  <div><strong>{{ formatDate(resolution.completed || resolution.created) }}</strong><span>{{ resolution.actorId }}</span></div>
+                  <div><strong>{{ formatDate(resolution.completed || resolution.created) }}</strong><span>{{ actorLabel(resolution.actorId) }}</span></div>
                   <div class="history-tags">
                     <v-chip small label outlined>{{ $t(`dedup.mode.${resolution.mode}`) }}</v-chip>
                     <span>{{ $t('dedup.historyCounts', resolutionCounts(resolution)) }}</span>
@@ -93,6 +93,22 @@
             <v-text-field v-model.number="library.coverCandidateDistance" type="number" min="0" max="256" dense outlined hide-details :label="$t('dedup.coverDistance')" :disabled="!library.enabled" @input="settingsDirty = true"/>
             <v-text-field v-model.number="library.coverTopK" type="number" min="1" max="1000" dense outlined hide-details :label="$t('dedup.topK')" :disabled="!library.enabled" @input="settingsDirty = true"/>
           </div>
+          <div class="auto-resolution-setting">
+            <v-icon color="warning" aria-hidden="true">mdi-alert-outline</v-icon>
+            <div class="auto-resolution-copy">
+              <strong>{{ $t('dedup.autoResolveSuggestions') }}</strong>
+              <p>{{ $t('dedup.autoResolveSuggestionsHelp') }}</p>
+            </div>
+            <v-switch
+              v-model="library.autoResolveSuggestions"
+              color="error"
+              dense
+              hide-details
+              :aria-label="$t('dedup.autoResolveSuggestions')"
+              :disabled="!library.enabled"
+              @change="settingsDirty = true"
+            />
+          </div>
         </div>
         <div class="settings-actions">
           <v-btn text :disabled="!settingsDirty || savingSettings" @click="loadSettings">{{ $t('common.cancel') }}</v-btn>
@@ -118,6 +134,27 @@
     </v-tabs-items>
 
     <DedupClusterDialog v-model="dialogOpen" :cluster-id="selectedClusterId" @resolved="removeResolvedCluster" @updated="refreshAfterAction" @notify="notify($event.text, $event.color)"/>
+    <v-dialog v-model="confirmAutoResolution" max-width="620" persistent>
+      <v-card>
+        <v-card-title>{{ $t('dedup.autoResolveConfirmTitle') }}</v-card-title>
+        <v-card-text class="auto-resolution-confirmation">
+          <p>{{ $t('dedup.autoResolveConfirmBody') }}</p>
+          <strong>{{ $t('dedup.autoResolveConfirmLibraries') }}</strong>
+          <ul>
+            <li v-for="libraryName in pendingAutoResolutionLibraries" :key="libraryName">{{ libraryName }}</li>
+          </ul>
+          <v-alert type="warning" text dense class="mb-0">
+            {{ $t('dedup.autoResolveConfirmSafety') }}
+          </v-alert>
+          <p class="queued-warning">{{ $t('dedup.autoResolveConfirmQueued') }}</p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer/>
+          <v-btn text :disabled="savingSettings" @click="cancelAutoResolutionConfirmation">{{ $t('common.cancel') }}</v-btn>
+          <v-btn color="error" :loading="savingSettings" @click="confirmAndSaveSettings">{{ $t('dedup.autoResolveConfirmAction') }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4500">
       {{ snackbar.text }}
       <template v-slot:action="{attrs}"><v-btn text v-bind="attrs" @click="snackbar.show = false">{{ $t('common.close') }}</v-btn></template>
@@ -130,7 +167,7 @@ import Vue from 'vue'
 import PageSizeSelect from '@/components/PageSizeSelect.vue'
 import DedupClusterDialog from '@/components/dedup/DedupClusterDialog.vue'
 import DedupClusterList from '@/components/dedup/DedupClusterList.vue'
-import {resolutionCounts, withoutDedupCluster} from '@/functions/dedup'
+import {dedupActorLabelKey, newlyEffectiveAutoResolutionLibraries, resolutionCounts, withoutDedupCluster} from '@/functions/dedup'
 import {DedupClusterSummaryDto, DedupResolutionDto, DedupSettingsDto, DedupStatusDto} from '@/types/komga-dedup'
 
 const EMPTY_STATUS: DedupStatusDto = {
@@ -150,6 +187,7 @@ export default Vue.extend({
     reviewState: 'pending' as 'pending' | 'processed',
     status: {...EMPTY_STATUS} as DedupStatusDto,
     settings: {libraries: []} as DedupSettingsDto,
+    settingsBaseline: {libraries: []} as DedupSettingsDto,
     clusters: [] as DedupClusterSummaryDto[],
     resolutions: [] as DedupResolutionDto[],
     totalClusters: 0,
@@ -161,6 +199,8 @@ export default Vue.extend({
     scanning: false,
     savingSettings: false,
     settingsDirty: false,
+    confirmAutoResolution: false,
+    pendingAutoResolutionLibraries: [] as string[],
     dialogOpen: false,
     selectedClusterId: '',
     snackbar: {show: false, text: '', color: 'success'},
@@ -197,7 +237,11 @@ export default Vue.extend({
     resolutionCounts,
     loadReview() { return this.reviewState === 'pending' ? this.loadClusters() : this.loadHistory() },
     async loadSettings() {
-      try { this.settings = await this.$komgaDedup.getSettings(); this.settingsDirty = false }
+      try {
+        this.settings = await this.$komgaDedup.getSettings()
+        this.settingsBaseline = {libraries: this.settings.libraries.map(value => ({...value}))}
+        this.settingsDirty = false
+      }
       catch (error) { this.notifyError(error) }
     },
     async loadStatus() {
@@ -238,10 +282,29 @@ export default Vue.extend({
       finally { this.scanning = false }
     },
     async saveSettings() {
+      const newlyEnabled = newlyEffectiveAutoResolutionLibraries(this.settings.libraries, this.settingsBaseline.libraries)
+      if (newlyEnabled.length > 0) {
+        this.pendingAutoResolutionLibraries = newlyEnabled.map(value => value.libraryName)
+        this.confirmAutoResolution = true
+        return
+      }
+      await this.persistSettings()
+    },
+    cancelAutoResolutionConfirmation() {
+      this.confirmAutoResolution = false
+      this.pendingAutoResolutionLibraries = []
+    },
+    async confirmAndSaveSettings() {
+      this.confirmAutoResolution = false
+      await this.persistSettings()
+    },
+    async persistSettings() {
       this.savingSettings = true
       try {
         this.settings = await this.$komgaDedup.updateSettings(this.settings)
+        this.settingsBaseline = {libraries: this.settings.libraries.map(value => ({...value}))}
         this.settingsDirty = false
+        this.pendingAutoResolutionLibraries = []
         this.notify(this.$t('dedup.settingsSaved').toString(), 'success')
         await this.loadStatus()
       } catch (error) { this.notifyError(error) }
@@ -258,6 +321,7 @@ export default Vue.extend({
     async refreshAfterAction() { await Promise.all([this.loadReview(), this.loadStatus()]) },
     formatDate(value: string): string { return new Date(value).toLocaleString() },
     formatOptionalDate(value?: string | null): string { return value ? this.formatDate(value) : this.$t('dedup.never').toString() },
+    actorLabel(actorId: string): string { const key = dedupActorLabelKey(actorId); return key ? this.$t(key).toString() : actorId },
     notify(text: string, color = 'success') { this.snackbar = {show: true, text, color} },
     notifyError(error: any) { this.notify(error?.response?.data?.message || error?.message || this.$t('dedup.unknownError').toString(), 'error') },
   },
@@ -294,6 +358,13 @@ export default Vue.extend({
 .library-settings { padding: 16px 0; border-bottom: 1px solid var(--v-contrast-1-base); }
 .library-settings-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .settings-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+.auto-resolution-setting { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--v-contrast-1-base); border-radius: 8px; }
+.auto-resolution-copy { min-width: 0; flex: 1; }
+.auto-resolution-copy strong { font-size: .875rem; }
+.auto-resolution-copy p { max-width: 72ch; margin: 3px 0 0; color: var(--v-contrast-light-2-base); font-size: .8125rem; text-wrap: pretty; }
+.auto-resolution-confirmation > p:first-child { margin-top: 0; }
+.auto-resolution-confirmation ul { margin: 8px 0 16px; }
+.auto-resolution-confirmation .queued-warning { margin: 14px 0 0; font-size: .8125rem; }
 .settings-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 0 30px; }
 .run-information { margin-top: 8px; }
 .run-information h2 { margin-bottom: 12px; }
@@ -307,6 +378,8 @@ export default Vue.extend({
   .state-toggle .v-btn { flex: 1; }
   .settings-heading { flex-direction: column; }
   .settings-grid { grid-template-columns: 1fr; }
+  .auto-resolution-setting { align-items: flex-start; flex-wrap: wrap; }
+  .auto-resolution-setting .v-input { margin-left: 36px; }
   .history-header { align-items: flex-start; flex-direction: column; }
   .history-tags { flex-wrap: wrap; }
 }

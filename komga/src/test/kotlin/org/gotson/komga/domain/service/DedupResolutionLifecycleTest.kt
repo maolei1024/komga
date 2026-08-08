@@ -421,6 +421,16 @@ private class FakeResolutionRepository : DedupResolutionRepository {
 
   override fun hasActiveResolutionForBooks(bookIds: Set<String>) = resolutions.values.any { it.state == DedupResolutionState.PROCESSING && members[it.id].orEmpty().any { member -> member.bookId in bookIds } }
 
+  override fun hasResolutionAttempt(
+    clusterId: String,
+    clusterRevision: Long,
+    mode: org.gotson.komga.domain.model.DedupResolutionMode,
+    actorId: String,
+  ): Boolean =
+    resolutions.values.any {
+      it.clusterId == clusterId && it.clusterRevision == clusterRevision && it.mode == mode && it.actorId == actorId
+    }
+
   override fun updateResolution(
     resolutionId: String,
     expectedStates: Set<DedupResolutionState>,

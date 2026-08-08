@@ -28,6 +28,7 @@ class DedupWorkLifecycle(
   private val coverLifecycle: DedupCoverLifecycle,
   private val deepVerificationLifecycle: DedupDeepVerificationLifecycle,
   private val clusterLifecycle: DedupClusterLifecycle,
+  private val autoResolutionLifecycle: DedupAutoResolutionLifecycle,
   private val taskEmitter: TaskEmitter,
   private val gorseDesiredStateLifecycle: GorseDesiredStateLifecycle,
 ) {
@@ -38,13 +39,17 @@ class DedupWorkLifecycle(
     const val PRIORITY_DELETED = 30
     private const val PRIORITY_VERIFY = 6
     private const val PRIORITY_REBUILD = -1
+    private const val PRIORITY_AUTO_RESOLVE = -2
   }
 
   private val leaseDuration = Duration.ofMinutes(10)
 
   fun saveSettings(settings: DedupLibrarySettings) {
     dedupRepository.saveLibrarySettings(settings)
-    if (settings.enabled && !settings.paused) requestLibraryBatch(settings.libraryId)
+    if (settings.enabled && !settings.paused) {
+      if (settings.autoResolveSuggestions) enqueueAutomaticResolution(settings.libraryId)
+      requestLibraryBatch(settings.libraryId)
+    }
   }
 
   /** Book events only coalesce desired work. A Library/manual/scheduled batch owns draining. */
@@ -113,14 +118,23 @@ class DedupWorkLifecycle(
       dedupRepository.updateLibraryBatchResult(libraryId, scannedBooks)
     }
 
-    // Internal verification/rebuild work never consumes the N-Book allowance.
+    // Internal verification/rebuild/automatic resolution work never consumes the N-Book allowance.
     while (withinBudget(started, settings)) {
-      val work = claim(libraryId, setOf(DedupWorkType.VERIFY_RELATION, DedupWorkType.REBUILD_CLUSTERS)) ?: break
-      processInternal(work)
+      val work =
+        claim(
+          libraryId,
+          setOf(DedupWorkType.VERIFY_RELATION, DedupWorkType.REBUILD_CLUSTERS, DedupWorkType.AUTO_RESOLVE_SUGGESTIONS),
+        ) ?: break
+      if (processInternal(work)) break
     }
   }
 
-  fun reconcileAtStartup() = reconcileScheduled()
+  fun reconcileAtStartup() {
+    dedupRepository.findAllLibrarySettings().filter { it.enabled && !it.paused && it.autoResolveSuggestions }.forEach { settings ->
+      enqueueAutomaticResolution(settings.libraryId)
+    }
+    reconcileScheduled()
+  }
 
   fun reconcileScheduled(now: LocalDateTime = LocalDateTime.now()) {
     dedupRepository.releaseExpiredLeases(now)
@@ -180,7 +194,8 @@ class DedupWorkLifecycle(
     }
   }
 
-  private fun processInternal(work: DedupWork) {
+  /** Returns true when the current drain should yield to queued resolution Tasks. */
+  private fun processInternal(work: DedupWork): Boolean {
     val leaseToken = requireNotNull(work.leaseToken)
     try {
       when (work.type) {
@@ -190,13 +205,23 @@ class DedupWorkLifecycle(
           deepVerificationLifecycle.verifyRelation(ids[0], ids[1])
           enqueueClusterRebuild(work.libraryId)
         }
-        DedupWorkType.REBUILD_CLUSTERS -> clusterLifecycle.rebuildLibrary(work.libraryId)
+        DedupWorkType.REBUILD_CLUSTERS -> {
+          clusterLifecycle.rebuildLibrary(work.libraryId)
+          dedupRepository.findLibrarySettings(work.libraryId)?.takeIf { it.enabled && !it.paused && it.autoResolveSuggestions }?.let {
+            enqueueAutomaticResolution(work.libraryId)
+          }
+        }
+        DedupWorkType.AUTO_RESOLVE_SUGGESTIONS -> {
+          val result = autoResolutionLifecycle.submitBatch(work.libraryId)
+          if (result.continuationRequired) enqueueAutomaticResolution(work.libraryId)
+        }
         DedupWorkType.SCAN_BOOK -> error("SCAN_BOOK must be processed by the bounded scan phase")
       }
       check(dedupRepository.completeWork(work.id, leaseToken, work.desiredRevision)) { "Dedup work lease changed before completion" }
     } catch (exception: Exception) {
       fail(work, exception)
     }
+    return work.type == DedupWorkType.AUTO_RESOLVE_SUGGESTIONS
   }
 
   private fun enqueueClusterRebuild(libraryId: String) {
@@ -205,6 +230,15 @@ class DedupWorkLifecycle(
       libraryId = libraryId,
       type = DedupWorkType.REBUILD_CLUSTERS,
       priority = PRIORITY_REBUILD,
+    )
+  }
+
+  private fun enqueueAutomaticResolution(libraryId: String) {
+    dedupRepository.enqueueWork(
+      id = TsidCreator.getTsid256().toString(),
+      libraryId = libraryId,
+      type = DedupWorkType.AUTO_RESOLVE_SUGGESTIONS,
+      priority = PRIORITY_AUTO_RESOLVE,
     )
   }
 

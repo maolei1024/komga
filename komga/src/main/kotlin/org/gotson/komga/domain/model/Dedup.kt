@@ -12,6 +12,7 @@ data class DedupLibrarySettings(
   val quietPeriodSeconds: Int = 180,
   val coverCandidateDistance: Int = 15,
   val coverTopK: Int = 20,
+  val autoResolveSuggestions: Boolean = false,
   val createdDate: LocalDateTime = LocalDateTime.now(),
   val lastModifiedDate: LocalDateTime = createdDate,
   val lastBatchDate: LocalDateTime? = null,
@@ -32,6 +33,7 @@ enum class DedupWorkType {
   SCAN_BOOK,
   VERIFY_RELATION,
   REBUILD_CLUSTERS,
+  AUTO_RESOLVE_SUGGESTIONS,
 }
 
 enum class DedupWorkState {

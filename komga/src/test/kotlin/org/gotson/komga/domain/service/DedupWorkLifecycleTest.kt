@@ -29,6 +29,32 @@ class DedupWorkLifecycleTest(
   @Autowired private val bookDao: BookDao,
 ) {
   @Test
+  fun `enabling automatic suggestions queues an immediate automatic resolution sweep`() {
+    val library = makeLibrary("dedup-auto-${UUID.randomUUID()}")
+    libraryDao.insert(library)
+
+    lifecycle.saveSettings(DedupLibrarySettings(library.id, enabled = true, autoResolveSuggestions = true))
+
+    assertThat(dao.findAllWork().filter { it.libraryId == library.id })
+      .anyMatch { it.type == DedupWorkType.AUTO_RESOLVE_SUGGESTIONS }
+  }
+
+  @Test
+  fun `cluster rebuild queues automatic suggestions after current evidence is saved`() {
+    val library = makeLibrary("dedup-auto-rebuild-${UUID.randomUUID()}")
+    libraryDao.insert(library)
+    dao.saveLibrarySettings(DedupLibrarySettings(library.id, enabled = true, autoResolveSuggestions = true))
+    dao.enqueueWork("rebuild-${UUID.randomUUID()}", library.id, DedupWorkType.REBUILD_CLUSTERS)
+
+    lifecycle.drain(library.id)
+
+    assertThat(dao.findAllWork().filter { it.libraryId == library.id && it.type == DedupWorkType.AUTO_RESOLVE_SUGGESTIONS })
+      .singleElement()
+      .extracting("state")
+      .isEqualTo(DedupWorkState.SUCCEEDED)
+  }
+
+  @Test
   fun `250 unscanned Books with N 100 are processed in 100 100 50 batches`() {
     val fixture = fixture(250, batchSize = 100)
 

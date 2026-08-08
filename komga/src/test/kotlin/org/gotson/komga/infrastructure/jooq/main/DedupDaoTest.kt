@@ -52,7 +52,16 @@ class DedupDaoTest(
 
   @Test
   fun `new library settings round trip without completion stability`() {
-    val value = DedupLibrarySettings(library.id, enabled = true, paused = true, batchSize = 25, maxDurationSeconds = 45, quietPeriodSeconds = 120)
+    val value =
+      DedupLibrarySettings(
+        library.id,
+        enabled = true,
+        paused = true,
+        batchSize = 25,
+        maxDurationSeconds = 45,
+        quietPeriodSeconds = 120,
+        autoResolveSuggestions = true,
+      )
     dao.saveLibrarySettings(value)
     assertThat(dao.findLibrarySettings(library.id)).usingRecursiveComparison().ignoringFields("createdDate", "lastModifiedDate").isEqualTo(value)
   }
@@ -379,6 +388,9 @@ class DedupDaoTest(
 
     assertThat(dao.findResolutionMembers(resolution.id)).hasSize(2).allMatch { it.action == DedupResolutionAction.KEEP }
     assertThat(dao.hasActiveResolutionForBooks(setOf("B"))).isTrue()
+    assertThat(dao.hasResolutionAttempt(cluster.id, 1, DedupResolutionMode.CUSTOM, "admin")).isTrue()
+    assertThat(dao.hasResolutionAttempt(cluster.id, 2, DedupResolutionMode.CUSTOM, "admin")).isFalse()
+    assertThat(dao.hasResolutionAttempt(cluster.id, 1, DedupResolutionMode.SUGGESTED, "admin")).isFalse()
     assertThat(dao.countResolutionsByState()[DedupResolutionState.PROCESSING]).isGreaterThanOrEqualTo(1)
   }
 

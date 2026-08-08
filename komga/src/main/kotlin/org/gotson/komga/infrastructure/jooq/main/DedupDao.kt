@@ -89,6 +89,7 @@ class DedupDao(
         settings.QUIET_PERIOD_SECONDS,
         settings.COVER_CANDIDATE_DISTANCE,
         settings.COVER_TOP_K,
+        settings.AUTO_RESOLVE_SUGGESTIONS,
         settings.CREATED_DATE,
         settings.LAST_MODIFIED_DATE,
         settings.LAST_BATCH_DATE,
@@ -103,6 +104,7 @@ class DedupDao(
         value.quietPeriodSeconds,
         value.coverCandidateDistance,
         value.coverTopK,
+        value.autoResolveSuggestions,
         value.createdDate,
         value.lastModifiedDate,
         value.lastBatchDate,
@@ -116,6 +118,7 @@ class DedupDao(
       .set(settings.QUIET_PERIOD_SECONDS, value.quietPeriodSeconds)
       .set(settings.COVER_CANDIDATE_DISTANCE, value.coverCandidateDistance)
       .set(settings.COVER_TOP_K, value.coverTopK)
+      .set(settings.AUTO_RESOLVE_SUGGESTIONS, value.autoResolveSuggestions)
       .set(settings.LAST_MODIFIED_DATE, value.lastModifiedDate)
       .set(settings.LAST_BATCH_DATE, value.lastBatchDate)
       .set(settings.LAST_BATCH_BOOK_COUNT, value.lastBatchBookCount)
@@ -1260,6 +1263,21 @@ class DedupDao(
     )
   }
 
+  override fun hasResolutionAttempt(
+    clusterId: String,
+    clusterRevision: Long,
+    mode: DedupResolutionMode,
+    actorId: String,
+  ): Boolean =
+    dslRO.fetchExists(
+      resolution,
+      resolution.CLUSTER_ID
+        .eq(clusterId)
+        .and(resolution.CLUSTER_REVISION.eq(clusterRevision))
+        .and(resolution.MODE.eq(mode.name))
+        .and(resolution.ACTOR_ID.eq(actorId)),
+    )
+
   override fun updateResolution(
     resolutionId: String,
     expectedStates: Set<DedupResolutionState>,
@@ -1506,6 +1524,7 @@ class DedupDao(
       quietPeriodSeconds = quietPeriodSeconds!!,
       coverCandidateDistance = coverCandidateDistance!!,
       coverTopK = coverTopK!!,
+      autoResolveSuggestions = autoResolveSuggestions!!,
       createdDate = createdDate!!,
       lastModifiedDate = lastModifiedDate!!,
       lastBatchDate = lastBatchDate,

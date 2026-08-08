@@ -25,6 +25,7 @@ data class DedupLibrarySettingsDto(
   val quietPeriodSeconds: Int,
   val coverCandidateDistance: Int,
   val coverTopK: Int,
+  val autoResolveSuggestions: Boolean,
   val lastBatchDate: LocalDateTime?,
   val lastBatchBookCount: Int,
 )
@@ -43,6 +44,7 @@ data class DedupLibrarySettingsUpdateDto(
   @field:Min(0) @field:Max(86_400) val quietPeriodSeconds: Int = 180,
   @field:Min(0) @field:Max(256) val coverCandidateDistance: Int,
   @field:Min(1) @field:Max(1_000) val coverTopK: Int,
+  val autoResolveSuggestions: Boolean? = null,
 )
 
 data class DedupSettingsUpdateDto(

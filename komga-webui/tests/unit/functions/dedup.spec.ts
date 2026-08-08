@@ -1,5 +1,12 @@
-import {customActionKey, formatDedupBytes, resolutionCounts, withoutDedupCluster} from '@/functions/dedup'
-import {DedupClusterSummaryDto, DedupResolutionDto} from '@/types/komga-dedup'
+import {
+  customActionKey,
+  dedupActorLabelKey,
+  formatDedupBytes,
+  newlyEffectiveAutoResolutionLibraries,
+  resolutionCounts,
+  withoutDedupCluster,
+} from '@/functions/dedup'
+import {DedupClusterSummaryDto, DedupLibrarySettingsDto, DedupResolutionDto} from '@/types/komga-dedup'
 
 describe('dedup helpers', () => {
   it('formats file sizes without implying precision that is not available', () => {
@@ -23,6 +30,35 @@ describe('dedup helpers', () => {
 
     expect(withoutDedupCluster(source, 'A').map(value => value.id)).toEqual(['B'])
     expect(source.map(value => value.id)).toEqual(['A', 'B'])
+  })
+
+  it('requires confirmation only when automatic deletion becomes effective', () => {
+    const baseline = [library('A'), library('B', {enabled: false, autoResolveSuggestions: true}), library('C', {autoResolveSuggestions: true})]
+    const current = [
+      library('A', {autoResolveSuggestions: true}),
+      library('B', {enabled: true, autoResolveSuggestions: true}),
+      library('C', {autoResolveSuggestions: true}),
+    ]
+
+    expect(newlyEffectiveAutoResolutionLibraries(current, baseline).map(value => value.libraryName)).toEqual(['A', 'B'])
+  })
+
+  it('confirms when unpausing a stored automatic setting but not when disabling it', () => {
+    const baseline = [
+      library('paused', {paused: true, autoResolveSuggestions: true}),
+      library('disabled-later', {autoResolveSuggestions: true}),
+    ]
+    const current = [
+      library('paused', {paused: false, autoResolveSuggestions: true}),
+      library('disabled-later', {enabled: false, autoResolveSuggestions: true}),
+    ]
+
+    expect(newlyEffectiveAutoResolutionLibraries(current, baseline).map(value => value.libraryName)).toEqual(['paused'])
+  })
+
+  it('uses a localized label only for the automatic system actor', () => {
+    expect(dedupActorLabelKey('system:dedup-auto')).toBe('dedup.autoResolutionActor')
+    expect(dedupActorLabelKey('admin')).toBeNull()
   })
 })
 
@@ -51,4 +87,26 @@ function resolution(): DedupResolutionDto {
 
 function member(bookId: string, action: 'KEEP' | 'DELETE') {
   return {bookId, seriesId: `series-${bookId}`, action, title: bookId, path: `/${bookId}.cbz`, state: 'COMPLETED'}
+}
+
+function library(
+  id: string,
+  overrides: Partial<DedupLibrarySettingsDto> = {},
+): DedupLibrarySettingsDto {
+  return {
+    libraryId: id,
+    libraryName: id,
+    enabled: true,
+    paused: false,
+    scanInterval: 'DAILY',
+    batchSize: 100,
+    maxDurationSeconds: 300,
+    quietPeriodSeconds: 180,
+    coverCandidateDistance: 15,
+    coverTopK: 20,
+    autoResolveSuggestions: false,
+    lastBatchDate: null,
+    lastBatchBookCount: 0,
+    ...overrides,
+  }
 }

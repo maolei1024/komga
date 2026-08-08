@@ -1,4 +1,6 @@
-import {DedupClusterSummaryDto, DedupResolutionDto} from '@/types/komga-dedup'
+import {DedupClusterSummaryDto, DedupLibrarySettingsDto, DedupResolutionDto} from '@/types/komga-dedup'
+
+export const DEDUP_AUTO_RESOLUTION_ACTOR = 'system:dedup-auto'
 
 export function formatDedupBytes(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—'
@@ -23,4 +25,20 @@ export function customActionKey(deleteCount: number): 'dedup.keepAll' | 'dedup.a
 
 export function withoutDedupCluster(values: DedupClusterSummaryDto[], clusterId: string): DedupClusterSummaryDto[] {
   return values.filter(value => value.id !== clusterId)
+}
+
+export function newlyEffectiveAutoResolutionLibraries(
+  current: DedupLibrarySettingsDto[],
+  baseline: DedupLibrarySettingsDto[],
+): DedupLibrarySettingsDto[] {
+  const previous = new Map(baseline.map(value => [value.libraryId, value]))
+  return current.filter(value => isAutoResolutionEffective(value) && !isAutoResolutionEffective(previous.get(value.libraryId)))
+}
+
+export function dedupActorLabelKey(actorId: string): 'dedup.autoResolutionActor' | null {
+  return actorId === DEDUP_AUTO_RESOLUTION_ACTOR ? 'dedup.autoResolutionActor' : null
+}
+
+function isAutoResolutionEffective(value?: DedupLibrarySettingsDto): boolean {
+  return value?.enabled === true && value.paused !== true && value.autoResolveSuggestions === true
 }
