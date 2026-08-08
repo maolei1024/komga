@@ -157,18 +157,16 @@ class DedupResolutionLifecycle(
     clusterId: String,
     expectedRevision: Long,
   ): org.gotson.komga.domain.model.DedupClusterWithMembers {
-    val current = dedupRepository.findCluster(clusterId) ?: validation("CLUSTER_NOT_FOUND", "Cluster was not found")
-    clusterLifecycle.rebuildLibrary(current.cluster.libraryId)
-    val refreshed = dedupRepository.findCluster(clusterId) ?: validation("CLUSTER_STALE", "Cluster is no longer reviewable")
-    if (refreshed.cluster.revision != expectedRevision || refreshed.cluster.status != DedupClusterStatus.UNPROCESSED || !refreshed.cluster.reviewable) {
+    val value = dedupRepository.findCluster(clusterId) ?: validation("CLUSTER_NOT_FOUND", "Cluster was not found")
+    if (value.cluster.revision != expectedRevision || value.cluster.status != DedupClusterStatus.UNPROCESSED || !value.cluster.reviewable) {
       validation("CLUSTER_STALE", "Cluster revision changed")
     }
-    val fingerprints = clusterLifecycle.currentFingerprints(refreshed)
-    if (fingerprints == null || fingerprints != ClusterFingerprints(refreshed.cluster.topologyFingerprint, refreshed.cluster.evidenceFingerprint, refreshed.cluster.stateFingerprint)) {
+    val fingerprints = clusterLifecycle.currentFingerprints(value)
+    if (fingerprints == null || fingerprints != ClusterFingerprints(value.cluster.topologyFingerprint, value.cluster.evidenceFingerprint, value.cluster.stateFingerprint)) {
       validation("CLUSTER_STALE", "Cluster evidence changed")
     }
     if (resolutionRepository.hasActiveResolutionForBooks(
-        refreshed.members
+        value.members
           .filter { it.present }
           .map { it.bookId }
           .toSet(),
@@ -176,7 +174,7 @@ class DedupResolutionLifecycle(
     ) {
       validation("MEMBER_RESOLUTION_ACTIVE", "A cluster member is already being processed")
     }
-    return refreshed
+    return value
   }
 
   private fun executeNew(

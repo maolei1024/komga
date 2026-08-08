@@ -600,6 +600,20 @@ class DedupDao(
       .map { it.toRelation() }
   }
 
+  override fun findRelationsTouchingBooks(
+    libraryId: String,
+    bookIds: Set<String>,
+  ): List<DedupRelation> {
+    if (bookIds.isEmpty()) return emptyList()
+    return dslRO
+      .selectFrom(relation)
+      .where(relation.LIBRARY_ID.eq(libraryId))
+      .and(relation.BOOK_LOW_ID.`in`(bookIds).or(relation.BOOK_HIGH_ID.`in`(bookIds)))
+      .orderBy(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
+      .fetch()
+      .map { it.toRelation() }
+  }
+
   override fun saveRelation(value: DedupRelation) {
     dslRW
       .insertInto(

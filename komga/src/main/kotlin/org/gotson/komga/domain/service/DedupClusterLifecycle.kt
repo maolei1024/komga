@@ -177,15 +177,28 @@ class DedupClusterLifecycle(
       )
     val oldMembers = current.members.associateBy { it.bookId }
     dedupRepository.saveCluster(value, identities.map { it.toMember(clusterId, oldMembers[it.bookId]?.createdDate ?: now, now) })
-    rebuildLibrary(current.cluster.libraryId, now)
     return value
   }
 
   fun currentFingerprints(value: DedupClusterWithMembers): ClusterFingerprints? {
     val ids = value.presentIds()
-    val identities = ids.mapNotNull(coverLifecycle::currentSourceIdentity).associateBy { it.bookId }
-    if (identities.size != ids.size) return null
-    return fingerprints(identities.values, currentReviewRelationsForIdentities(identities))
+    val memberIdentities = ids.mapNotNull(coverLifecycle::currentSourceIdentity).associateBy { it.bookId }
+    if (memberIdentities.size != ids.size || memberIdentities.values.any { it.libraryId != value.cluster.libraryId }) return null
+
+    val candidates =
+      dedupRepository
+        .findRelationsTouchingBooks(value.cluster.libraryId, ids)
+        .filter { it.status == DedupRelationStatus.VERIFIED && it.type in REVIEW_RELATION_TYPES }
+    val externalIdentities =
+      candidates
+        .flatMapTo(mutableSetOf()) { setOf(it.bookLowId, it.bookHighId) }
+        .minus(ids)
+        .mapNotNull(coverLifecycle::currentSourceIdentity)
+        .filter { it.libraryId == value.cluster.libraryId }
+        .associateBy { it.bookId }
+    val reviewRelations = currentReviewRelations(value.cluster.libraryId, memberIdentities + externalIdentities, candidates)
+    if (reviewRelations.any { it.bookLowId !in ids || it.bookHighId !in ids }) return null
+    return fingerprints(memberIdentities.values, reviewRelations)
   }
 
   fun currentReviewRelations(bookIds: Set<String>): List<DedupRelation> {

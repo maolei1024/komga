@@ -88,6 +88,61 @@ class DedupClusterLifecycleTest {
   }
 
   @Test
+  fun `current fingerprints reject a current review edge crossing the cluster boundary`() {
+    val internal = relation("A", "B")
+    val boundary = relation("B", "C")
+    val value = currentCluster(listOf("A", "B"), listOf(internal))
+    listOf(identity("A"), identity("B"), identity("C")).forEach { every { cover.currentSourceIdentity(it.bookId) } returns it }
+    every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns listOf(internal, boundary)
+    every { repository.findPairDecisions("library") } returns emptyList()
+
+    assertThat(lifecycle.currentFingerprints(value)).isNull()
+
+    verify(exactly = 1) { repository.findRelationsTouchingBooks("library", setOf("A", "B")) }
+    verify(exactly = 0) { cover.currentSourceIdentities(any()) }
+    verify(exactly = 0) { repository.findRelations(any()) }
+  }
+
+  @Test
+  fun `current fingerprints ignore non-current unsupported and suppressed boundary edges`() {
+    val internal = relation("A", "B")
+    val value = currentCluster(listOf("A", "B"), listOf(internal))
+    val expected = ClusterFingerprints(value.cluster.topologyFingerprint, value.cluster.evidenceFingerprint, value.cluster.stateFingerprint)
+    listOf(identity("A"), identity("B"), identity("C").copy(contentGeneration = "new-content-C")).forEach {
+      every { cover.currentSourceIdentity(it.bookId) } returns it
+    }
+    every { repository.findPairDecisions("library") } returns emptyList()
+
+    every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns
+      listOf(internal, relation("B", "C").copy(status = DedupRelationStatus.CANDIDATE))
+    assertThat(lifecycle.currentFingerprints(value)).isEqualTo(expected)
+
+    every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns
+      listOf(internal, relation("B", "C").copy(type = DedupRelationType.UNRELATED))
+    assertThat(lifecycle.currentFingerprints(value)).isEqualTo(expected)
+
+    every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns listOf(internal, relation("B", "C"))
+    assertThat(lifecycle.currentFingerprints(value)).isEqualTo(expected)
+
+    every { cover.currentSourceIdentity("C") } returns identity("C")
+    every { repository.findPairDecisions("library") } returns listOf(DedupPairDecision("B", "C", resolutionId = "resolution", actorId = "admin"))
+    assertThat(lifecycle.currentFingerprints(value)).isEqualTo(expected)
+  }
+
+  @Test
+  fun `current fingerprints reject missing and cross-library members`() {
+    val value = currentCluster(listOf("A", "B"), listOf(relation("A", "B")))
+    every { cover.currentSourceIdentity("A") } returns identity("A")
+    every { cover.currentSourceIdentity("B") } returns null
+
+    assertThat(lifecycle.currentFingerprints(value)).isNull()
+
+    every { cover.currentSourceIdentity("B") } returns identity("B").copy(libraryId = "other-library")
+    assertThat(lifecycle.currentFingerprints(value)).isNull()
+    verify(exactly = 0) { repository.findRelationsTouchingBooks(any(), any()) }
+  }
+
+  @Test
   fun `new edge beside an old survivor creates a new cluster without rewriting processed history`() {
     val now = LocalDateTime.now()
     val processed = storedCluster("processed", listOf("A", "B"), DedupClusterStatus.PROCESSED, now.minusDays(1))
@@ -117,23 +172,17 @@ class DedupClusterLifecycleTest {
   }
 
   @Test
-  fun `successful finalization writes survivor KEEP_BOTH decisions before rebuilding`() {
+  fun `successful finalization writes survivor KEEP_BOTH decisions without rebuilding`() {
     val now = LocalDateTime.now()
     var stored = storedCluster("cluster", listOf("A", "B"), DedupClusterStatus.PROCESSING, now.minusMinutes(1))
     val decisions = mutableListOf<DedupPairDecision>()
     every { repository.findCluster("cluster") } answers { stored }
     every { cover.currentSourceIdentity("A") } returns identity("A")
     every { cover.currentSourceIdentity("B") } returns identity("B")
-    every { cover.currentSourceIdentities("library") } returns listOf(identity("A"), identity("B"))
     every { repository.findRelationsForBooks(setOf("A", "B")) } returns listOf(relation("A", "B"))
-    every { repository.findRelations("library") } returns listOf(relation("A", "B"))
     every { repository.findPairDecisions("library") } answers { decisions.toList() }
     every { repository.savePairDecisions(any()) } answers { decisions += firstArg<Collection<DedupPairDecision>>() }
     every { repository.saveCluster(any(), any()) } answers { stored = DedupClusterWithMembers(firstArg(), secondArg<Collection<DedupClusterMember>>().toList()) }
-    every { repository.findLibrarySettings("library") } returns DedupLibrarySettings("library")
-    every { repository.lockLibraryForClusterRebuild("library") } just Runs
-    every { repository.findAllClusters("library") } answers { listOf(stored) }
-    every { repository.markClusterSuperseded(any(), any(), any()) } just Runs
 
     val result = lifecycle.finalizeProcessed("cluster", "resolution", "admin", setOf("A", "B"), now)
 
@@ -142,6 +191,10 @@ class DedupClusterLifecycleTest {
     assertThat(decision.bookLowId to decision.bookHighId).isEqualTo("A" to "B")
     assertThat(decision.resolutionId).isEqualTo("resolution")
     assertThat(decision.actorId).isEqualTo("admin")
+    verify(exactly = 0) { cover.currentSourceIdentities(any()) }
+    verify(exactly = 0) { repository.findRelations(any()) }
+    verify(exactly = 0) { repository.findAllClusters(any()) }
+    verify(exactly = 0) { repository.lockLibraryForClusterRebuild(any()) }
   }
 
   private fun defaults(
@@ -160,6 +213,22 @@ class DedupClusterLifecycleTest {
   }
 
   private fun identity(id: String) = DedupSourceIdentity(id, "series-$id", "library", "content-$id", "cover-$id", "metadata-$id", "scope-$id", 10)
+
+  private fun currentCluster(
+    ids: List<String>,
+    relations: List<DedupRelation>,
+  ): DedupClusterWithMembers {
+    val value = storedCluster("cluster", ids, DedupClusterStatus.UNPROCESSED, LocalDateTime.now())
+    val fingerprints = lifecycle.fingerprints(ids.map(::identity), relations)
+    return value.copy(
+      cluster =
+        value.cluster.copy(
+          topologyFingerprint = fingerprints.topology,
+          evidenceFingerprint = fingerprints.evidence,
+          stateFingerprint = fingerprints.state,
+        ),
+    )
+  }
 
   private fun relation(
     first: String,

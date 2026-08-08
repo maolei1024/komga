@@ -9,6 +9,7 @@ import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupPairDecision
+import org.gotson.komga.domain.model.DedupRelation
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionAction
 import org.gotson.komga.domain.model.DedupResolutionMember
@@ -135,6 +136,31 @@ class DedupDaoTest(
     assertThat(dao.findPairDecisions(library.id)).singleElement().extracting("actorId").isEqualTo("other")
     bookDao.delete(low.id)
     assertThat(dao.findPairDecisions(library.id)).isEmpty()
+  }
+
+  @Test
+  fun `touching relation lookup covers both endpoints without crossing Library boundaries`() {
+    val otherLibrary = makeLibrary("dedup-other-${UUID.randomUUID()}")
+    libraryDao.insert(otherLibrary)
+    val series = makeSeries("series-${UUID.randomUUID()}", library.id)
+    val otherSeries = makeSeries("series-${UUID.randomUUID()}", otherLibrary.id)
+    seriesDao.insert(series)
+    seriesDao.insert(otherSeries)
+    val suffix = UUID.randomUUID().toString()
+    val low = makeBook("low.cbz", libraryId = library.id, seriesId = series.id, id = "A-$suffix")
+    val target = makeBook("target.cbz", libraryId = library.id, seriesId = series.id, id = "M-$suffix")
+    val high = makeBook("high.cbz", libraryId = library.id, seriesId = series.id, id = "Z-$suffix")
+    val otherLow = makeBook("other-low.cbz", libraryId = otherLibrary.id, seriesId = otherSeries.id, id = "A-other-$suffix")
+    val otherTarget = makeBook("other-target.cbz", libraryId = otherLibrary.id, seriesId = otherSeries.id, id = "M-other-$suffix")
+    bookDao.insert(listOf(low, target, high, otherLow, otherTarget))
+    dao.saveRelation(relation(library.id, low.id, target.id))
+    dao.saveRelation(relation(library.id, target.id, high.id))
+    dao.saveRelation(relation(library.id, low.id, high.id))
+    dao.saveRelation(relation(otherLibrary.id, otherLow.id, otherTarget.id))
+
+    assertThat(dao.findRelationsTouchingBooks(library.id, setOf(target.id, otherTarget.id)).map { it.bookLowId to it.bookHighId })
+      .containsExactly(low.id to target.id, target.id to high.id)
+    assertThat(dao.findRelationsTouchingBooks(library.id, emptySet())).isEmpty()
   }
 
   @Test
@@ -411,5 +437,27 @@ class DedupDaoTest(
     assertThat(dao.findPendingGorseSync(now)?.state).isEqualTo("RUNNING")
     assertThat(dao.findPendingGorseSync(now.plusMinutes(9))).isNull()
     assertThat(dao.findPendingGorseSync(now.plusMinutes(11))?.state).isEqualTo("RUNNING")
+  }
+
+  private fun relation(
+    libraryId: String,
+    firstBookId: String,
+    secondBookId: String,
+  ): DedupRelation {
+    val low = minOf(firstBookId, secondBookId)
+    val high = maxOf(firstBookId, secondBookId)
+    return DedupRelation(
+      id = "relation-$low-$high",
+      libraryId = libraryId,
+      bookLowId = low,
+      bookHighId = high,
+      lowContentGeneration = "content-$low",
+      highContentGeneration = "content-$high",
+      lowCoverGeneration = "cover-$low",
+      highCoverGeneration = "cover-$high",
+      lowMetadataGeneration = "metadata-$low",
+      highMetadataGeneration = "metadata-$high",
+      type = org.gotson.komga.domain.model.DedupRelationType.EXACT_FILE,
+    )
   }
 }

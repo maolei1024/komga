@@ -126,6 +126,11 @@ interface DedupRepository {
 
   fun findRelationsForBooks(bookIds: Set<String>): List<DedupRelation>
 
+  fun findRelationsTouchingBooks(
+    libraryId: String,
+    bookIds: Set<String>,
+  ): List<DedupRelation>
+
   fun saveRelation(relation: DedupRelation)
 
   fun replaceExactRelationsForBook(

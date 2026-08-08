@@ -143,6 +143,51 @@ class DedupResolutionLifecycleTest {
   }
 
   @Test
+  fun `submission validates the current cluster without rebuilding the Library`() {
+    val context = context("A", "B")
+
+    val queued = context.lifecycle.createCustom("cluster", 1, listOf("B"), "admin")
+
+    assertThat(queued.state).isEqualTo(DedupResolutionState.PROCESSING)
+    verify(exactly = 1) { context.clusters.currentFingerprints(any()) }
+    verify(exactly = 0) { context.clusters.rebuildLibrary(any(), any()) }
+  }
+
+  @Test
+  fun `claim conflict after local validation rejects submission`() {
+    val context = context("A", "B")
+    every { context.dedup.claimCluster("cluster", 1, "state", any()) } returns false
+
+    val failure =
+      catchThrowableOfType(
+        { context.lifecycle.createCustom("cluster", 1, listOf("B"), "admin") },
+        DedupResolutionValidationException::class.java,
+      )
+
+    assertThat(failure.code).isEqualTo("CLUSTER_STALE")
+    verify(exactly = 0) { context.tasks.executeDedupResolution(any(), any(), any()) }
+  }
+
+  @Test
+  fun `worker preflight rejects a boundary change before any file operation`() {
+    val context = context("A", "B")
+    every { context.clusters.currentFingerprints(any()) } returnsMany
+      listOf(ClusterFingerprints("topology", "evidence", "state"), null)
+    val queued = context.lifecycle.createCustom("cluster", 1, listOf("B"), "admin")
+
+    val failure =
+      catchThrowableOfType(
+        { context.lifecycle.executeQueued(queued.id) },
+        DedupResolutionExecutionException::class.java,
+      )
+
+    assertThat(failure.code).isEqualTo("EXECUTION_FAILED")
+    assertThat(failure.partial).isFalse()
+    verify(exactly = 0) { context.deletion.precheck(any()) }
+    verify(exactly = 0) { context.deletion.deleteVerifiedBook(any(), any(), any()) }
+  }
+
+  @Test
   fun `delete target without a current persisted archive hash fails before unlink`() {
     val context = context("A", "B")
     every { context.cover.currentSourceIdentity("B") } returns identity("B").copy(archiveHashState = DedupArchiveHashState.MISSING, archiveHash = null)
@@ -258,7 +303,6 @@ class DedupResolutionLifecycleTest {
     val context = TestContext(dedup, resolutions, books, suggestions, cover, deletion, clusters, tasks, value, paths)
 
     every { dedup.findCluster("cluster") } answers { value.copy(cluster = value.cluster.copy(status = context.clusterStatus, lastResolutionId = context.lastResolutionId)) }
-    every { clusters.rebuildLibrary("library", any()) } returns 1
     every { clusters.currentFingerprints(any()) } returns ClusterFingerprints("topology", "evidence", "state")
     every { dedup.claimCluster("cluster", 1, "state", any()) } answers {
       context.clusterStatus = DedupClusterStatus.PROCESSING
