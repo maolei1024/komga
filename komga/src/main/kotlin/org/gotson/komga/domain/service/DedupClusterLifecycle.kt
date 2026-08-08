@@ -8,8 +8,6 @@ import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupRelationStatus
-import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.persistence.DedupRepository
 import org.springframework.stereotype.Service
@@ -25,19 +23,7 @@ class DedupClusterLifecycle(
   private val coverLifecycle: DedupCoverLifecycle,
 ) {
   companion object {
-    const val RULE_VERSION = 3
-
-    val REVIEW_RELATION_TYPES =
-      setOf(
-        DedupRelationType.EXACT_FILE,
-        DedupRelationType.EXACT_PAGE_SEQUENCE,
-        DedupRelationType.SAME_EDITION_VARIANT,
-        DedupRelationType.CONTAINED_IN,
-        DedupRelationType.NEAR_CONTAINED_IN,
-        DedupRelationType.PARTIAL_OVERLAP,
-        DedupRelationType.ALT_EDITION,
-        DedupRelationType.EDITION_UNCERTAIN,
-      )
+    const val RULE_VERSION = 4
   }
 
   @Transactional
@@ -188,7 +174,7 @@ class DedupClusterLifecycle(
     val candidates =
       dedupRepository
         .findRelationsTouchingBooks(value.cluster.libraryId, ids)
-        .filter { it.status == DedupRelationStatus.VERIFIED && it.type in REVIEW_RELATION_TYPES }
+        .filter { it.type.reviewable }
     val externalIdentities =
       candidates
         .flatMapTo(mutableSetOf()) { setOf(it.bookLowId, it.bookHighId) }
@@ -226,8 +212,7 @@ class DedupClusterLifecycle(
   ): List<DedupRelation> {
     val suppressed = dedupRepository.findPairDecisions(libraryId).map { it.bookLowId to it.bookHighId }.toSet()
     return candidates.filter { relation ->
-      relation.status == DedupRelationStatus.VERIFIED &&
-        relation.type in REVIEW_RELATION_TYPES &&
+      relation.type.reviewable &&
         relation.isCurrent(identities) &&
         (relation.bookLowId to relation.bookHighId) !in suppressed
     }

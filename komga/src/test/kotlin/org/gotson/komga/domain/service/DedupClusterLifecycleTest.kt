@@ -15,7 +15,6 @@ import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.persistence.DedupRepository
@@ -44,21 +43,21 @@ class DedupClusterLifecycleTest {
   }
 
   @Test
-  fun `cover candidates and unrelated verification never create review clusters`() {
-    val candidate = relation("A", "B").copy(type = DedupRelationType.VISUALLY_SIMILAR, status = DedupRelationStatus.CANDIDATE)
+  fun `cover candidates and negative verification never create review clusters`() {
+    val candidate = relation("A", "B").copy(type = DedupRelationType.COVER_CANDIDATE)
     defaults(listOf(identity("A"), identity("B")), listOf(candidate))
     assertThat(lifecycle.rebuildLibrary("library")).isZero()
     verify(exactly = 0) { repository.saveCluster(any(), any()) }
 
-    every { repository.findRelations("library") } returns listOf(relation("A", "B").copy(type = DedupRelationType.UNRELATED))
+    every { repository.findRelations("library") } returns listOf(relation("A", "B").copy(type = DedupRelationType.NO_MATCH))
     assertThat(lifecycle.rebuildLibrary("library")).isZero()
     verify(exactly = 0) { repository.saveCluster(any(), any()) }
   }
 
   @Test
-  fun `verified deep edge with stale metadata generation never creates a review cluster`() {
-    val stale = relation("A", "B").copy(type = DedupRelationType.ALT_EDITION)
-    defaults(listOf(identity("A"), identity("B").copy(metadataGeneration = "new-metadata-B")), listOf(stale))
+  fun `verified deep edge with stale content generation never creates a review cluster`() {
+    val stale = relation("A", "B").copy(type = DedupRelationType.AMBIGUOUS)
+    defaults(listOf(identity("A"), identity("B").copy(contentGeneration = "new-content-B")), listOf(stale))
 
     assertThat(lifecycle.rebuildLibrary("library")).isZero()
     verify(exactly = 0) { repository.saveCluster(any(), any()) }
@@ -114,11 +113,11 @@ class DedupClusterLifecycleTest {
     every { repository.findPairDecisions("library") } returns emptyList()
 
     every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns
-      listOf(internal, relation("B", "C").copy(status = DedupRelationStatus.CANDIDATE))
+      listOf(internal, relation("B", "C").copy(type = DedupRelationType.COVER_CANDIDATE))
     assertThat(lifecycle.currentFingerprints(value)).isEqualTo(expected)
 
     every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns
-      listOf(internal, relation("B", "C").copy(type = DedupRelationType.UNRELATED))
+      listOf(internal, relation("B", "C").copy(type = DedupRelationType.NO_MATCH))
     assertThat(lifecycle.currentFingerprints(value)).isEqualTo(expected)
 
     every { repository.findRelationsTouchingBooks("library", setOf("A", "B")) } returns listOf(internal, relation("B", "C"))
@@ -243,10 +242,6 @@ class DedupClusterLifecycleTest {
       bookHighId = high,
       lowContentGeneration = "content-$low",
       highContentGeneration = "content-$high",
-      lowCoverGeneration = "cover-$low",
-      highCoverGeneration = "cover-$high",
-      lowMetadataGeneration = "metadata-$low",
-      highMetadataGeneration = "metadata-$high",
       type = DedupRelationType.EXACT_FILE,
     )
   }

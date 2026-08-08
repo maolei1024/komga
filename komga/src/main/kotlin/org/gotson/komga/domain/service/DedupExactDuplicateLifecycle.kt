@@ -37,7 +37,7 @@ class DedupExactDuplicateLifecycle(
           .map { other -> listOf(target, other).sortedBy { it.id }.toRelation(now) }
       }
 
-    dedupRepository.replaceExactRelationsForBook(bookId, relations, now)
+    dedupRepository.replaceExactRelationsForBook(bookId, relations)
     return relations.size
   }
 

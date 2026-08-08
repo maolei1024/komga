@@ -1110,6 +1110,9 @@
     "comparisonHelp": "先选择一本作为基准，再直接查看其他 Book 与它的页面序列。",
     "chooseCompare": "点击某本 Book 的“查看对比”以加载页面序列。",
     "pageAlt": "第 {page} 页",
+    "matchSummary": "{exact} 页精确 · {perceptual} 页感知",
+    "exactMatch": "精确",
+    "perceptualMatch": "感知 · 距离 {distance}",
     "suggestionSummary": "保留《{keeper}》，删除 {count} 本。",
     "applySuggestion": "按建议处理：保留《{keeper}》，删除 {count} 本",
     "keepAll": "全部保留",
@@ -1141,9 +1144,8 @@
     "actionValue": {"KEEP": "保留", "DELETE": "删除"},
     "interval": {"HOURLY": "每小时", "EVERY_6H": "每 6 小时", "EVERY_12H": "每 12 小时", "DAILY": "每天", "WEEKLY": "每周"},
     "relation": {
-      "EXACT_FILE": "完全相同文件", "EXACT_PAGE_SEQUENCE": "完全相同页面序列", "SAME_EDITION_VARIANT": "同版本变体",
-      "CONTAINED_IN": "页面序列包含", "NEAR_CONTAINED_IN": "近似包含", "PARTIAL_OVERLAP": "部分重叠",
-      "ALT_EDITION": "不同版本", "EDITION_UNCERTAIN": "版本不确定"
+      "COVER_CANDIDATE": "封面候选", "EXACT_FILE": "完全相同文件", "SAME_PAGE_SEQUENCE": "完整同页序列",
+      "CONTAINED_IN": "页面序列包含", "AMBIGUOUS": "关系不确定", "NO_MATCH": "无页面关系"
     }
   },
   "updates": {

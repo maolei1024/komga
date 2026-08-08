@@ -21,6 +21,7 @@ data class PageMatch(
   val leftPage: Int,
   val rightPage: Int,
   val exact: Boolean,
+  val perceptualDistance: Int? = null,
 )
 
 data class UnmatchedPages(
@@ -45,7 +46,7 @@ class PageSequenceAligner(
   ): PageAlignmentResult {
     if (left.isEmpty() || right.isEmpty()) {
       return PageAlignmentResult(
-        relationType = DedupRelationType.VISUALLY_SIMILAR,
+        relationType = DedupRelationType.NO_MATCH,
         matches = emptyList(),
         coverageLeft = 0.0,
         coverageRight = 0.0,
@@ -72,7 +73,7 @@ class PageSequenceAligner(
     while (leftIndex < left.size && rightIndex < right.size) {
       val kind = matchKinds[leftIndex][rightIndex]
       if (kind != null && scores[leftIndex][rightIndex] == scores[leftIndex + 1][rightIndex + 1] + kind.score) {
-        matches += PageMatch(leftIndex + 1, rightIndex + 1, kind == MatchKind.EXACT)
+        matches += PageMatch(leftIndex + 1, rightIndex + 1, kind.exact, kind.perceptualDistance)
         leftIndex++
         rightIndex++
       } else if (scores[leftIndex + 1][rightIndex] >= scores[leftIndex][rightIndex + 1]) {
@@ -88,15 +89,27 @@ class PageSequenceAligner(
     val coverageRight = matches.size.toDouble() / right.size
     val unmatchedLeft = unmatched(left.size, matchedLeft)
     val unmatchedRight = unmatched(right.size, matchedRight)
-    val allExact = matches.all { it.exact }
-    val classification = classify(leftBookId, rightBookId, left.size, right.size, coverageLeft, coverageRight, unmatchedLeft, unmatchedRight, allExact)
+    val longestMatchedRun = longestRun(matches)
+    val classification =
+      classify(
+        leftBookId,
+        rightBookId,
+        left.size,
+        right.size,
+        matches,
+        coverageLeft,
+        coverageRight,
+        longestMatchedRun,
+        unmatchedLeft,
+        unmatchedRight,
+      )
 
     return PageAlignmentResult(
       relationType = classification.type,
       matches = matches,
       coverageLeft = coverageLeft,
       coverageRight = coverageRight,
-      longestMatchedRun = longestRun(matches),
+      longestMatchedRun = longestMatchedRun,
       unmatchedLeft = unmatchedLeft,
       unmatchedRight = unmatchedRight,
       containedBookId = classification.containedBookId,
@@ -108,41 +121,42 @@ class PageSequenceAligner(
     left: DedupPageFeature,
     right: DedupPageFeature,
     perceptualDistance: Int,
-  ): MatchKind? =
-    when {
-      !left.exactHash.isNullOrBlank() && left.exactHash == right.exactHash -> MatchKind.EXACT
-      left.perceptualHash?.size == 32 && right.perceptualHash?.size == 32 &&
-        perceptualHasher.distance(left.perceptualHash, right.perceptualHash) <= perceptualDistance -> MatchKind.PERCEPTUAL
-      else -> null
-    }
+  ): MatchKind? {
+    if (!left.exactHash.isNullOrBlank() && left.exactHash == right.exactHash) return MatchKind(exact = true, perceptualDistance = null, score = 4)
+    if (left.perceptualHash?.size != 32 || right.perceptualHash?.size != 32) return null
+    val distance = perceptualHasher.distance(left.perceptualHash, right.perceptualHash)
+    return distance.takeIf { it <= perceptualDistance }?.let { MatchKind(exact = false, perceptualDistance = it, score = 1) }
+  }
 
   private fun classify(
     leftBookId: String,
     rightBookId: String,
     leftSize: Int,
     rightSize: Int,
+    matches: List<PageMatch>,
     coverageLeft: Double,
     coverageRight: Double,
+    longestMatchedRun: Int,
     unmatchedLeft: UnmatchedPages,
     unmatchedRight: UnmatchedPages,
-    allExact: Boolean,
   ): Classification {
-    if (leftSize == rightSize && coverageLeft == 1.0 && allExact) return Classification(DedupRelationType.EXACT_PAGE_SEQUENCE)
-    if (coverageLeft == 1.0 && allExact && leftSize <= rightSize) {
+    val allExact = matches.all { it.exact }
+    val completeOneToOne =
+      leftSize == rightSize &&
+        matches.size == leftSize &&
+        matches.withIndex().all { (index, match) -> match.leftPage == index + 1 && match.rightPage == index + 1 } &&
+        longestMatchedRun == leftSize &&
+        unmatchedLeft.total == 0 &&
+        unmatchedRight.total == 0
+    if (completeOneToOne) return Classification(DedupRelationType.SAME_PAGE_SEQUENCE)
+    if (matches.size == leftSize && allExact && leftSize < rightSize) {
       return Classification(DedupRelationType.CONTAINED_IN, leftBookId, rightBookId)
     }
-    if (coverageRight == 1.0 && allExact && rightSize <= leftSize) {
+    if (matches.size == rightSize && allExact && rightSize < leftSize) {
       return Classification(DedupRelationType.CONTAINED_IN, rightBookId, leftBookId)
     }
-    if (coverageLeft >= 0.9 && unmatchedLeft.total > 0 && coverageLeft >= coverageRight) {
-      return Classification(DedupRelationType.NEAR_CONTAINED_IN, leftBookId, rightBookId)
-    }
-    if (coverageRight >= 0.9 && unmatchedRight.total > 0 && coverageRight >= coverageLeft) {
-      return Classification(DedupRelationType.NEAR_CONTAINED_IN, rightBookId, leftBookId)
-    }
-    if (coverageLeft >= 0.8 && coverageRight >= 0.8) return Classification(DedupRelationType.EDITION_UNCERTAIN)
-    if (coverageLeft >= 0.3 || coverageRight >= 0.3) return Classification(DedupRelationType.PARTIAL_OVERLAP)
-    return Classification(DedupRelationType.VISUALLY_SIMILAR)
+    if (coverageLeft >= 0.3 || coverageRight >= 0.3) return Classification(DedupRelationType.AMBIGUOUS)
+    return Classification(DedupRelationType.NO_MATCH)
   }
 
   private fun longestRun(matches: List<PageMatch>): Int {
@@ -194,10 +208,9 @@ class PageSequenceAligner(
     val containerBookId: String? = null,
   )
 
-  private enum class MatchKind(
+  private data class MatchKind(
+    val exact: Boolean,
+    val perceptualDistance: Int?,
     val score: Int,
-  ) {
-    EXACT(4),
-    PERCEPTUAL(1),
-  }
+  )
 }

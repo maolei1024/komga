@@ -62,26 +62,17 @@ export interface DedupClusterMemberDto {
   thumbnailUrl: string
 }
 
-export type DedupRelationType = 'EXACT_FILE' | 'EXACT_PAGE_SEQUENCE' | 'SAME_EDITION_VARIANT' | 'CONTAINED_IN' |
-  'NEAR_CONTAINED_IN' | 'PARTIAL_OVERLAP' | 'ALT_EDITION' | 'EDITION_UNCERTAIN'
+export type DedupRelationType = 'COVER_CANDIDATE' | 'EXACT_FILE' | 'SAME_PAGE_SEQUENCE' |
+  'CONTAINED_IN' | 'AMBIGUOUS' | 'NO_MATCH'
 
 export interface DedupRelationDto {
   id: string
   leftBookId: string
   rightBookId: string
   type: DedupRelationType
-  status: 'VERIFIED'
   coverDistance?: number | null
   containedBookId?: string | null
   containerBookId?: string | null
-  coverageLeft?: number | null
-  coverageRight?: number | null
-  orderConsistency?: number | null
-  longestMatchedRun?: number | null
-  unmatchedPrefixCount?: number | null
-  unmatchedSuffixCount?: number | null
-  unmatchedInternalCount?: number | null
-  confidence?: number | null
   evidence?: Record<string, unknown> | null
 }
 
@@ -102,6 +93,7 @@ export interface DedupPageEvidenceDto {
   matchedBookId?: string | null
   matchedPageNumber?: number | null
   exactMatch?: boolean | null
+  perceptualDistance?: number | null
   thumbnailUrl: string
 }
 

@@ -31,7 +31,7 @@ class DedupExactDuplicateLifecycleTest {
     every { exactBooks.findExactDuplicatesForBook("A") } returns books
     books.forEach { every { cover.currentContentGeneration(it.id) } returns dedupContentGeneration(it.fileSize, null, it.fileHash) }
     val captured = slot<Collection<DedupRelation>>()
-    every { dedup.replaceExactRelationsForBook("A", capture(captured), any()) } just Runs
+    every { dedup.replaceExactRelationsForBook("A", capture(captured)) } just Runs
 
     assertThat(lifecycle.refreshForBook("A")).isEqualTo(1)
     val first = captured.captured.single()

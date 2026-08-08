@@ -87,23 +87,10 @@ data class DedupRelation(
   val bookHighId: String,
   val lowContentGeneration: String,
   val highContentGeneration: String,
-  val lowCoverGeneration: String = "",
-  val highCoverGeneration: String = "",
-  val lowMetadataGeneration: String = "",
-  val highMetadataGeneration: String = "",
   val type: DedupRelationType,
   val coverDistance: Int? = null,
   val containedBookId: String? = null,
   val containerBookId: String? = null,
-  val coverageLeft: Double? = null,
-  val coverageRight: Double? = null,
-  val orderConsistency: Double? = null,
-  val longestMatchedRun: Int? = null,
-  val unmatchedPrefixCount: Int? = null,
-  val unmatchedSuffixCount: Int? = null,
-  val unmatchedInternalCount: Int? = null,
-  val confidence: Double? = null,
-  val status: DedupRelationStatus = DedupRelationStatus.VERIFIED,
   val evidenceJson: String = "{}",
   val featureSchemaVersion: Int = 1,
   val classifierRuleVersion: Int = 1,
@@ -115,26 +102,15 @@ data class DedupRelation(
   }
 }
 
-enum class DedupRelationType {
-  EXACT_FILE,
-  EXACT_PAGE_SEQUENCE,
-  SAME_EDITION_VARIANT,
-  CONTAINED_IN,
-  NEAR_CONTAINED_IN,
-  PARTIAL_OVERLAP,
-  ALT_EDITION,
-  EDITION_UNCERTAIN,
-  VISUALLY_SIMILAR,
-  UNRELATED,
-}
-
-enum class DedupRelationStatus {
-  CANDIDATE,
-  VERIFYING,
-  VERIFIED,
-  REJECTED,
-  STALE,
-  FAILED_REVIEW,
+enum class DedupRelationType(
+  val reviewable: Boolean,
+) {
+  COVER_CANDIDATE(false),
+  EXACT_FILE(true),
+  SAME_PAGE_SEQUENCE(true),
+  CONTAINED_IN(true),
+  AMBIGUOUS(true),
+  NO_MATCH(false),
 }
 
 enum class DedupPairDecisionType {

@@ -465,10 +465,6 @@ class DedupDaoTest(
       bookHighId = high,
       lowContentGeneration = "content-$low",
       highContentGeneration = "content-$high",
-      lowCoverGeneration = "cover-$low",
-      highCoverGeneration = "cover-$high",
-      lowMetadataGeneration = "metadata-$low",
-      highMetadataGeneration = "metadata-$high",
       type = org.gotson.komga.domain.model.DedupRelationType.EXACT_FILE,
     )
   }

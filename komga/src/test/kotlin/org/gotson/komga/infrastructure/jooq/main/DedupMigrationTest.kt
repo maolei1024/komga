@@ -220,6 +220,226 @@ class DedupMigrationTest {
     }
   }
 
+  @Test
+  fun `relation v3 migration preserves audit and feature data while reseeding configured Libraries`() {
+    val database = directory.resolve("dedup-relation-v3.sqlite")
+    DriverManager.getConnection("jdbc:sqlite:$database").use { connection ->
+      connection.createStatement().use { statement ->
+        statement.execute("PRAGMA foreign_keys = ON")
+        statement.execute("CREATE TABLE LIBRARY (ID varchar PRIMARY KEY)")
+        statement.execute("CREATE TABLE SERIES (ID varchar PRIMARY KEY)")
+        statement.execute(
+          """
+          CREATE TABLE BOOK (
+            ID varchar PRIMARY KEY,
+            SERIES_ID varchar NOT NULL,
+            LIBRARY_ID varchar NOT NULL,
+            URL varchar NOT NULL,
+            FILE_SIZE int8 NOT NULL,
+            DELETED_DATE datetime NULL
+          )
+          """.trimIndent(),
+        )
+      }
+      executeMigration(connection, "V20260804120000__dedup_cluster_reset.sql")
+      executeMigration(connection, "V20260805120000__dedup_rclone_identity_and_summary.sql")
+      executeMigration(connection, "V20260805180000__dedup_v2.sql")
+      executeMigration(connection, "V20260808120000__dedup_auto_resolve_suggestions.sql")
+
+      connection.createStatement().use { statement ->
+        statement.execute("INSERT INTO LIBRARY VALUES ('library'), ('disabled-library'), ('paused-library')")
+        statement.execute("INSERT INTO SERIES VALUES ('series')")
+        statement.execute(
+          """
+          INSERT INTO BOOK VALUES
+            ('A', 'series', 'library', 'file:/library/A.cbz', 100, NULL),
+            ('B', 'series', 'library', 'file:/library/B.cbz', 100, CURRENT_TIMESTAMP),
+            ('C', 'series', 'library', 'file:/library/C.pdf', 100, NULL),
+            ('D', 'series', 'disabled-library', 'file:/library/D.CBZ', 100, NULL),
+            ('E', 'series', 'paused-library', 'file:/library/E.cbz?cache=1', 100, NULL)
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_LIBRARY_SETTINGS (LIBRARY_ID, ENABLED, PAUSED, AUTO_RESOLVE_SUGGESTIONS)
+          VALUES
+            ('library', true, false, true),
+            ('disabled-library', false, false, true),
+            ('paused-library', true, true, true)
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_FEATURE
+            (BOOK_ID, SERIES_ID, LIBRARY_ID, SOURCE_CONTENT_GENERATION, SOURCE_COVER_GENERATION,
+             SOURCE_METADATA_GENERATION, SERIES_SCOPE_REVISION, FEATURE_SCHEMA_VERSION, COVER_STATE,
+             PAGE_STATE, COVER_HASH)
+          VALUES
+            ('A', 'series', 'library', 'content-A', 'cover-A', 'metadata-A', 'scope-A', 2, 'READY', 'READY', X'00'),
+            ('D', 'series', 'disabled-library', 'content-D', 'cover-D', 'metadata-D', 'scope-D', 2, 'READY', 'WAITING', X'00')
+          """.trimIndent(),
+        )
+        statement.execute("INSERT INTO DEDUP_PAGE_FEATURE VALUES ('A', 'content-A', 1, 1, 'exact', X'00', 100)")
+        statement.execute(
+          """
+          INSERT INTO DEDUP_CLUSTER
+            (ID, LIBRARY_ID, REVISION, STATUS, REVIEWABLE, ANCHOR_BOOK_ID, TOPOLOGY_FINGERPRINT,
+             EVIDENCE_FINGERPRINT, STATE_FINGERPRINT, MEMBER_COUNT, VERIFIED_PAIR_COUNT,
+             TOTAL_PAIR_COUNT, EVIDENCE_MATURITY)
+          VALUES ('cluster', 'library', 1, 'PROCESSED', false, 'A', 't', 'e', 's', 1, 0, 0, 'COVER_ONLY')
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_CLUSTER
+            (ID, LIBRARY_ID, REVISION, STATUS, REVIEWABLE, ANCHOR_BOOK_ID, TOPOLOGY_FINGERPRINT,
+             EVIDENCE_FINGERPRINT, STATE_FINGERPRINT, LAST_RESOLUTION_ID, MEMBER_COUNT,
+             VERIFIED_PAIR_COUNT, TOTAL_PAIR_COUNT, EVIDENCE_MATURITY)
+          VALUES
+            ('auto-cluster', 'library', 1, 'PROCESSING', true, 'A', 'ta', 'ea', 'sa',
+             'auto-resolution', 1, 0, 0, 'COVER_ONLY'),
+            ('partial-cluster', 'library', 1, 'PROCESSING', true, 'A', 'tp', 'ep', 'sp',
+             'partial-resolution', 1, 0, 0, 'COVER_ONLY')
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_CLUSTER_MEMBER
+            (CLUSTER_ID, BOOK_ID, PRESENT, SOURCE_CONTENT_GENERATION, SOURCE_COVER_GENERATION,
+             SOURCE_METADATA_GENERATION, SERIES_SCOPE_REVISION)
+          VALUES
+            ('cluster', 'A', true, 'content-A', 'cover-A', 'metadata-A', 'scope-A'),
+            ('auto-cluster', 'A', true, 'content-A', 'cover-A', 'metadata-A', 'scope-A'),
+            ('partial-cluster', 'A', true, 'content-A', 'cover-A', 'metadata-A', 'scope-A')
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_RESOLUTION
+            (ID, CLUSTER_ID, CLUSTER_REVISION, MODE, PLAN_REVISION, PLAN_JSON, EVIDENCE_JSON,
+             ELIGIBILITY_JSON, RULE_VERSION, STATE, ACTOR_ID, LEASE_TOKEN, LEASE_UNTIL)
+          VALUES ('resolution', 'cluster', 1, 'CUSTOM', 'plan', '{}', '{}', '{}', 3,
+                  'PROCESSED', 'admin', 'lease', CURRENT_TIMESTAMP)
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_RESOLUTION
+            (ID, CLUSTER_ID, CLUSTER_REVISION, MODE, PLAN_REVISION, PLAN_JSON, EVIDENCE_JSON,
+             ELIGIBILITY_JSON, RULE_VERSION, STATE, ACTOR_ID, LEASE_TOKEN, LEASE_UNTIL)
+          VALUES
+            ('auto-resolution', 'auto-cluster', 1, 'SUGGESTED', 'auto-plan', '{}', '{}', '{}', 3,
+             'PROCESSING', 'system:dedup-auto', 'auto-lease', CURRENT_TIMESTAMP),
+            ('partial-resolution', 'partial-cluster', 1, 'SUGGESTED', 'partial-plan', '{}', '{}', '{}', 3,
+             'PROCESSING', 'system:dedup-auto', 'partial-lease', CURRENT_TIMESTAMP)
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_RESOLUTION_MEMBER
+            (RESOLUTION_ID, BOOK_ID, SERIES_ID, LIBRARY_ID, ACTION, TITLE_SNAPSHOT, PATH_SNAPSHOT,
+             SOURCE_GENERATIONS_JSON, LOCAL_STATE_SNAPSHOT_JSON, STATE)
+          VALUES ('resolution', 'A', 'series', 'library', 'KEEP', 'A', '/A.cbz', '{}', '{}', 'COMPLETED')
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_RESOLUTION_MEMBER
+            (RESOLUTION_ID, BOOK_ID, SERIES_ID, LIBRARY_ID, ACTION, KEEPER_BOOK_ID,
+             TITLE_SNAPSHOT, PATH_SNAPSHOT, SOURCE_GENERATIONS_JSON, LOCAL_STATE_SNAPSHOT_JSON,
+             DIRECT_RELATION_ID, STATE)
+          VALUES
+            ('auto-resolution', 'A', 'series', 'library', 'KEEP', NULL,
+             'A', '/A.cbz', '{}', '{}', NULL, 'PLANNED'),
+            ('partial-resolution', 'A', 'series', 'library', 'DELETE', 'D',
+             'A', '/A.cbz', '{}', '{}', 'old-relation', 'DELETED')
+          """.trimIndent(),
+        )
+        statement.execute("INSERT INTO DEDUP_PAIR_DECISION VALUES ('A', 'C', 'KEEP_BOTH', 'resolution', 'admin', CURRENT_TIMESTAMP)")
+        statement.execute("INSERT INTO DEDUP_GORSE_SYNC (SERIES_ID, LIBRARY_ID, DESIRED_HIDDEN) VALUES ('series', 'library', false)")
+        statement.execute(
+          """
+          INSERT INTO DEDUP_RELATION
+            (ID, LIBRARY_ID, BOOK_LOW_ID, BOOK_HIGH_ID, LOW_CONTENT_GENERATION,
+             HIGH_CONTENT_GENERATION, RELATION_TYPE, FEATURE_SCHEMA_VERSION,
+             CLASSIFIER_RULE_VERSION, STATUS)
+          VALUES ('old-relation', 'library', 'A', 'C', 'content-A', 'content-C',
+                  'EDITION_UNCERTAIN', 1, 2, 'VERIFIED')
+          """.trimIndent(),
+        )
+        statement.execute("INSERT INTO DEDUP_WORK (ID, LIBRARY_ID, TYPE, TARGET_KEY) VALUES ('old-work', 'library', 'VERIFY_RELATION', 'A|C')")
+      }
+
+      executeMigration(connection, "V20260809120000__dedup_relation_v3.sql")
+
+      connection.createStatement().use { statement ->
+        val relationColumns =
+          statement.executeQuery("PRAGMA table_info(DEDUP_RELATION)").use { result ->
+            buildSet { while (result.next()) add(result.getString("name")) }
+          }
+        assertThat(relationColumns).contains("RELATION_TYPE", "EVIDENCE_JSON", "COVER_DISTANCE")
+        assertThat(relationColumns).doesNotContain("STATUS", "COVERAGE_LEFT", "CONFIDENCE", "LOW_COVER_GENERATION")
+        assertThat(statement.count("DEDUP_RELATION")).isZero()
+        assertThat(statement.count("DEDUP_FEATURE")).isEqualTo(2)
+        assertThat(statement.count("DEDUP_PAGE_FEATURE")).isEqualTo(1)
+        assertThat(statement.count("DEDUP_CLUSTER")).isEqualTo(3)
+        assertThat(statement.count("DEDUP_RESOLUTION")).isEqualTo(3)
+        assertThat(statement.count("DEDUP_RESOLUTION_MEMBER")).isEqualTo(3)
+        assertThat(statement.count("DEDUP_PAIR_DECISION")).isEqualTo(1)
+        assertThat(statement.count("DEDUP_GORSE_SYNC")).isEqualTo(1)
+        assertThat(
+          statement.executeQuery("SELECT LIBRARY_ID, TYPE, TARGET_KEY, PRIORITY FROM DEDUP_WORK ORDER BY ID").use { result ->
+            buildList {
+              while (result.next()) add(listOf(result.getString(1), result.getString(2), result.getString(3), result.getInt(4)))
+            }
+          },
+        ).containsExactlyInAnyOrder(
+          listOf("library", "SCAN_BOOK", "A", 0),
+          listOf("disabled-library", "SCAN_BOOK", "D", 0),
+          listOf("paused-library", "SCAN_BOOK", "E", 0),
+          listOf("library", "REBUILD_CLUSTERS", "", -1),
+          listOf("disabled-library", "REBUILD_CLUSTERS", "", -1),
+          listOf("paused-library", "REBUILD_CLUSTERS", "", -1),
+        )
+        assertThat(
+          statement.executeQuery("SELECT COUNT(*) FROM DEDUP_LIBRARY_SETTINGS WHERE AUTO_RESOLVE_SUGGESTIONS = true").use {
+            it.next()
+            it.getInt(1)
+          },
+        ).isZero()
+        assertThat(
+          statement.executeQuery("SELECT ID, STATE FROM DEDUP_RESOLUTION ORDER BY ID").use { result ->
+            buildList {
+              while (result.next()) add(result.getString(1) to result.getString(2))
+            }
+          },
+        ).containsExactly(
+          "auto-resolution" to "NEEDS_ATTENTION",
+          "partial-resolution" to "PARTIALLY_COMPLETED",
+          "resolution" to "PROCESSED",
+        )
+        assertThat(
+          statement.executeQuery("SELECT ID, STATUS, REOPEN_REASON FROM DEDUP_CLUSTER ORDER BY ID").use { result ->
+            buildList {
+              while (result.next()) add(Triple(result.getString(1), result.getString(2), result.getString(3)))
+            }
+          },
+        ).containsExactly(
+          Triple("auto-cluster", "UNPROCESSED", "AUTO_RESOLUTION_PAUSED_FOR_RELATION_V3"),
+          Triple("cluster", "PROCESSED", null),
+          Triple("partial-cluster", "NEEDS_ATTENTION", "AUTO_RESOLUTION_PAUSED_FOR_RELATION_V3"),
+        )
+        assertThat(statement.executeQuery("PRAGMA foreign_key_check").use { it.next() }).isFalse()
+        assertThat(
+          statement.executeQuery("PRAGMA integrity_check").use {
+            it.next()
+            it.getString(1)
+          },
+        ).isEqualTo("ok")
+      }
+    }
+  }
+
   private fun executeMigration(
     connection: java.sql.Connection,
     fileName: String,
@@ -233,6 +453,12 @@ class DedupMigrationTest {
       }
     }
   }
+
+  private fun java.sql.Statement.count(table: String): Int =
+    executeQuery("SELECT COUNT(*) FROM $table").use {
+      it.next()
+      it.getInt(1)
+    }
 
   companion object {
     private val OLD_TABLES =

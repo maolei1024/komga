@@ -1,4 +1,4 @@
-import {DedupClusterSummaryDto, DedupLibrarySettingsDto, DedupResolutionDto} from '@/types/komga-dedup'
+import {DedupClusterSummaryDto, DedupLibrarySettingsDto, DedupPageEvidenceDto, DedupResolutionDto} from '@/types/komga-dedup'
 
 export const DEDUP_AUTO_RESOLUTION_ACTOR = 'system:dedup-auto'
 
@@ -21,6 +21,13 @@ export function resolutionCounts(value: DedupResolutionDto): {kept: number; dele
 
 export function customActionKey(deleteCount: number): 'dedup.keepAll' | 'dedup.applySelection' {
   return deleteCount === 0 ? 'dedup.keepAll' : 'dedup.applySelection'
+}
+
+export function pageMatchCounts(pages: DedupPageEvidenceDto[]): {exact: number; perceptual: number} {
+  return {
+    exact: pages.filter(page => page.exactMatch === true).length,
+    perceptual: pages.filter(page => page.exactMatch === false).length,
+  }
 }
 
 export function withoutDedupCluster(values: DedupClusterSummaryDto[], clusterId: string): DedupClusterSummaryDto[] {

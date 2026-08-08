@@ -1110,6 +1110,9 @@
     "comparisonHelp": "Choose a base book, then compare any other book directly against it.",
     "chooseCompare": "Select “View comparison” on a book to load its page sequence.",
     "pageAlt": "Page {page}",
+    "matchSummary": "{exact} exact · {perceptual} perceptual",
+    "exactMatch": "Exact",
+    "perceptualMatch": "Perceptual · d={distance}",
     "suggestionSummary": "Retain “{keeper}” and remove {count} book(s).",
     "applySuggestion": "Use suggestion: retain “{keeper}”, remove {count}",
     "keepAll": "Retain all",
@@ -1141,9 +1144,8 @@
     "actionValue": {"KEEP": "Retained", "DELETE": "Removed"},
     "interval": {"HOURLY": "Hourly", "EVERY_6H": "Every 6 hours", "EVERY_12H": "Every 12 hours", "DAILY": "Daily", "WEEKLY": "Weekly"},
     "relation": {
-      "EXACT_FILE": "exact file", "EXACT_PAGE_SEQUENCE": "exact page sequence", "SAME_EDITION_VARIANT": "same-edition variant",
-      "CONTAINED_IN": "contained sequence", "NEAR_CONTAINED_IN": "near containment", "PARTIAL_OVERLAP": "partial overlap",
-      "ALT_EDITION": "alternate edition", "EDITION_UNCERTAIN": "uncertain edition"
+      "COVER_CANDIDATE": "cover candidate", "EXACT_FILE": "exact file", "SAME_PAGE_SEQUENCE": "same page sequence",
+      "CONTAINED_IN": "contained sequence", "AMBIGUOUS": "ambiguous overlap", "NO_MATCH": "no page match"
     }
   },
   "updates": {

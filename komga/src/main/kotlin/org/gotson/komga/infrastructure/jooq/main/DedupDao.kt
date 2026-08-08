@@ -13,7 +13,6 @@ import org.gotson.komga.domain.model.DedupPageFeature
 import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupPairDecisionType
 import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupResolution
 import org.gotson.komga.domain.model.DedupResolutionAction
@@ -627,26 +626,13 @@ class DedupDao(
         relation.BOOK_HIGH_ID,
         relation.LOW_CONTENT_GENERATION,
         relation.HIGH_CONTENT_GENERATION,
-        relation.LOW_COVER_GENERATION,
-        relation.HIGH_COVER_GENERATION,
-        relation.LOW_METADATA_GENERATION,
-        relation.HIGH_METADATA_GENERATION,
         relation.RELATION_TYPE,
         relation.CONTAINED_BOOK_ID,
         relation.CONTAINER_BOOK_ID,
         relation.COVER_DISTANCE,
-        relation.COVERAGE_LEFT,
-        relation.COVERAGE_RIGHT,
-        relation.ORDER_CONSISTENCY,
-        relation.LONGEST_MATCHED_RUN,
-        relation.UNMATCHED_PREFIX_COUNT,
-        relation.UNMATCHED_SUFFIX_COUNT,
-        relation.UNMATCHED_INTERNAL_COUNT,
-        relation.CONFIDENCE,
         relation.EVIDENCE_JSON,
         relation.FEATURE_SCHEMA_VERSION,
         relation.CLASSIFIER_RULE_VERSION,
-        relation.STATUS,
         relation.CREATED_DATE,
         relation.LAST_MODIFIED_DATE,
       ).values(
@@ -656,26 +642,13 @@ class DedupDao(
         value.bookHighId,
         value.lowContentGeneration,
         value.highContentGeneration,
-        value.lowCoverGeneration,
-        value.highCoverGeneration,
-        value.lowMetadataGeneration,
-        value.highMetadataGeneration,
         value.type.name,
         value.containedBookId,
         value.containerBookId,
         value.coverDistance,
-        value.coverageLeft,
-        value.coverageRight,
-        value.orderConsistency,
-        value.longestMatchedRun,
-        value.unmatchedPrefixCount,
-        value.unmatchedSuffixCount,
-        value.unmatchedInternalCount,
-        value.confidence,
         value.evidenceJson,
         value.featureSchemaVersion,
         value.classifierRuleVersion,
-        value.status.name,
         value.createdDate,
         value.lastModifiedDate,
       ).onDuplicateKeyUpdate()
@@ -683,26 +656,13 @@ class DedupDao(
       .set(relation.LIBRARY_ID, value.libraryId)
       .set(relation.LOW_CONTENT_GENERATION, value.lowContentGeneration)
       .set(relation.HIGH_CONTENT_GENERATION, value.highContentGeneration)
-      .set(relation.LOW_COVER_GENERATION, value.lowCoverGeneration)
-      .set(relation.HIGH_COVER_GENERATION, value.highCoverGeneration)
-      .set(relation.LOW_METADATA_GENERATION, value.lowMetadataGeneration)
-      .set(relation.HIGH_METADATA_GENERATION, value.highMetadataGeneration)
       .set(relation.RELATION_TYPE, value.type.name)
       .set(relation.CONTAINED_BOOK_ID, value.containedBookId)
       .set(relation.CONTAINER_BOOK_ID, value.containerBookId)
       .set(relation.COVER_DISTANCE, value.coverDistance)
-      .set(relation.COVERAGE_LEFT, value.coverageLeft?.toFloat())
-      .set(relation.COVERAGE_RIGHT, value.coverageRight?.toFloat())
-      .set(relation.ORDER_CONSISTENCY, value.orderConsistency?.toFloat())
-      .set(relation.LONGEST_MATCHED_RUN, value.longestMatchedRun)
-      .set(relation.UNMATCHED_PREFIX_COUNT, value.unmatchedPrefixCount)
-      .set(relation.UNMATCHED_SUFFIX_COUNT, value.unmatchedSuffixCount)
-      .set(relation.UNMATCHED_INTERNAL_COUNT, value.unmatchedInternalCount)
-      .set(relation.CONFIDENCE, value.confidence?.toFloat())
       .set(relation.EVIDENCE_JSON, value.evidenceJson)
       .set(relation.FEATURE_SCHEMA_VERSION, value.featureSchemaVersion)
       .set(relation.CLASSIFIER_RULE_VERSION, value.classifierRuleVersion)
-      .set(relation.STATUS, value.status.name)
       .set(relation.LAST_MODIFIED_DATE, value.lastModifiedDate)
       .execute()
   }
@@ -711,7 +671,6 @@ class DedupDao(
   override fun replaceExactRelationsForBook(
     bookId: String,
     relations: Collection<DedupRelation>,
-    now: LocalDateTime,
   ) {
     val currentPairs = relations.map { it.bookLowId to it.bookHighId }.toSet()
     dslRW
@@ -724,9 +683,7 @@ class DedupDao(
       .filterNot(currentPairs::contains)
       .forEach { (low, high) ->
         dslRW
-          .update(relation)
-          .set(relation.STATUS, DedupRelationStatus.STALE.name)
-          .set(relation.LAST_MODIFIED_DATE, now)
+          .deleteFrom(relation)
           .where(relation.BOOK_LOW_ID.eq(low))
           .and(relation.BOOK_HIGH_ID.eq(high))
           .execute()
@@ -742,28 +699,24 @@ class DedupDao(
   ) {
     val pairs = relations.map { it.bookLowId to it.bookHighId }.toSet()
     dslRW
-      .select(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID)
+      .select(relation.BOOK_LOW_ID, relation.BOOK_HIGH_ID, relation.RELATION_TYPE)
       .from(relation)
       .where(relation.COVER_DISTANCE.isNotNull)
       .and(relation.BOOK_LOW_ID.eq(bookId).or(relation.BOOK_HIGH_ID.eq(bookId)))
       .fetch()
-      .map { it.value1() to it.value2() }
-      .filterNot(pairs::contains)
-      .forEach { (low, high) ->
-        dslRW
-          .update(relation)
-          .set(relation.COVER_DISTANCE, null as Int?)
-          .set(relation.LOW_COVER_GENERATION, "")
-          .set(relation.HIGH_COVER_GENERATION, "")
-          .set(
-            relation.STATUS,
-            DSL
-              .`when`(relation.RELATION_TYPE.eq(DedupRelationType.VISUALLY_SIMILAR.name), DedupRelationStatus.STALE.name)
-              .otherwise(relation.STATUS),
-          ).set(relation.LAST_MODIFIED_DATE, now)
-          .where(relation.BOOK_LOW_ID.eq(low))
-          .and(relation.BOOK_HIGH_ID.eq(high))
-          .execute()
+      .filterNot { (it.value1() to it.value2()) in pairs }
+      .forEach { record ->
+        val condition = relation.BOOK_LOW_ID.eq(record.value1()).and(relation.BOOK_HIGH_ID.eq(record.value2()))
+        if (record.value3() == DedupRelationType.COVER_CANDIDATE.name) {
+          dslRW.deleteFrom(relation).where(condition).execute()
+        } else {
+          dslRW
+            .update(relation)
+            .set(relation.COVER_DISTANCE, null as Int?)
+            .set(relation.LAST_MODIFIED_DATE, now)
+            .where(condition)
+            .execute()
+        }
       }
     relations.forEach(::saveRelation)
   }
@@ -1588,23 +1541,10 @@ class DedupDao(
       bookHighId!!,
       lowContentGeneration!!,
       highContentGeneration!!,
-      lowCoverGeneration!!,
-      highCoverGeneration!!,
-      lowMetadataGeneration!!,
-      highMetadataGeneration!!,
       DedupRelationType.valueOf(relationType!!),
       coverDistance,
       containedBookId,
       containerBookId,
-      coverageLeft?.toDouble(),
-      coverageRight?.toDouble(),
-      orderConsistency?.toDouble(),
-      longestMatchedRun,
-      unmatchedPrefixCount,
-      unmatchedSuffixCount,
-      unmatchedInternalCount,
-      confidence?.toDouble(),
-      DedupRelationStatus.valueOf(status!!),
       evidenceJson!!,
       featureSchemaVersion!!,
       classifierRuleVersion!!,

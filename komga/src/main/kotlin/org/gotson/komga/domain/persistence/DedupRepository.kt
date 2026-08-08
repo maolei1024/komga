@@ -136,7 +136,6 @@ interface DedupRepository {
   fun replaceExactRelationsForBook(
     bookId: String,
     relations: Collection<DedupRelation>,
-    now: LocalDateTime = LocalDateTime.now(),
   )
 
   fun replaceCoverRelationsForBook(

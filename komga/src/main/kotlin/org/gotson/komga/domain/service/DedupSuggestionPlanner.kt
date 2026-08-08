@@ -4,7 +4,6 @@ import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupPlanMember
 import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupResolutionAction
 import org.gotson.komga.domain.model.DedupResolutionPlan
@@ -96,7 +95,7 @@ class DedupSuggestionPlanner(
     keeper: String,
   ): Boolean =
     when (type) {
-      DedupRelationType.EXACT_FILE, DedupRelationType.EXACT_PAGE_SEQUENCE -> setOf(deletion, keeper) == setOf(bookLowId, bookHighId)
+      DedupRelationType.EXACT_FILE, DedupRelationType.SAME_PAGE_SEQUENCE -> setOf(deletion, keeper) == setOf(bookLowId, bookHighId)
       DedupRelationType.CONTAINED_IN -> deletion == containedBookId && keeper == containerBookId
       else -> false
     }
@@ -126,13 +125,9 @@ class DedupSuggestionPlanner(
 internal fun DedupRelation.isCurrent(identities: Map<String, DedupSourceIdentity>): Boolean {
   val low = identities[bookLowId] ?: return false
   val high = identities[bookHighId] ?: return false
-  if (status != DedupRelationStatus.VERIFIED || low.contentGeneration != lowContentGeneration || high.contentGeneration != highContentGeneration) return false
+  if (low.contentGeneration != lowContentGeneration || high.contentGeneration != highContentGeneration) return false
+  if (type == DedupRelationType.COVER_CANDIDATE) return false
   if (type == DedupRelationType.EXACT_FILE) return true
-  if (
-    low.coverGeneration != lowCoverGeneration || high.coverGeneration != highCoverGeneration ||
-    low.metadataGeneration != lowMetadataGeneration || high.metadataGeneration != highMetadataGeneration
-  )
-    return false
   return featureSchemaVersion == DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION &&
     classifierRuleVersion == DedupDeepVerificationLifecycle.CLASSIFIER_RULE_VERSION
 }

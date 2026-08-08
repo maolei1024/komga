@@ -52,7 +52,7 @@ class DedupSuggestionPlannerTest {
   fun `exact page duplicates choose the unique higher bytes per page Book`() {
     setup(
       listOf(identity("A", 10), identity("B", 10)),
-      listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
+      listOf(relation("A", "B", DedupRelationType.SAME_PAGE_SEQUENCE)),
       sizes = mapOf("A" to 1_000L, "B" to 2_000L),
     )
 
@@ -67,7 +67,7 @@ class DedupSuggestionPlannerTest {
     val later = earlier.plusDays(1)
     setup(
       listOf(identity("A", 10), identity("B", 10)),
-      listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
+      listOf(relation("A", "B", DedupRelationType.SAME_PAGE_SEQUENCE)),
       sizes = mapOf("A" to 1_000L, "B" to 1_000L),
       createdDates = mapOf("A" to later, "B" to earlier),
     )
@@ -81,7 +81,7 @@ class DedupSuggestionPlannerTest {
   fun `creation time tie keeps the lexicographically smallest Book ID deterministically`() {
     setup(
       listOf(identity("B", 10), identity("A", 10)),
-      listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
+      listOf(relation("A", "B", DedupRelationType.SAME_PAGE_SEQUENCE)),
       sizes = mapOf("A" to 1_000L, "B" to 1_000L),
     )
 
@@ -98,9 +98,9 @@ class DedupSuggestionPlannerTest {
     setup(
       listOf(identity("A", 10), identity("B", 10), identity("C", 10)),
       listOf(
-        relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE),
-        relation("A", "C", DedupRelationType.EXACT_PAGE_SEQUENCE),
-        relation("B", "C", DedupRelationType.EXACT_PAGE_SEQUENCE),
+        relation("A", "B", DedupRelationType.SAME_PAGE_SEQUENCE),
+        relation("A", "C", DedupRelationType.SAME_PAGE_SEQUENCE),
+        relation("B", "C", DedupRelationType.SAME_PAGE_SEQUENCE),
       ),
       sizes = mapOf("A" to 1_000L, "B" to 1_000L, "C" to 1_000L),
       createdDates = mapOf("A" to later, "B" to earlier, "C" to later),
@@ -114,7 +114,7 @@ class DedupSuggestionPlannerTest {
 
   @Test
   fun `risk relation types never create automatic deletion suggestions`() {
-    setup(listOf(identity("A", 10), identity("B", 10)), listOf(relation("A", "B", DedupRelationType.PARTIAL_OVERLAP)))
+    setup(listOf(identity("A", 10), identity("B", 10)), listOf(relation("A", "B", DedupRelationType.AMBIGUOUS)))
 
     assertThat(planner.evaluate(cluster("A", "B")).plan).isNull()
   }

@@ -7,7 +7,6 @@ import org.gotson.komga.domain.model.DedupArchiveHashState
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
 import org.gotson.komga.domain.model.DedupRelation
-import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupSourceIdentity
 import org.gotson.komga.domain.model.ThumbnailBook
@@ -106,12 +105,7 @@ class DedupCoverLifecycle(
               bookHighId = neighbor.bookHighId,
               lowContentGeneration = low.sourceContentGeneration,
               highContentGeneration = high.sourceContentGeneration,
-              lowCoverGeneration = low.sourceCoverGeneration,
-              highCoverGeneration = high.sourceCoverGeneration,
-              lowMetadataGeneration = low.sourceMetadataGeneration,
-              highMetadataGeneration = high.sourceMetadataGeneration,
-              type = DedupRelationType.VISUALLY_SIMILAR,
-              status = DedupRelationStatus.CANDIDATE,
+              type = DedupRelationType.COVER_CANDIDATE,
               coverDistance = neighbor.distance,
               evidenceJson =
                 objectMapper.writeValueAsString(
@@ -135,8 +129,6 @@ class DedupCoverLifecycle(
               ?.takeIf {
                 it.isCurrent(identities)
               }?.copy(
-                lowCoverGeneration = low.sourceCoverGeneration,
-                highCoverGeneration = high.sourceCoverGeneration,
                 coverDistance = neighbor.distance,
                 lastModifiedDate = now,
               ) ?: candidateRelation

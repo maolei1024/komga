@@ -6,7 +6,6 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
-import org.gotson.komga.domain.model.DedupRelationStatus
 import org.gotson.komga.domain.model.DedupRelationType
 import org.gotson.komga.domain.model.DedupResolutionAction
 import org.gotson.komga.domain.model.DedupResolutionMode
@@ -109,18 +108,9 @@ data class DedupRelationDto(
   val leftBookId: String,
   val rightBookId: String,
   val type: DedupRelationType,
-  val status: DedupRelationStatus,
   val coverDistance: Int?,
   val containedBookId: String?,
   val containerBookId: String?,
-  val coverageLeft: Double?,
-  val coverageRight: Double?,
-  val orderConsistency: Double?,
-  val longestMatchedRun: Int?,
-  val unmatchedPrefixCount: Int?,
-  val unmatchedSuffixCount: Int?,
-  val unmatchedInternalCount: Int?,
-  val confidence: Double?,
   val evidence: JsonNode?,
 )
 
@@ -149,6 +139,7 @@ data class DedupPageEvidenceDto(
   val matchedBookId: String?,
   val matchedPageNumber: Int?,
   val exactMatch: Boolean?,
+  val perceptualDistance: Int?,
   val thumbnailUrl: String,
 )
 

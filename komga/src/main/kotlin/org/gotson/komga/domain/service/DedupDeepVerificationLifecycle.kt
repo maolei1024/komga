@@ -27,7 +27,7 @@ class DedupDeepVerificationLifecycle(
 ) {
   companion object {
     const val PAGE_FEATURE_SCHEMA_VERSION = 1
-    const val CLASSIFIER_RULE_VERSION = 2
+    const val CLASSIFIER_RULE_VERSION = 3
   }
 
   fun verifyRelation(
@@ -66,12 +66,6 @@ class DedupDeepVerificationLifecycle(
     val alignment = aligner.align(memberIds[0], left, memberIds[1], right)
     val lowGeneration = requireNotNull(coverLifecycle.currentContentGeneration(memberIds[0]))
     val highGeneration = requireNotNull(coverLifecycle.currentContentGeneration(memberIds[1]))
-    val unmatched =
-      when (alignment.containedBookId) {
-        memberIds[0] -> alignment.unmatchedLeft
-        memberIds[1] -> alignment.unmatchedRight
-        else -> alignment.unmatchedLeft
-      }
     val now = LocalDateTime.now()
     val relation =
       DedupRelation(
@@ -81,37 +75,32 @@ class DedupDeepVerificationLifecycle(
         bookHighId = memberIds[1],
         lowContentGeneration = lowGeneration,
         highContentGeneration = highGeneration,
-        lowCoverGeneration = currentRelation?.lowCoverGeneration.orEmpty(),
-        highCoverGeneration = currentRelation?.highCoverGeneration.orEmpty(),
-        lowMetadataGeneration = currentRelation?.lowMetadataGeneration.orEmpty(),
-        highMetadataGeneration = currentRelation?.highMetadataGeneration.orEmpty(),
         type = alignment.relationType,
         coverDistance = currentRelation?.coverDistance,
         containedBookId = alignment.containedBookId,
         containerBookId = alignment.containerBookId,
-        coverageLeft = alignment.coverageLeft,
-        coverageRight = alignment.coverageRight,
-        orderConsistency = 1.0,
-        longestMatchedRun = alignment.longestMatchedRun,
-        unmatchedPrefixCount = unmatched.prefixCount,
-        unmatchedSuffixCount = unmatched.suffixCount,
-        unmatchedInternalCount = unmatched.internalCount,
         evidenceJson =
           objectMapper.writeValueAsString(
             mapOf(
+              "leftPageCount" to left.size,
+              "rightPageCount" to right.size,
+              "coverageLeft" to alignment.coverageLeft,
+              "coverageRight" to alignment.coverageRight,
               "leftUnmatchedRanges" to alignment.unmatchedLeft.ranges,
               "rightUnmatchedRanges" to alignment.unmatchedRight.ranges,
               "matchedPages" to alignment.matches.size,
               "exactMatches" to alignment.matches.count { it.exact },
+              "perceptualMatches" to alignment.matches.count { !it.exact },
+              "longestMatchedRun" to alignment.longestMatchedRun,
               "matches" to
                 alignment.matches.map {
                   mapOf(
                     "leftPage" to it.leftPage,
                     "rightPage" to it.rightPage,
                     "exact" to it.exact,
+                    "perceptualDistance" to it.perceptualDistance,
                   )
                 },
-              "ancillaryClassification" to "UNCONFIRMED",
               "leftArchiveHash" to lowIdentity.archiveHash,
               "rightArchiveHash" to highIdentity.archiveHash,
             ),

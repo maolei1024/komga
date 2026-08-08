@@ -3,6 +3,7 @@ import {
   dedupActorLabelKey,
   formatDedupBytes,
   newlyEffectiveAutoResolutionLibraries,
+  pageMatchCounts,
   resolutionCounts,
   withoutDedupCluster,
 } from '@/functions/dedup'
@@ -23,6 +24,14 @@ describe('dedup helpers', () => {
   it('uses an explicit retain-all label when no Book is marked', () => {
     expect(customActionKey(0)).toBe('dedup.keepAll')
     expect(customActionKey(2)).toBe('dedup.applySelection')
+  })
+
+  it('counts exact and perceptual page matches without counting unmatched pages', () => {
+    expect(pageMatchCounts([
+      {bookId: 'A', pageNumber: 1, exactMatch: true, thumbnailUrl: '/1'},
+      {bookId: 'A', pageNumber: 2, exactMatch: false, perceptualDistance: 3, thumbnailUrl: '/2'},
+      {bookId: 'A', pageNumber: 3, exactMatch: null, thumbnailUrl: '/3'},
+    ])).toEqual({exact: 1, perceptual: 1})
   })
 
   it('removes a successfully queued cluster from the current page without mutating the source', () => {

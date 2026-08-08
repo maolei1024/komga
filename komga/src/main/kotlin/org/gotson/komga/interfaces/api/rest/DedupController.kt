@@ -71,6 +71,13 @@ import org.springframework.web.server.ResponseStatusException
 import java.time.Duration
 import java.time.LocalDateTime
 
+private data class StoredPageMatch(
+  val leftPage: Int,
+  val rightPage: Int,
+  val exact: Boolean,
+  val perceptualDistance: Int?,
+)
+
 @RestController
 @RequestMapping(value = ["api/v1/dedup"], produces = [MediaType.APPLICATION_JSON_VALUE])
 @PreAuthorize("hasRole('ADMIN')")
@@ -224,24 +231,37 @@ class DedupController(
         ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Current verified relation is unavailable")
     val (low, high) = listOf(leftBookId, rightBookId).sorted()
     val evidence = parseJson(relation.evidenceJson)
-    val matches = evidence?.path("matches")?.associate { (it.path("leftPage").asInt() to it.path("rightPage").asInt()) to it.path("exact").asBoolean() }.orEmpty()
+    val matches =
+      evidence
+        ?.path("matches")
+        ?.map {
+          StoredPageMatch(
+            leftPage = it.path("leftPage").asInt(),
+            rightPage = it.path("rightPage").asInt(),
+            exact = it.path("exact").asBoolean(),
+            perceptualDistance =
+              it
+                .path("perceptualDistance")
+                .takeUnless { value -> value.isNull || value.isMissingNode }
+                ?.asInt(),
+          )
+        }.orEmpty()
+    val matchesByLowPage = matches.associateBy { it.leftPage }
+    val matchesByHighPage = matches.associateBy { it.rightPage }
     val pages =
       listOf(low, high).associateWith { bookId ->
         val identity = coverLifecycle.currentSourceIdentity(bookId)
         val stored = identity?.let { dedupRepository.findPageFeatures(bookId, it.contentGeneration, DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION) }.orEmpty()
         val pageNumbers = if (stored.isNotEmpty()) stored.map { it.pageNumber } else (1..(mediaRepository.findByIdOrNull(bookId)?.pageCount ?: 0)).toList()
         pageNumbers.map { pageNumber ->
-          val match =
-            if (bookId == low)
-              matches.entries.firstOrNull { it.key.first == pageNumber }?.let { it.key.second to it.value }
-            else
-              matches.entries.firstOrNull { it.key.second == pageNumber }?.let { it.key.first to it.value }
+          val match = if (bookId == low) matchesByLowPage[pageNumber] else matchesByHighPage[pageNumber]
           DedupPageEvidenceDto(
             bookId = bookId,
             pageNumber = pageNumber,
             matchedBookId = match?.let { if (bookId == low) high else low },
-            matchedPageNumber = match?.first,
-            exactMatch = match?.second,
+            matchedPageNumber = match?.let { if (bookId == low) it.rightPage else it.leftPage },
+            exactMatch = match?.exact,
+            perceptualDistance = match?.perceptualDistance,
             thumbnailUrl = "/api/v1/books/$bookId/pages/$pageNumber/thumbnail",
           )
         }
@@ -361,18 +381,9 @@ class DedupController(
       leftBookId = value.bookLowId,
       rightBookId = value.bookHighId,
       type = value.type,
-      status = value.status,
       coverDistance = value.coverDistance,
       containedBookId = value.containedBookId,
       containerBookId = value.containerBookId,
-      coverageLeft = value.coverageLeft,
-      coverageRight = value.coverageRight,
-      orderConsistency = value.orderConsistency,
-      longestMatchedRun = value.longestMatchedRun,
-      unmatchedPrefixCount = value.unmatchedPrefixCount,
-      unmatchedSuffixCount = value.unmatchedSuffixCount,
-      unmatchedInternalCount = value.unmatchedInternalCount,
-      confidence = value.confidence,
       evidence = parseJson(value.evidenceJson),
     )
 

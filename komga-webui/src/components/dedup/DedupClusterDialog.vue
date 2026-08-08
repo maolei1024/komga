@@ -47,14 +47,24 @@
             <v-alert v-if="!pageComparison && !pagesLoading" text type="info" class="mt-3 mb-0">{{ $t('dedup.chooseCompare') }}</v-alert>
             <v-skeleton-loader v-if="pagesLoading" class="mt-3" type="image" height="180"/>
             <div v-else-if="pageComparison" class="page-comparison">
-              <v-chip small label outlined>{{ $t(`dedup.relation.${pageComparison.relationType}`) }}</v-chip>
+              <div class="comparison-summary">
+                <v-chip small label outlined>{{ $t(`dedup.relation.${pageComparison.relationType}`) }}</v-chip>
+                <span>{{ comparisonSummary }}</span>
+              </div>
               <div class="page-columns">
                 <div v-for="bookId in [pageComparison.leftBookId, pageComparison.rightBookId]" :key="bookId">
                   <h3>{{ memberTitle(bookId) }}</h3>
                   <div class="page-strip">
-                    <figure v-for="page in pageComparison.pages[bookId] || []" :key="`${bookId}-${page.pageNumber}`" :class="{'matched-page': page.matchedPageNumber != null}">
+                    <figure
+                      v-for="page in pageComparison.pages[bookId] || []"
+                      :key="`${bookId}-${page.pageNumber}`"
+                      :class="{'exact-page': page.exactMatch === true, 'perceptual-page': page.exactMatch === false}"
+                    >
                       <DedupLazyImage :src="page.thumbnailUrl" :alt="$t('dedup.pageAlt', {page: page.pageNumber})" :width="72" :height="104" high-priority root-selector=".page-strip" root-margin="216px"/>
-                      <figcaption>{{ page.pageNumber }}<span v-if="page.matchedPageNumber != null"> ↔ {{ page.matchedPageNumber }}</span></figcaption>
+                      <figcaption>
+                        <span>{{ page.pageNumber }}<span v-if="page.matchedPageNumber != null"> ↔ {{ page.matchedPageNumber }}</span></span>
+                        <small v-if="page.exactMatch != null">{{ pageMatchLabel(page) }}</small>
+                      </figcaption>
                     </figure>
                   </div>
                 </div>
@@ -86,8 +96,8 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import {DedupClusterDetailDto, DedupConflictDto, DedupPageComparisonDto, DedupResolutionDto} from '@/types/komga-dedup'
-import {customActionKey} from '@/functions/dedup'
+import {DedupClusterDetailDto, DedupConflictDto, DedupPageComparisonDto, DedupPageEvidenceDto, DedupResolutionDto} from '@/types/komga-dedup'
+import {customActionKey, pageMatchCounts} from '@/functions/dedup'
 import DedupClusterMember from './DedupClusterMember.vue'
 import DedupLazyImage from './DedupLazyImage.vue'
 import DedupResolutionResult from './DedupResolutionResult.vue'
@@ -117,6 +127,12 @@ export default Vue.extend({
     suggestedKeeperTitle(): string { return this.memberTitle(this.suggestedKeeperId) },
     comparisonBaseItems(): Array<{text: string; value: string}> {
       return this.detail?.members.map(member => ({text: member.title || member.bookId, value: member.bookId})) || []
+    },
+    comparisonSummary(): string {
+      if (!this.pageComparison) return ''
+      const pages = this.pageComparison.pages[this.pageComparison.leftBookId] || []
+      const {exact, perceptual} = pageMatchCounts(pages)
+      return this.$t('dedup.matchSummary', {exact, perceptual}).toString()
     },
     suggestedButtonLabel(): string {
       if (!this.detail?.suggestion) return ''
@@ -158,6 +174,10 @@ export default Vue.extend({
     cancelLoad() { this.abortController?.abort(); this.abortController = null; this.loadGeneration++ },
     toggleDelete(bookId: string) {
       this.deleteIds = this.deleteIds.includes(bookId) ? this.deleteIds.filter(id => id !== bookId) : [...this.deleteIds, bookId]
+    },
+    pageMatchLabel(page: DedupPageEvidenceDto): string {
+      if (page.exactMatch) return this.$t('dedup.exactMatch').toString()
+      return this.$t('dedup.perceptualMatch', {distance: page.perceptualDistance ?? '-'}).toString()
     },
     async compareWithBase(bookId: string) {
       if (!this.detail || !this.comparisonBaseId || bookId === this.comparisonBaseId) return
@@ -220,12 +240,15 @@ export default Vue.extend({
 .member-list { overflow: hidden; border-radius: 8px; background: var(--v-base-base); }
 .comparison-heading .v-input { max-width: 320px; }
 .page-comparison { margin-top: 14px; }
+.comparison-summary { display: flex; align-items: center; gap: 10px; color: var(--v-contrast-light-2-base); font-size: .8125rem; }
 .page-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 14px; }
 .page-columns h3 { margin: 0 0 8px; overflow: hidden; font-size: .875rem; text-overflow: ellipsis; white-space: nowrap; }
 .page-strip { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 8px; }
 .page-strip figure { flex: 0 0 72px; margin: 0; background: var(--v-contrast-1-base); }
-.page-strip figure.matched-page { box-shadow: inset 0 0 0 2px var(--v-success-base); }
-.page-strip figcaption { padding: 3px; text-align: center; font-size: .7rem; }
+.page-strip figure.exact-page { box-shadow: inset 0 0 0 2px var(--v-success-base); }
+.page-strip figure.perceptual-page { box-shadow: inset 0 0 0 2px var(--v-warning-base); }
+.page-strip figcaption { display: flex; flex-direction: column; gap: 1px; padding: 3px; text-align: center; font-size: .7rem; }
+.page-strip figcaption small { color: var(--v-contrast-light-2-base); font-size: .625rem; }
 .dialog-footer { position: sticky; bottom: 0; z-index: 2; flex-wrap: wrap; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--v-contrast-1-base); background: var(--v-base-base); }
 @media (max-width: 700px) {
   .cluster-dialog { height: 100vh; }

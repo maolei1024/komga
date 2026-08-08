@@ -124,11 +124,7 @@ class DedupCoverLifecycleTest {
         "B",
         "content-A",
         "content-B",
-        lowCoverGeneration = "cover-A",
-        highCoverGeneration = "cover-B",
-        lowMetadataGeneration = "metadata-A",
-        highMetadataGeneration = "metadata-B",
-        type = DedupRelationType.EXACT_PAGE_SEQUENCE,
+        type = DedupRelationType.SAME_PAGE_SEQUENCE,
         featureSchemaVersion = DedupDeepVerificationLifecycle.PAGE_FEATURE_SCHEMA_VERSION,
         classifierRuleVersion = DedupDeepVerificationLifecycle.CLASSIFIER_RULE_VERSION,
       )
@@ -142,8 +138,8 @@ class DedupCoverLifecycleTest {
 
     assertThat(lifecycle.refreshCandidatesForBook("A")).isEmpty()
     assertThat(captured.captured.single())
-      .extracting("id", "type", "coverDistance", "lowCoverGeneration", "highCoverGeneration")
-      .containsExactly("deep", DedupRelationType.EXACT_PAGE_SEQUENCE, 0, "cover-A", "cover-B")
+      .extracting("id", "type", "coverDistance")
+      .containsExactly("deep", DedupRelationType.SAME_PAGE_SEQUENCE, 0)
   }
 
   private fun feature(id: String) =
