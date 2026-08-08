@@ -1,4 +1,4 @@
-import {DedupResolutionDto} from '@/types/komga-dedup'
+import {DedupClusterSummaryDto, DedupResolutionDto} from '@/types/komga-dedup'
 
 export function formatDedupBytes(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—'
@@ -19,4 +19,8 @@ export function resolutionCounts(value: DedupResolutionDto): {kept: number; dele
 
 export function customActionKey(deleteCount: number): 'dedup.keepAll' | 'dedup.applySelection' {
   return deleteCount === 0 ? 'dedup.keepAll' : 'dedup.applySelection'
+}
+
+export function withoutDedupCluster(values: DedupClusterSummaryDto[], clusterId: string): DedupClusterSummaryDto[] {
+  return values.filter(value => value.id !== clusterId)
 }

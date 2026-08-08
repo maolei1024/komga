@@ -1,5 +1,5 @@
-import {customActionKey, formatDedupBytes, resolutionCounts} from '@/functions/dedup'
-import {DedupResolutionDto} from '@/types/komga-dedup'
+import {customActionKey, formatDedupBytes, resolutionCounts, withoutDedupCluster} from '@/functions/dedup'
+import {DedupClusterSummaryDto, DedupResolutionDto} from '@/types/komga-dedup'
 
 describe('dedup helpers', () => {
   it('formats file sizes without implying precision that is not available', () => {
@@ -17,7 +17,27 @@ describe('dedup helpers', () => {
     expect(customActionKey(0)).toBe('dedup.keepAll')
     expect(customActionKey(2)).toBe('dedup.applySelection')
   })
+
+  it('removes a successfully queued cluster from the current page without mutating the source', () => {
+    const source = [cluster('A'), cluster('B')]
+
+    expect(withoutDedupCluster(source, 'A').map(value => value.id)).toEqual(['B'])
+    expect(source.map(value => value.id)).toEqual(['A', 'B'])
+  })
 })
+
+function cluster(id: string): DedupClusterSummaryDto {
+  return {
+    id,
+    libraryId: 'library',
+    revision: 1,
+    title: id,
+    memberCount: 2,
+    coverMembers: [],
+    hasSuggestion: true,
+    lastModified: '2026-08-05T00:00:00Z',
+  }
+}
 
 function resolution(): DedupResolutionDto {
   return {

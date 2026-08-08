@@ -117,7 +117,7 @@
       </v-tab-item>
     </v-tabs-items>
 
-    <DedupClusterDialog v-model="dialogOpen" :cluster-id="selectedClusterId" @updated="refreshAfterAction" @notify="notify($event.text, $event.color)"/>
+    <DedupClusterDialog v-model="dialogOpen" :cluster-id="selectedClusterId" @resolved="removeResolvedCluster" @updated="refreshAfterAction" @notify="notify($event.text, $event.color)"/>
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4500">
       {{ snackbar.text }}
       <template v-slot:action="{attrs}"><v-btn text v-bind="attrs" @click="snackbar.show = false">{{ $t('common.close') }}</v-btn></template>
@@ -130,7 +130,7 @@ import Vue from 'vue'
 import PageSizeSelect from '@/components/PageSizeSelect.vue'
 import DedupClusterDialog from '@/components/dedup/DedupClusterDialog.vue'
 import DedupClusterList from '@/components/dedup/DedupClusterList.vue'
-import {resolutionCounts} from '@/functions/dedup'
+import {resolutionCounts, withoutDedupCluster} from '@/functions/dedup'
 import {DedupClusterSummaryDto, DedupResolutionDto, DedupSettingsDto, DedupStatusDto} from '@/types/komga-dedup'
 
 const EMPTY_STATUS: DedupStatusDto = {
@@ -248,6 +248,13 @@ export default Vue.extend({
       finally { this.savingSettings = false }
     },
     openCluster(clusterId: string) { this.selectedClusterId = clusterId; this.dialogOpen = true },
+    removeResolvedCluster(clusterId: string) {
+      const remaining = withoutDedupCluster(this.clusters, clusterId)
+      if (remaining.length === this.clusters.length) return
+      this.clusters = remaining
+      this.totalClusters = Math.max(0, this.totalClusters - 1)
+      this.status = {...this.status, unresolvedClusters: Math.max(0, this.status.unresolvedClusters - 1)}
+    },
     async refreshAfterAction() { await Promise.all([this.loadReview(), this.loadStatus()]) },
     formatDate(value: string): string { return new Date(value).toLocaleString() },
     formatOptionalDate(value?: string | null): string { return value ? this.formatDate(value) : this.$t('dedup.never').toString() },

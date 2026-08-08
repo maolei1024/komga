@@ -187,7 +187,7 @@ export default Vue.extend({
           text: this.$t(queued ? 'dedup.resolutionQueued' : 'dedup.resolutionCompleted').toString(),
           color: queued ? 'info' : 'success',
         })
-        this.$emit('updated')
+        this.$emit('resolved', this.resolutionResult.clusterId)
         this.$emit('input', false)
       } catch (error) {
         const conflict = error?.response?.data as DedupConflictDto | undefined

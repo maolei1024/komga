@@ -145,10 +145,7 @@ class DedupClusterLifecycle(
     check(current.cluster.status == DedupClusterStatus.PROCESSING) { "Cluster is not processing" }
     val identities = survivorBookIds.mapNotNull(coverLifecycle::currentSourceIdentity)
     check(identities.map { it.bookId }.toSet() == survivorBookIds) { "A retained Book changed before cluster finalization" }
-    val reviewEdges =
-      currentReviewRelations(current.cluster.libraryId, identities.associateBy { it.bookId }).filter {
-        it.bookLowId in survivorBookIds && it.bookHighId in survivorBookIds
-      }
+    val reviewEdges = currentReviewRelationsForIdentities(identities.associateBy { it.bookId })
     dedupRepository.savePairDecisions(
       reviewEdges.map { relation ->
         DedupPairDecision(
@@ -188,30 +185,39 @@ class DedupClusterLifecycle(
     val ids = value.presentIds()
     val identities = ids.mapNotNull(coverLifecycle::currentSourceIdentity).associateBy { it.bookId }
     if (identities.size != ids.size) return null
-    return fingerprints(identities.values, currentReviewRelations(value.cluster.libraryId, identities))
+    return fingerprints(identities.values, currentReviewRelationsForIdentities(identities))
   }
 
   fun currentReviewRelations(bookIds: Set<String>): List<DedupRelation> {
     if (bookIds.isEmpty()) return emptyList()
     val identities = bookIds.mapNotNull(coverLifecycle::currentSourceIdentity).associateBy { it.bookId }
     if (identities.size != bookIds.size) return emptyList()
-    val libraryId = identities.values.first().libraryId
-    return currentReviewRelations(libraryId, identities).filter { it.bookLowId in bookIds && it.bookHighId in bookIds }
+    return currentReviewRelationsForIdentities(identities)
+  }
+
+  internal fun currentReviewRelationsForIdentities(identities: Map<String, DedupSourceIdentity>): List<DedupRelation> {
+    if (identities.isEmpty()) return emptyList()
+    val libraryIds = identities.values.mapTo(mutableSetOf()) { it.libraryId }
+    if (libraryIds.size != 1) return emptyList()
+    return currentReviewRelations(
+      libraryId = libraryIds.single(),
+      identities = identities,
+      candidates = dedupRepository.findRelationsForBooks(identities.keys),
+    )
   }
 
   private fun currentReviewRelations(
     libraryId: String,
     identities: Map<String, DedupSourceIdentity>,
+    candidates: List<DedupRelation> = dedupRepository.findRelations(libraryId),
   ): List<DedupRelation> {
     val suppressed = dedupRepository.findPairDecisions(libraryId).map { it.bookLowId to it.bookHighId }.toSet()
-    return dedupRepository
-      .findRelations(libraryId)
-      .filter { relation ->
-        relation.status == DedupRelationStatus.VERIFIED &&
-          relation.type in REVIEW_RELATION_TYPES &&
-          relation.isCurrent(identities) &&
-          (relation.bookLowId to relation.bookHighId) !in suppressed
-      }
+    return candidates.filter { relation ->
+      relation.status == DedupRelationStatus.VERIFIED &&
+        relation.type in REVIEW_RELATION_TYPES &&
+        relation.isCurrent(identities) &&
+        (relation.bookLowId to relation.bookHighId) !in suppressed
+    }
   }
 
   fun fingerprints(

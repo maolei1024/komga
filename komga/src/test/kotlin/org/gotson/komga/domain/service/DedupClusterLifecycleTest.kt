@@ -75,6 +75,19 @@ class DedupClusterLifecycleTest {
   }
 
   @Test
+  fun `current cluster relations query only the requested Books`() {
+    val identities = listOf(identity("A"), identity("B"))
+    identities.forEach { every { cover.currentSourceIdentity(it.bookId) } returns it }
+    every { repository.findRelationsForBooks(setOf("A", "B")) } returns listOf(relation("A", "B"))
+    every { repository.findPairDecisions("library") } returns emptyList()
+
+    assertThat(lifecycle.currentReviewRelations(setOf("A", "B"))).extracting<String> { it.id }.containsExactly("relation-A-B")
+
+    verify(exactly = 1) { repository.findRelationsForBooks(setOf("A", "B")) }
+    verify(exactly = 0) { repository.findRelations(any()) }
+  }
+
+  @Test
   fun `new edge beside an old survivor creates a new cluster without rewriting processed history`() {
     val now = LocalDateTime.now()
     val processed = storedCluster("processed", listOf("A", "B"), DedupClusterStatus.PROCESSED, now.minusDays(1))
@@ -112,6 +125,7 @@ class DedupClusterLifecycleTest {
     every { cover.currentSourceIdentity("A") } returns identity("A")
     every { cover.currentSourceIdentity("B") } returns identity("B")
     every { cover.currentSourceIdentities("library") } returns listOf(identity("A"), identity("B"))
+    every { repository.findRelationsForBooks(setOf("A", "B")) } returns listOf(relation("A", "B"))
     every { repository.findRelations("library") } returns listOf(relation("A", "B"))
     every { repository.findPairDecisions("library") } answers { decisions.toList() }
     every { repository.savePairDecisions(any()) } answers { decisions += firstArg<Collection<DedupPairDecision>>() }

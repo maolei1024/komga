@@ -36,7 +36,7 @@ class DedupSuggestionPlanner(
     if (ids.size < 2) return DedupSuggestion(null)
     val identities = ids.mapNotNull(coverLifecycle::currentSourceIdentity).associateBy { it.bookId }
     if (identities.size != ids.size) return DedupSuggestion(null)
-    val relations = clusterLifecycle.currentReviewRelations(ids)
+    val relations = clusterLifecycle.currentReviewRelationsForIdentities(identities)
     val byPair = relations.associateBy { it.bookLowId to it.bookHighId }
     val possibleKeepers =
       ids.filter { keeper ->

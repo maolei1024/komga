@@ -98,7 +98,7 @@ class DedupSuggestionPlannerTest {
           libraryId = identity.libraryId,
         )
     }
-    every { clusters.currentReviewRelations(any()) } returns relations
+    every { clusters.currentReviewRelationsForIdentities(any()) } returns relations
   }
 
   private fun cluster(vararg ids: String): DedupClusterWithMembers {
