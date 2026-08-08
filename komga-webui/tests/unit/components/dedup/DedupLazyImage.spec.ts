@@ -4,12 +4,14 @@ import DedupLazyImage from '@/components/dedup/DedupLazyImage.vue'
 
 describe('DedupLazyImage', () => {
   let callback!: IntersectionObserverCallback
+  let observerOptions: IntersectionObserverInit | undefined
   let wrapper: Wrapper<Vue> | null = null
+  let attachRoot: HTMLElement | null = null
   const originalIntersectionObserver = window.IntersectionObserver
 
   beforeEach(() => {
     window.IntersectionObserver = class {
-      constructor(value: IntersectionObserverCallback) { callback = value }
+      constructor(value: IntersectionObserverCallback, options?: IntersectionObserverInit) { callback = value; observerOptions = options }
       disconnect() {}
       observe() {}
       takeRecords(): IntersectionObserverEntry[] { return [] }
@@ -23,7 +25,23 @@ describe('DedupLazyImage', () => {
   afterEach(() => {
     wrapper?.destroy()
     wrapper = null
+    attachRoot?.remove()
+    attachRoot = null
     window.IntersectionObserver = originalIntersectionObserver
+  })
+
+  it('uses the configured scroll container as the preload root', () => {
+    attachRoot = document.createElement('div')
+    attachRoot.className = 'dialog-body'
+    document.body.appendChild(attachRoot)
+    const mountPoint = document.createElement('div')
+    attachRoot.appendChild(mountPoint)
+    wrapper = shallowMount(DedupLazyImage, {
+      attachTo: mountPoint,
+      propsData: {src: '/thumbnail', alt: 'Cover', width: 58, height: 84, rootSelector: '.dialog-body'},
+    })
+
+    expect(observerOptions?.root).toBe(attachRoot)
   })
 
   it('renders a native image with its source and accessible text after entering the preload area', async () => {
