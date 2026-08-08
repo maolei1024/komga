@@ -53,7 +53,7 @@
                   <h3>{{ memberTitle(bookId) }}</h3>
                   <div class="page-strip">
                     <figure v-for="page in pageComparison.pages[bookId] || []" :key="`${bookId}-${page.pageNumber}`" :class="{'matched-page': page.matchedPageNumber != null}">
-                      <DedupLazyImage :src="page.thumbnailUrl" :alt="$t('dedup.pageAlt', {page: page.pageNumber})" :width="72" :height="104" root-selector=".page-strip" root-margin="216px"/>
+                      <DedupLazyImage :src="page.thumbnailUrl" :alt="$t('dedup.pageAlt', {page: page.pageNumber})" :width="72" :height="104" high-priority root-selector=".page-strip" root-margin="216px"/>
                       <figcaption>{{ page.pageNumber }}<span v-if="page.matchedPageNumber != null"> ↔ {{ page.matchedPageNumber }}</span></figcaption>
                     </figure>
                   </div>

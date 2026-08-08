@@ -62,14 +62,54 @@ class DedupSuggestionPlannerTest {
   }
 
   @Test
-  fun `semantic quality tie returns no suggestion instead of breaking it by Book ID`() {
+  fun `semantic quality tie keeps the Book created first`() {
+    val earlier = LocalDateTime.of(2025, 1, 1, 0, 0)
+    val later = earlier.plusDays(1)
     setup(
       listOf(identity("A", 10), identity("B", 10)),
       listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
       sizes = mapOf("A" to 1_000L, "B" to 1_000L),
+      createdDates = mapOf("A" to later, "B" to earlier),
     )
 
-    assertThat(planner.evaluate(cluster("A", "B")).plan).isNull()
+    val plan = planner.evaluate(cluster("A", "B")).plan!!
+
+    assertThat(plan.members.single { it.action == DedupResolutionAction.KEEP }.bookId).isEqualTo("B")
+  }
+
+  @Test
+  fun `creation time tie keeps the lexicographically smallest Book ID deterministically`() {
+    setup(
+      listOf(identity("B", 10), identity("A", 10)),
+      listOf(relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE)),
+      sizes = mapOf("A" to 1_000L, "B" to 1_000L),
+    )
+
+    val plans = List(3) { planner.evaluate(cluster("B", "A")).plan!! }
+
+    assertThat(plans.map { plan -> plan.members.single { it.action == DedupResolutionAction.KEEP }.bookId }).containsOnly("A")
+    assertThat(plans.map { it.revision }).containsOnly(plans.first().revision)
+  }
+
+  @Test
+  fun `multi Book quality tie keeps the unique oldest safe candidate`() {
+    val earlier = LocalDateTime.of(2025, 1, 1, 0, 0)
+    val later = earlier.plusDays(1)
+    setup(
+      listOf(identity("A", 10), identity("B", 10), identity("C", 10)),
+      listOf(
+        relation("A", "B", DedupRelationType.EXACT_PAGE_SEQUENCE),
+        relation("A", "C", DedupRelationType.EXACT_PAGE_SEQUENCE),
+        relation("B", "C", DedupRelationType.EXACT_PAGE_SEQUENCE),
+      ),
+      sizes = mapOf("A" to 1_000L, "B" to 1_000L, "C" to 1_000L),
+      createdDates = mapOf("A" to later, "B" to earlier, "C" to later),
+    )
+
+    val plan = planner.evaluate(cluster("A", "B", "C")).plan!!
+
+    assertThat(plan.members.single { it.action == DedupResolutionAction.KEEP }.bookId).isEqualTo("B")
+    assertThat(plan.members.count { it.action == DedupResolutionAction.DELETE }).isEqualTo(2)
   }
 
   @Test
@@ -84,6 +124,7 @@ class DedupSuggestionPlannerTest {
     relations: List<DedupRelation>,
     sizes: Map<String, Long> = emptyMap(),
     names: Map<String, String> = emptyMap(),
+    createdDates: Map<String, LocalDateTime> = emptyMap(),
   ) {
     identities.forEach { identity ->
       every { cover.currentSourceIdentity(identity.bookId) } returns identity
@@ -96,6 +137,7 @@ class DedupSuggestionPlannerTest {
           id = identity.bookId,
           seriesId = identity.seriesId,
           libraryId = identity.libraryId,
+          createdDate = createdDates[identity.bookId] ?: LocalDateTime.of(2025, 1, 1, 0, 0),
         )
     }
     every { clusters.currentReviewRelationsForIdentities(any()) } returns relations

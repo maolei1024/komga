@@ -1,5 +1,6 @@
 package org.gotson.komga.domain.service
 
+import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.DedupClusterWithMembers
 import org.gotson.komga.domain.model.DedupPlanMember
 import org.gotson.komga.domain.model.DedupRelation
@@ -13,6 +14,7 @@ import org.gotson.komga.domain.persistence.DedupRepository
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.LocalDateTime
 
 data class DedupSuggestion(
   val plan: DedupResolutionPlan?,
@@ -64,16 +66,20 @@ class DedupSuggestionPlanner(
     identities: Map<String, DedupSourceIdentity>,
   ): String? {
     if (candidates.size == 1) return candidates.single()
-    val scores = candidates.associateWith { qualityScore(it, identities.getValue(it)) }
+    val books = candidates.associateWith(bookRepository::findByIdOrNull)
+    val scores = candidates.associateWith { qualityScore(it, identities.getValue(it), books[it]) }
     val bestScore = scores.values.maxOrNull() ?: return null
-    return scores.filterValues { it == bestScore }.keys.singleOrNull()
+    return scores
+      .filterValues { it == bestScore }
+      .keys
+      .minWithOrNull(compareBy<String> { books[it]?.createdDate ?: LocalDateTime.MAX }.thenBy { it })
   }
 
   private fun qualityScore(
     bookId: String,
     identity: DedupSourceIdentity,
+    book: Book?,
   ): QualityScore {
-    val book = bookRepository.findByIdOrNull(bookId)
     val pageCount = identity.pageCount?.takeIf { it > 0 }
     val bytesPerPage = if (book != null && pageCount != null) book.fileSize.toDouble() / pageCount else 0.0
     val averagePageQuality =

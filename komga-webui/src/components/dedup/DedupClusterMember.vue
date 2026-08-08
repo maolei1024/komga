@@ -1,6 +1,6 @@
 <template>
   <div class="member-row" :class="{'marked-delete': markedForDeletion}">
-    <DedupLazyImage :src="member.thumbnailUrl" :alt="member.title || member.bookId" :width="58" :height="84"/>
+    <DedupLazyImage :src="member.thumbnailUrl" :alt="member.title || member.bookId" :width="58" :height="84" high-priority/>
     <div class="member-copy">
       <strong>{{ member.title || member.bookId }}</strong>
       <span class="member-path" :title="member.path || ''">{{ member.path || '—' }}</span>
