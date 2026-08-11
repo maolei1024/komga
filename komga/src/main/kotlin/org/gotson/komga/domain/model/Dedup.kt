@@ -276,6 +276,7 @@ data class DedupGorseSync(
   val libraryId: String,
   val desiredHidden: Boolean,
   val state: String,
+  val revision: Long,
   val attemptCount: Int,
   val nextRetryAt: LocalDateTime?,
   val lastError: String?,

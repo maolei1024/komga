@@ -10,7 +10,7 @@ steps:
     image: docker.nexus.ixuni.win/baseimage/java21-node20
     commands:
       - chmod +x ./gradlew
-      - './gradlew :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
+      - './gradlew :komga:ktlintCheck :komga:test :komga:prepareThymeLeaf :komga:bootJar --no-daemon'
 
   - name: build
     image: woodpeckerci/plugin-docker-buildx

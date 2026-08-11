@@ -432,12 +432,41 @@ class DedupDaoTest(
   fun `Gorse desired state completion is compare and set on hidden intent`() {
     val series = "series-${UUID.randomUUID()}"
     val now = LocalDateTime.now()
-    dao.enqueueGorseSync(series, library.id, true, now)
-    dao.enqueueGorseSync(series, library.id, false, now.plusSeconds(1))
+    val original = dao.enqueueGorseSync(series, library.id, true, now)
+    val latest = dao.enqueueGorseSync(series, library.id, false, now.plusSeconds(1))
 
-    assertThat(dao.completeGorseSync(series, true, now.plusSeconds(2))).isFalse()
-    assertThat(dao.completeGorseSync(series, false, now.plusSeconds(2))).isTrue()
+    assertThat(dao.completeGorseSync(series, true, original.revision, now.plusSeconds(2))).isFalse()
+    assertThat(dao.completeGorseSync(series, false, latest.revision, now.plusSeconds(2))).isTrue()
     assertThat(dao.findGorseSync(series)?.state).isEqualTo("SUCCEEDED")
+  }
+
+  @Test
+  fun `Gorse claims support nanosecond enqueue timestamps`() {
+    val series = "series-${UUID.randomUUID()}"
+    val now = LocalDateTime.of(2026, 8, 4, 18, 32, 54, 541_937_599)
+    val queued = dao.enqueueGorseSync(series, library.id, true, now)
+
+    val claimed = dao.findPendingGorseSync(now)!!
+
+    assertThat(claimed.state).isEqualTo("RUNNING")
+    assertThat(claimed.revision).isGreaterThan(queued.revision)
+    assertThat(dao.completeGorseSync(series, true, claimed.revision, now.plusSeconds(1))).isTrue()
+  }
+
+  @Test
+  fun `new Gorse intent invalidates an older worker even when hidden intent is unchanged`() {
+    val series = "series-${UUID.randomUUID()}"
+    val now = LocalDateTime.of(2026, 8, 4, 12, 0)
+    dao.enqueueGorseSync(series, library.id, false, now)
+    val originalClaim = dao.findPendingGorseSync(now)!!
+    val latest = dao.enqueueGorseSync(series, library.id, false, now.plusSeconds(1))
+
+    assertThat(dao.completeGorseSync(series, false, originalClaim.revision, now.plusSeconds(2))).isFalse()
+    assertThat(dao.failGorseSync(series, false, originalClaim.revision, "stale", now.plusSeconds(2))).isFalse()
+    assertThat(dao.findGorseSync(series)).isEqualTo(latest)
+
+    val latestClaim = dao.findPendingGorseSync(now.plusSeconds(2))!!
+    assertThat(dao.completeGorseSync(series, false, latestClaim.revision, now.plusSeconds(3))).isTrue()
   }
 
   @Test
@@ -446,9 +475,14 @@ class DedupDaoTest(
     val now = LocalDateTime.of(2026, 8, 4, 12, 0)
     dao.enqueueGorseSync(series, library.id, true, now)
 
-    assertThat(dao.findPendingGorseSync(now)?.state).isEqualTo("RUNNING")
+    val originalClaim = dao.findPendingGorseSync(now)!!
+
     assertThat(dao.findPendingGorseSync(now.plusMinutes(9))).isNull()
-    assertThat(dao.findPendingGorseSync(now.plusMinutes(11))?.state).isEqualTo("RUNNING")
+    val reclaimed = dao.findPendingGorseSync(now.plusMinutes(11))!!
+    assertThat(reclaimed.state).isEqualTo("RUNNING")
+    assertThat(reclaimed.revision).isGreaterThan(originalClaim.revision)
+    assertThat(dao.completeGorseSync(series, true, originalClaim.revision, now.plusMinutes(12))).isFalse()
+    assertThat(dao.completeGorseSync(series, true, reclaimed.revision, now.plusMinutes(12))).isTrue()
   }
 
   private fun relation(

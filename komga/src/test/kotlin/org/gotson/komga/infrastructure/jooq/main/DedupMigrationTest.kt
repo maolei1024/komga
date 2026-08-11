@@ -440,6 +440,79 @@ class DedupMigrationTest {
     }
   }
 
+  @Test
+  fun `Gorse revision migration preserves queued desired state`() {
+    val database = directory.resolve("dedup-gorse-revision.sqlite")
+    DriverManager.getConnection("jdbc:sqlite:$database").use { connection ->
+      connection.createStatement().use { statement ->
+        statement.execute(
+          """
+          CREATE TABLE DEDUP_GORSE_SYNC
+          (
+              SERIES_ID           varchar  NOT NULL PRIMARY KEY,
+              LIBRARY_ID          varchar  NOT NULL,
+              DESIRED_HIDDEN      boolean  NOT NULL,
+              STATE               varchar  NOT NULL DEFAULT 'PENDING',
+              ATTEMPT_COUNT       integer  NOT NULL DEFAULT 0,
+              NEXT_RETRY_AT       datetime NULL,
+              LAST_ERROR          varchar  NULL,
+              CREATED_DATE        datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              LAST_MODIFIED_DATE  datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              COMPLETED_DATE      datetime NULL,
+              CHECK (STATE IN ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED_REVIEW'))
+          )
+          """.trimIndent(),
+        )
+        statement.execute(
+          """
+          INSERT INTO DEDUP_GORSE_SYNC
+            (SERIES_ID, LIBRARY_ID, DESIRED_HIDDEN, STATE, ATTEMPT_COUNT, CREATED_DATE, LAST_MODIFIED_DATE)
+          VALUES
+            ('visible', 'library', false, 'PENDING', 0,
+             '2026-08-04 18:32:54.541937599', '2026-08-04 18:32:54.541937599'),
+            ('hidden', 'library', true, 'FAILED_REVIEW', 3,
+             '2026-08-05 03:14:54.581755441', '2026-08-05 03:14:54.581755441')
+          """.trimIndent(),
+        )
+      }
+
+      executeMigration(connection, "V20260811120000__dedup_gorse_sync_revision.sql")
+
+      connection.createStatement().use { statement ->
+        assertThat(
+          statement
+            .executeQuery(
+              "SELECT SERIES_ID, DESIRED_HIDDEN, STATE, ATTEMPT_COUNT, LAST_MODIFIED_DATE, REVISION FROM DEDUP_GORSE_SYNC ORDER BY SERIES_ID",
+            ).use { result ->
+              buildList {
+                while (result.next()) {
+                  add(
+                    listOf(
+                      result.getString(1),
+                      result.getBoolean(2),
+                      result.getString(3),
+                      result.getInt(4),
+                      result.getString(5),
+                      result.getLong(6),
+                    ),
+                  )
+                }
+              }
+            },
+        ).containsExactly(
+          listOf("hidden", true, "FAILED_REVIEW", 3, "2026-08-05 03:14:54.581755441", 1L),
+          listOf("visible", false, "PENDING", 0, "2026-08-04 18:32:54.541937599", 1L),
+        )
+        assertThat(
+          statement.executeQuery("PRAGMA integrity_check").use {
+            it.next()
+            it.getString(1)
+          },
+        ).isEqualTo("ok")
+      }
+    }
+  }
+
   private fun executeMigration(
     connection: java.sql.Connection,
     fileName: String,

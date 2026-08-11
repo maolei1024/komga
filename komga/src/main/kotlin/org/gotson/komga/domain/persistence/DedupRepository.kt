@@ -212,7 +212,7 @@ interface DedupRepository {
     libraryId: String,
     desiredHidden: Boolean,
     now: LocalDateTime = LocalDateTime.now(),
-  )
+  ): DedupGorseSync
 
   fun findPendingGorseSync(now: LocalDateTime = LocalDateTime.now()): DedupGorseSync?
 
@@ -221,12 +221,14 @@ interface DedupRepository {
   fun completeGorseSync(
     seriesId: String,
     expectedHidden: Boolean,
+    expectedRevision: Long,
     now: LocalDateTime = LocalDateTime.now(),
   ): Boolean
 
   fun failGorseSync(
     seriesId: String,
     expectedHidden: Boolean,
+    expectedRevision: Long,
     error: String,
     now: LocalDateTime = LocalDateTime.now(),
   ): Boolean

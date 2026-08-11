@@ -1353,28 +1353,32 @@ class DedupDao(
     libraryId: String,
     desiredHidden: Boolean,
     now: LocalDateTime,
-  ) {
-    dslRW
-      .insertInto(
-        gorseSync,
-        gorseSync.SERIES_ID,
-        gorseSync.LIBRARY_ID,
-        gorseSync.DESIRED_HIDDEN,
-        gorseSync.STATE,
-        gorseSync.ATTEMPT_COUNT,
-        gorseSync.CREATED_DATE,
-        gorseSync.LAST_MODIFIED_DATE,
-      ).values(seriesId, libraryId, desiredHidden, "PENDING", 0, now, now)
-      .onDuplicateKeyUpdate()
-      .set(gorseSync.LIBRARY_ID, libraryId)
-      .set(gorseSync.DESIRED_HIDDEN, desiredHidden)
-      .set(gorseSync.STATE, "PENDING")
-      .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
-      .set(gorseSync.LAST_ERROR, null as String?)
-      .set(gorseSync.COMPLETED_DATE, null as LocalDateTime?)
-      .set(gorseSync.LAST_MODIFIED_DATE, now)
-      .execute()
-  }
+  ): DedupGorseSync =
+    requireNotNull(
+      dslRW
+        .insertInto(
+          gorseSync,
+          gorseSync.SERIES_ID,
+          gorseSync.LIBRARY_ID,
+          gorseSync.DESIRED_HIDDEN,
+          gorseSync.STATE,
+          gorseSync.ATTEMPT_COUNT,
+          gorseSync.CREATED_DATE,
+          gorseSync.LAST_MODIFIED_DATE,
+        ).values(seriesId, libraryId, desiredHidden, "PENDING", 0, now, now)
+        .onDuplicateKeyUpdate()
+        .set(gorseSync.LIBRARY_ID, libraryId)
+        .set(gorseSync.DESIRED_HIDDEN, desiredHidden)
+        .set(gorseSync.STATE, "PENDING")
+        .set(gorseSync.REVISION, gorseSync.REVISION.plus(1L))
+        .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
+        .set(gorseSync.LAST_ERROR, null as String?)
+        .set(gorseSync.COMPLETED_DATE, null as LocalDateTime?)
+        .set(gorseSync.LAST_MODIFIED_DATE, now)
+        .returning()
+        .fetchOne()
+        ?.toGorseSync(),
+    ) { "Gorse desired-state upsert did not return Series $seriesId" }
 
   @Transactional
   override fun findPendingGorseSync(now: LocalDateTime): DedupGorseSync? {
@@ -1387,20 +1391,22 @@ class DedupDao(
               .`in`("PENDING", "FAILED_REVIEW")
               .and(gorseSync.NEXT_RETRY_AT.isNull.or(gorseSync.NEXT_RETRY_AT.le(now)))
               .or(gorseSync.STATE.eq("RUNNING").and(gorseSync.LAST_MODIFIED_DATE.le(now.minusMinutes(10)))),
-          ).orderBy(gorseSync.LAST_MODIFIED_DATE)
+          ).orderBy(gorseSync.LAST_MODIFIED_DATE, gorseSync.SERIES_ID)
           .limit(1)
           .fetchOne() ?: return null
-      val updated =
+      val claimed =
         dslRW
           .update(gorseSync)
           .set(gorseSync.STATE, "RUNNING")
+          .set(gorseSync.REVISION, gorseSync.REVISION.plus(1L))
           .set(gorseSync.LAST_MODIFIED_DATE, now)
           .where(gorseSync.SERIES_ID.eq(candidate.seriesId))
           .and(gorseSync.STATE.eq(candidate.state))
           .and(gorseSync.DESIRED_HIDDEN.eq(candidate.desiredHidden))
-          .and(gorseSync.LAST_MODIFIED_DATE.eq(candidate.lastModifiedDate))
-          .execute()
-      if (updated == 1) return findGorseSync(candidate.seriesId!!)
+          .and(gorseSync.REVISION.eq(candidate.revision))
+          .returning()
+          .fetchOne()
+      if (claimed != null) return claimed.toGorseSync()
     }
     return null
   }
@@ -1415,35 +1421,41 @@ class DedupDao(
   override fun completeGorseSync(
     seriesId: String,
     expectedHidden: Boolean,
+    expectedRevision: Long,
     now: LocalDateTime,
   ): Boolean =
     dslRW
       .update(gorseSync)
       .set(gorseSync.STATE, "SUCCEEDED")
+      .set(gorseSync.REVISION, gorseSync.REVISION.plus(1L))
       .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
       .set(gorseSync.LAST_ERROR, null as String?)
       .set(gorseSync.COMPLETED_DATE, now)
       .set(gorseSync.LAST_MODIFIED_DATE, now)
       .where(gorseSync.SERIES_ID.eq(seriesId))
       .and(gorseSync.DESIRED_HIDDEN.eq(expectedHidden))
+      .and(gorseSync.REVISION.eq(expectedRevision))
       .and(gorseSync.STATE.`in`("PENDING", "RUNNING"))
       .execute() == 1
 
   override fun failGorseSync(
     seriesId: String,
     expectedHidden: Boolean,
+    expectedRevision: Long,
     error: String,
     now: LocalDateTime,
   ): Boolean =
     dslRW
       .update(gorseSync)
       .set(gorseSync.STATE, "FAILED_REVIEW")
+      .set(gorseSync.REVISION, gorseSync.REVISION.plus(1L))
       .set(gorseSync.ATTEMPT_COUNT, gorseSync.ATTEMPT_COUNT.plus(1))
       .set(gorseSync.NEXT_RETRY_AT, now.plusSeconds(30))
       .set(gorseSync.LAST_ERROR, error.take(500))
       .set(gorseSync.LAST_MODIFIED_DATE, now)
       .where(gorseSync.SERIES_ID.eq(seriesId))
       .and(gorseSync.DESIRED_HIDDEN.eq(expectedHidden))
+      .and(gorseSync.REVISION.eq(expectedRevision))
       .and(gorseSync.STATE.`in`("PENDING", "RUNNING"))
       .execute() == 1
 
@@ -1641,6 +1653,7 @@ class DedupDao(
       libraryId!!,
       desiredHidden!!,
       state!!,
+      revision!!,
       attemptCount!!,
       nextRetryAt,
       lastError,

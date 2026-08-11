@@ -41,10 +41,10 @@ class GorseDesiredStateLifecycle(
       val work = dedupRepository.findPendingGorseSync() ?: return processed
       try {
         applyChecked(work.seriesId, work.desiredHidden)
-        check(dedupRepository.completeGorseSync(work.seriesId, work.desiredHidden)) { "Gorse desired-state row changed before completion" }
+        check(dedupRepository.completeGorseSync(work.seriesId, work.desiredHidden, work.revision)) { "Gorse desired-state row changed before completion" }
       } catch (exception: Exception) {
         desiredStateLogger.error(exception) { "Gorse desired-state reconciliation failed for ${work.seriesId}" }
-        dedupRepository.failGorseSync(work.seriesId, work.desiredHidden, exception.message ?: exception.javaClass.simpleName)
+        dedupRepository.failGorseSync(work.seriesId, work.desiredHidden, work.revision, exception.message ?: exception.javaClass.simpleName)
       }
       processed++
     }
@@ -59,13 +59,13 @@ class GorseDesiredStateLifecycle(
     val series = seriesRepository.findByIdOrNull(seriesId)
     val libraryId = series?.libraryId ?: fallbackLibraryId ?: error("Cannot determine Library for Series $seriesId")
     val hidden = series == null || series.deletedDate != null || bookRepository.findAllBySeriesId(seriesId).none { it.deletedDate == null }
-    dedupRepository.enqueueGorseSync(seriesId, libraryId, hidden)
+    val work = dedupRepository.enqueueGorseSync(seriesId, libraryId, hidden)
     return try {
       applyChecked(seriesId, hidden)
-      check(dedupRepository.completeGorseSync(seriesId, hidden)) { "Gorse desired-state row changed during synchronous confirmation" }
+      check(dedupRepository.completeGorseSync(seriesId, hidden, work.revision)) { "Gorse desired-state row changed during synchronous confirmation" }
       GorseSyncNowResult(seriesId, GorseSyncNowState.CONFIRMED, hidden, null)
     } catch (exception: Exception) {
-      dedupRepository.failGorseSync(seriesId, hidden, exception.message ?: exception.javaClass.simpleName)
+      dedupRepository.failGorseSync(seriesId, hidden, work.revision, exception.message ?: exception.javaClass.simpleName)
       GorseSyncNowResult(seriesId, GorseSyncNowState.FAILED, hidden, exception.message?.take(500) ?: exception.javaClass.simpleName)
     }
   }

@@ -49,16 +49,18 @@ class GorseDesiredStateLifecycleTest {
 
   @Test
   fun `syncNow writes full payload reads IsHidden back and completes matching desired state`() {
+    val now = LocalDateTime.now()
     val series = makeSeries("empty", "library")
+    val work = DedupGorseSync(series.id, series.libraryId, true, "PENDING", 1, 0, null, null, now, now, null)
     every { settings.enabled } returns true
     every { seriesRepository.findByIdOrNull(series.id) } returns series
     every { bookRepository.findAllBySeriesId(series.id) } returns emptyList()
     every { seriesMetadataRepository.findByIdOrNull(series.id) } returns null
     every { aggregationRepository.findByIdOrNull(series.id) } returns null
-    every { dedupRepository.enqueueGorseSync(series.id, series.libraryId, true, any()) } just Runs
+    every { dedupRepository.enqueueGorseSync(series.id, series.libraryId, true, any()) } returns work
     every { client.upsertItemChecked(match { it.ItemId == series.id && it.IsHidden }) } just Runs
     every { client.getItemChecked(series.id) } returns GorseItem(series.id, true, Timestamp = "2026-08-04T00:00:00Z")
-    every { dedupRepository.completeGorseSync(series.id, true, any()) } returns true
+    every { dedupRepository.completeGorseSync(series.id, true, work.revision, any()) } returns true
 
     val result = lifecycle.syncNow(series.id)
 
@@ -69,26 +71,28 @@ class GorseDesiredStateLifecycleTest {
 
   @Test
   fun `readback mismatch is persisted as failure`() {
+    val now = LocalDateTime.now()
     val series = makeSeries("visible", "library")
+    val work = DedupGorseSync(series.id, series.libraryId, true, "PENDING", 1, 0, null, null, now, now, null)
     every { settings.enabled } returns true
     every { seriesRepository.findByIdOrNull(series.id) } returns series
     every { bookRepository.findAllBySeriesId(series.id) } returns emptyList()
     every { seriesMetadataRepository.findByIdOrNull(series.id) } returns null
     every { aggregationRepository.findByIdOrNull(series.id) } returns null
-    every { dedupRepository.enqueueGorseSync(series.id, series.libraryId, true, any()) } just Runs
+    every { dedupRepository.enqueueGorseSync(series.id, series.libraryId, true, any()) } returns work
     every { client.upsertItemChecked(any()) } just Runs
     every { client.getItemChecked(series.id) } returns GorseItem(series.id, false, Timestamp = "2026-08-04T00:00:00Z")
-    every { dedupRepository.failGorseSync(series.id, true, any(), any()) } returns true
+    every { dedupRepository.failGorseSync(series.id, true, work.revision, any(), any()) } returns true
 
     assertThat(lifecycle.syncNow(series.id).state).isEqualTo(GorseSyncNowState.FAILED)
-    verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, match { it.contains("expected true") }, any()) }
+    verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, work.revision, match { it.contains("expected true") }, any()) }
   }
 
   @Test
   fun `reconcile persists remote failure for retry`() {
     val now = LocalDateTime.now()
     val series = makeSeries("pending", "library")
-    val work = DedupGorseSync(series.id, series.libraryId, true, "RUNNING", 0, null, null, now, now, null)
+    val work = DedupGorseSync(series.id, series.libraryId, true, "RUNNING", 2, 0, null, null, now, now, null)
     every { settings.enabled } returns true
     every { dedupRepository.findPendingGorseSync(any()) } returns work
     every { seriesRepository.findByIdOrNull(series.id) } returns series
@@ -96,12 +100,12 @@ class GorseDesiredStateLifecycleTest {
     every { seriesMetadataRepository.findByIdOrNull(series.id) } returns null
     every { aggregationRepository.findByIdOrNull(series.id) } returns null
     every { client.upsertItemChecked(any()) } throws IllegalStateException("Gorse unavailable")
-    every { dedupRepository.failGorseSync(series.id, true, any(), any()) } returns true
+    every { dedupRepository.failGorseSync(series.id, true, work.revision, any(), any()) } returns true
 
     assertThat(lifecycle.reconcile(1)).isEqualTo(1)
 
-    verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, match { it.contains("unavailable") }, any()) }
-    verify(exactly = 0) { dedupRepository.completeGorseSync(any(), any(), any()) }
+    verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, work.revision, match { it.contains("unavailable") }, any()) }
+    verify(exactly = 0) { dedupRepository.completeGorseSync(any(), any(), any(), any()) }
   }
 
   @Test
