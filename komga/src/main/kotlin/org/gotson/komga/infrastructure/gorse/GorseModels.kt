@@ -1,9 +1,14 @@
 package org.gotson.komga.infrastructure.gorse
 
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
+
 data class GorseItem(
   val ItemId: String,
   val IsHidden: Boolean = false,
+  @param:JsonSetter(nulls = Nulls.AS_EMPTY)
   val Labels: Map<String, Any> = emptyMap(),
+  @param:JsonSetter(nulls = Nulls.AS_EMPTY)
   val Categories: List<String> = emptyList(),
   val Timestamp: String,
   val Comment: String = "",
