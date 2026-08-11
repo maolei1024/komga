@@ -17,6 +17,9 @@ import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.LocalDateTime
 
 class GorseDesiredStateLifecycleTest {
@@ -86,6 +89,46 @@ class GorseDesiredStateLifecycleTest {
 
     assertThat(lifecycle.syncNow(series.id).state).isEqualTo(GorseSyncNowState.FAILED)
     verify(exactly = 1) { dedupRepository.failGorseSync(series.id, true, work.revision, match { it.contains("expected true") }, any()) }
+  }
+
+  @Test
+  fun `missing deleted Series creates a hidden tombstone when Gorse Item is absent`() {
+    val now = LocalDateTime.now()
+    val seriesId = "missing"
+    val libraryId = "library"
+    val work = DedupGorseSync(seriesId, libraryId, true, "PENDING", 1, 0, null, null, now, now, null)
+    val notFound =
+      WebClientResponseException.create(
+        HttpStatus.NOT_FOUND.value(),
+        HttpStatus.NOT_FOUND.reasonPhrase,
+        HttpHeaders.EMPTY,
+        ByteArray(0),
+        null,
+      )
+    every { settings.enabled } returns true
+    every { seriesRepository.findByIdOrNull(seriesId) } returns null
+    every { dedupRepository.enqueueGorseSync(seriesId, libraryId, true, any()) } returns work
+    every { client.setHiddenChecked(seriesId, true) } just Runs
+    every { client.getItemChecked(seriesId) } throws notFound andThen GorseItem(seriesId, true, Timestamp = "0001-01-01T00:00:00Z")
+    every {
+      client.upsertItemChecked(
+        match {
+          it.ItemId == seriesId &&
+            it.IsHidden &&
+            it.Categories == listOf(libraryId) &&
+            it.Timestamp == "0001-01-01T00:00:00Z"
+        },
+      )
+    } just Runs
+    every { dedupRepository.completeGorseSync(seriesId, true, work.revision, any()) } returns true
+
+    val result = lifecycle.syncNow(seriesId, libraryId)
+
+    assertThat(result.state).isEqualTo(GorseSyncNowState.CONFIRMED)
+    verify(exactly = 1) { client.setHiddenChecked(seriesId, true) }
+    verify(exactly = 1) { client.upsertItemChecked(any()) }
+    verify(exactly = 2) { client.getItemChecked(seriesId) }
+    verify(exactly = 1) { dedupRepository.completeGorseSync(seriesId, true, work.revision, any()) }
   }
 
   @Test
