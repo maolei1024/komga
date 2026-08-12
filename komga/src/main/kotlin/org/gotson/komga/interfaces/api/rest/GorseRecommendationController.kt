@@ -3,6 +3,7 @@ package org.gotson.komga.interfaces.api.rest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.swagger.v3.oas.annotations.Operation
 import org.gotson.komga.infrastructure.gorse.GorseClient
+import org.gotson.komga.infrastructure.gorse.GorsePreferenceService
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
@@ -27,6 +28,7 @@ class GorseRecommendationController(
   private val gorseClient: GorseClient,
   private val gorseSettings: GorseSettingsProvider,
   private val seriesDtoRepository: SeriesDtoRepository,
+  private val preferenceService: GorsePreferenceService,
 ) {
   @GetMapping("recommended")
   @Operation(summary = "Get recommended series from Gorse", description = "Returns series recommended by Gorse for the current user.")
@@ -48,8 +50,17 @@ class GorseRecommendationController(
       return PageImpl(emptyList(), PageRequest.of(page, size), 0)
     }
 
+    val dislikedSeriesIds =
+      try {
+        preferenceService.getDislikedSeriesIds(userId)
+      } catch (e: Exception) {
+        logger.error(e) { "Failed to retrieve Gorse dislikes for user $userId; returning unfiltered recommendations" }
+        emptySet()
+      }
+
     val candidates =
       recommendations
+        .filterNot { it.Id in dislikedSeriesIds }
         .mapNotNull { recommendation ->
           try {
             seriesDtoRepository

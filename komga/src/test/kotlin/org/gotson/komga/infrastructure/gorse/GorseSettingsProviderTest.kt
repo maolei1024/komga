@@ -14,6 +14,31 @@ class GorseSettingsProviderTest {
   private val serverSettingsDao = mockk<ServerSettingsDao>()
 
   @Test
+  fun `given no stored negative feedback type when creating settings then default is dislike`() {
+    stubSettings()
+
+    assertThat(GorseSettingsProvider(serverSettingsDao).negativeFeedbackType).isEqualTo("dislike")
+  }
+
+  @Test
+  fun `given stored negative feedback type when creating settings then value is restored`() {
+    stubSettings(negativeFeedbackType = "downvote")
+
+    assertThat(GorseSettingsProvider(serverSettingsDao).negativeFeedbackType).isEqualTo("downvote")
+  }
+
+  @Test
+  fun `when updating negative feedback type then value is persisted`() {
+    stubSettings()
+    every { serverSettingsDao.saveSetting(any(), any<String>()) } just runs
+    val settings = GorseSettingsProvider(serverSettingsDao)
+
+    settings.negativeFeedbackType = "downvote"
+
+    verify { serverSettingsDao.saveSetting("GORSE_NEGATIVE_FEEDBACK_TYPE", "downvote") }
+  }
+
+  @Test
   fun `given no stored tag penalty exponent when creating settings then default is square root`() {
     stubSettings()
 
@@ -49,10 +74,17 @@ class GorseSettingsProviderTest {
     }
   }
 
-  private fun stubSettings(tagPenaltyExponent: String? = null) {
+  private fun stubSettings(
+    tagPenaltyExponent: String? = null,
+    negativeFeedbackType: String? = null,
+  ) {
     every { serverSettingsDao.getSettingByKey(any(), Boolean::class.java) } returns null
     every { serverSettingsDao.getSettingByKey(any(), String::class.java) } answers {
-      if (firstArg<String>() == "GORSE_TAG_PENALTY_EXPONENT") tagPenaltyExponent else null
+      when (firstArg<String>()) {
+        "GORSE_TAG_PENALTY_EXPONENT" -> tagPenaltyExponent
+        "GORSE_NEGATIVE_FEEDBACK_TYPE" -> negativeFeedbackType
+        else -> null
+      }
     }
   }
 }

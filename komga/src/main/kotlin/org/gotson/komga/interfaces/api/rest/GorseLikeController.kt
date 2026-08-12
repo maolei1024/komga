@@ -3,10 +3,10 @@ package org.gotson.komga.interfaces.api.rest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.swagger.v3.oas.annotations.Operation
 import org.gotson.komga.domain.persistence.BookRepository
-import org.gotson.komga.infrastructure.gorse.GorseClient
-import org.gotson.komga.infrastructure.gorse.GorseFeedback
+import org.gotson.komga.infrastructure.gorse.GorsePreferenceService
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
+import org.gotson.komga.interfaces.api.rest.dto.GorsePreference
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -17,25 +17,16 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 
 private val logger = KotlinLogging.logger {}
 
 @RestController
 @RequestMapping("api/v1/gorse/like", produces = [MediaType.APPLICATION_JSON_VALUE])
 class GorseLikeController(
-  private val gorseClient: GorseClient,
+  private val preferenceService: GorsePreferenceService,
   private val gorseSettings: GorseSettingsProvider,
   private val bookRepository: BookRepository,
 ) {
-  companion object {
-    private val ISO_UTC_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
-  }
-
-  private fun getFeedbackType(): String = gorseSettings.positiveFeedbackType
-
   // ===== 需要认证的端点 =====
 
   @GetMapping("{seriesId}")
@@ -133,8 +124,7 @@ class GorseLikeController(
     userId: String,
     seriesId: String,
   ): Map<String, Boolean> {
-    val feedbacks = gorseClient.getUserFeedbackByType(userId, getFeedbackType())
-    val liked = feedbacks.any { it.ItemId == seriesId }
+    val liked = preferenceService.getPreference(userId, seriesId) == GorsePreference.LIKE
     logger.debug { "Gorse: user $userId like status for series $seriesId: $liked" }
     return mapOf("liked" to liked)
   }
@@ -146,8 +136,7 @@ class GorseLikeController(
     val book =
       bookRepository.findByIdOrNull(bookId)
         ?: return mapOf("liked" to false, "seriesId" to "")
-    val feedbacks = gorseClient.getUserFeedbackByType(userId, getFeedbackType())
-    val liked = feedbacks.any { it.ItemId == book.seriesId }
+    val liked = preferenceService.getPreference(userId, book.seriesId) == GorsePreference.LIKE
     logger.debug { "Gorse: user $userId like status for book $bookId (series ${book.seriesId}): $liked" }
     return mapOf("liked" to liked, "seriesId" to book.seriesId)
   }
@@ -156,14 +145,7 @@ class GorseLikeController(
     userId: String,
     seriesId: String,
   ): Map<String, Boolean> {
-    val feedback =
-      GorseFeedback(
-        FeedbackType = getFeedbackType(),
-        UserId = userId,
-        ItemId = seriesId,
-        Timestamp = ZonedDateTime.now(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-      )
-    gorseClient.insertFeedback(listOf(feedback))
+    preferenceService.setPreference(userId, seriesId, GorsePreference.LIKE)
     logger.info { "Gorse: user $userId liked series $seriesId" }
     return mapOf("success" to true)
   }
@@ -172,7 +154,7 @@ class GorseLikeController(
     userId: String,
     seriesId: String,
   ): Map<String, Boolean> {
-    gorseClient.deleteFeedback(getFeedbackType(), userId, seriesId)
+    preferenceService.setPreference(userId, seriesId, GorsePreference.NONE)
     logger.info { "Gorse: user $userId unliked series $seriesId" }
     return mapOf("success" to true)
   }

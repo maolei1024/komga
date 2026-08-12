@@ -62,6 +62,16 @@
             />
 
             <v-text-field
+              v-model="form.negativeFeedbackType"
+              @input="formDirty = true"
+              label="负反馈类型"
+              hint="点击不感兴趣按钮时发送到 Gorse 的反馈类型（默认：dislike）"
+              persistent-hint
+              :rules="[rules.required]"
+              class="mb-4"
+            />
+
+            <v-text-field
               v-model="form.anonymousUserId"
               @input="formDirty = true"
               label="匿名用户 ID"
@@ -235,6 +245,7 @@ export default Vue.extend({
       apiKey: '',
       feedbackType: 'read',
       positiveFeedbackType: 'like',
+      negativeFeedbackType: 'dislike',
       anonymousUserId: '',
       readThreshold: 0.5,
       tagPenaltyExponent: 0.5,

@@ -48,6 +48,13 @@ class GorseSettingsProvider(
       field = value
     }
 
+  var negativeFeedbackType: String =
+    serverSettingsDao.getSettingByKey(GorseSettings.GORSE_NEGATIVE_FEEDBACK_TYPE.name, String::class.java) ?: "dislike"
+    set(value) {
+      serverSettingsDao.saveSetting(GorseSettings.GORSE_NEGATIVE_FEEDBACK_TYPE.name, value)
+      field = value
+    }
+
   var anonymousUserId: String =
     serverSettingsDao.getSettingByKey(GorseSettings.GORSE_ANONYMOUS_USER_ID.name, String::class.java) ?: ""
     set(value) {
@@ -87,6 +94,7 @@ private enum class GorseSettings {
   GORSE_API_KEY,
   GORSE_FEEDBACK_TYPE,
   GORSE_POSITIVE_FEEDBACK_TYPE,
+  GORSE_NEGATIVE_FEEDBACK_TYPE,
   GORSE_ANONYMOUS_USER_ID,
   GORSE_READ_THRESHOLD,
   GORSE_TAG_PENALTY_EXPONENT,

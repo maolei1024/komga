@@ -25,12 +25,18 @@ class GorseControllerTest(
 ) {
   @BeforeEach
   fun setup() {
+    gorseSettings.feedbackType = "read"
+    gorseSettings.positiveFeedbackType = "like"
+    gorseSettings.negativeFeedbackType = "dislike"
     gorseSettings.tagPenaltyExponent = 0.5
     serverSettingsDao.deleteAll()
   }
 
   @AfterEach
   fun cleanup() {
+    gorseSettings.feedbackType = "read"
+    gorseSettings.positiveFeedbackType = "like"
+    gorseSettings.negativeFeedbackType = "dislike"
     gorseSettings.tagPenaltyExponent = 0.5
     serverSettingsDao.deleteAll()
   }
@@ -43,7 +49,51 @@ class GorseControllerTest(
       .andExpect {
         status { isOk() }
         jsonPath("$.tagPenaltyExponent") { value(0.5) }
+        jsonPath("$.negativeFeedbackType") { value("dislike") }
       }
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+    strings = [
+      """{"feedbackType":""}""",
+      """{"positiveFeedbackType":" "}""",
+      """{"negativeFeedbackType":""}""",
+      """{"positiveFeedbackType":"read"}""",
+      """{"negativeFeedbackType":"like"}""",
+      """{"feedbackType":"dislike"}""",
+    ],
+  )
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `given invalid final feedback types when updating then bad request is returned`(jsonString: String) {
+    mockMvc
+      .patch("/api/v1/gorse") {
+        contentType = MediaType.APPLICATION_JSON
+        content = jsonString
+      }.andExpect {
+        status { isBadRequest() }
+      }
+  }
+
+  @Test
+  @WithMockCustomUser(roles = ["ADMIN"])
+  fun `given legacy padded feedback types when updating another setting then normalized values are persisted`() {
+    gorseSettings.feedbackType = " read "
+    gorseSettings.positiveFeedbackType = " like "
+    gorseSettings.negativeFeedbackType = " dislike "
+
+    mockMvc
+      .patch("/api/v1/gorse") {
+        contentType = MediaType.APPLICATION_JSON
+        content = """{"tagPenaltyExponent":0.75}"""
+      }.andExpect {
+        status { isNoContent() }
+      }
+
+    val reloaded = GorseSettingsProvider(serverSettingsDao)
+    assertThat(reloaded.feedbackType).isEqualTo("read")
+    assertThat(reloaded.positiveFeedbackType).isEqualTo("like")
+    assertThat(reloaded.negativeFeedbackType).isEqualTo("dislike")
   }
 
   @Test

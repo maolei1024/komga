@@ -8,6 +8,7 @@ export interface GorseSettingsDto {
     apiKey: string
     feedbackType: string
     positiveFeedbackType: string
+    negativeFeedbackType: string
     anonymousUserId: string
     readThreshold: number
     tagPenaltyExponent: number
@@ -19,6 +20,7 @@ export interface GorseSettingsUpdateDto {
     apiKey?: string
     feedbackType?: string
     positiveFeedbackType?: string
+    negativeFeedbackType?: string
     anonymousUserId?: string
     readThreshold?: number
     tagPenaltyExponent?: number
@@ -27,6 +29,13 @@ export interface GorseSettingsUpdateDto {
 export interface GorseSyncResultDto {
     type: string
     count: number
+}
+
+export type GorsePreference = 'NONE' | 'LIKE' | 'DISLIKE'
+
+export interface GorsePreferenceDto {
+    seriesId: string
+    preference: GorsePreference
 }
 
 export default class KomgaGorseService {
@@ -118,5 +127,21 @@ export default class KomgaGorseService {
         } catch (e) {
             return { liked: false, seriesId: '' }
         }
+    }
+
+    async getSeriesPreference(seriesId: string): Promise<GorsePreferenceDto> {
+        return (await this.http.get(`${API_GORSE}/preference/series/${seriesId}`)).data
+    }
+
+    async setSeriesPreference(seriesId: string, preference: GorsePreference): Promise<GorsePreferenceDto> {
+        return (await this.http.put(`${API_GORSE}/preference/series/${seriesId}`, {preference})).data
+    }
+
+    async getBookPreference(bookId: string): Promise<GorsePreferenceDto> {
+        return (await this.http.get(`${API_GORSE}/preference/book/${bookId}`)).data
+    }
+
+    async setBookPreference(bookId: string, preference: GorsePreference): Promise<GorsePreferenceDto> {
+        return (await this.http.put(`${API_GORSE}/preference/book/${bookId}`, {preference})).data
     }
 }

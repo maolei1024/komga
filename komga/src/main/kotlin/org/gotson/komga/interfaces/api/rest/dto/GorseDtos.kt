@@ -9,6 +9,7 @@ data class GorseSettingsDto(
   val apiKey: String,
   val feedbackType: String,
   val positiveFeedbackType: String,
+  val negativeFeedbackType: String,
   val anonymousUserId: String,
   val readThreshold: Double,
   val tagPenaltyExponent: Double,
@@ -20,6 +21,7 @@ data class GorseSettingsUpdateDto(
   val apiKey: String? = null,
   val feedbackType: String? = null,
   val positiveFeedbackType: String? = null,
+  val negativeFeedbackType: String? = null,
   val anonymousUserId: String? = null,
   val readThreshold: Double? = null,
   @field:DecimalMin("0.0")
@@ -30,4 +32,19 @@ data class GorseSettingsUpdateDto(
 data class GorseSyncResultDto(
   val type: String,
   val count: Int,
+)
+
+enum class GorsePreference {
+  NONE,
+  LIKE,
+  DISLIKE,
+}
+
+data class GorsePreferenceUpdateDto(
+  val preference: GorsePreference,
+)
+
+data class GorsePreferenceDto(
+  val seriesId: String,
+  val preference: GorsePreference,
 )

@@ -201,6 +201,39 @@ class GorseClient(
     }
   }
 
+  fun insertFeedbackChecked(feedback: List<GorseFeedback>) {
+    if (feedback.isEmpty()) return
+    buildClient()
+      .put()
+      .uri("/api/feedback")
+      .bodyValue(feedback)
+      .retrieve()
+      .bodyToMono(String::class.java)
+      .block()
+  }
+
+  fun getFeedbackChecked(
+    userId: String,
+    itemId: String,
+  ): List<GorseFeedback> =
+    buildClient()
+      .get()
+      .uri("/api/feedback/$userId/$itemId")
+      .retrieve()
+      .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<GorseFeedback>>() {})
+      .block() ?: emptyList()
+
+  fun getUserFeedbackByTypeChecked(
+    userId: String,
+    feedbackType: String,
+  ): List<GorseFeedback> =
+    buildClient()
+      .get()
+      .uri("/api/user/$userId/feedback/$feedbackType")
+      .retrieve()
+      .bodyToMono(object : org.springframework.core.ParameterizedTypeReference<List<GorseFeedback>>() {})
+      .block() ?: emptyList()
+
   fun getUserFeedbackByType(
     userId: String,
     feedbackType: String,
@@ -236,5 +269,18 @@ class GorseClient(
     } catch (e: Exception) {
       logger.error(e) { "Gorse: failed to delete $feedbackType feedback for user $userId item $itemId" }
     }
+  }
+
+  fun deleteFeedbackChecked(
+    feedbackType: String,
+    userId: String,
+    itemId: String,
+  ) {
+    buildClient()
+      .delete()
+      .uri("/api/feedback/$feedbackType/$userId/$itemId")
+      .retrieve()
+      .bodyToMono(String::class.java)
+      .block()
   }
 }

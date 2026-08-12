@@ -36,6 +36,7 @@ class GorseController(
       apiKey = gorseSettings.apiKey,
       feedbackType = gorseSettings.feedbackType,
       positiveFeedbackType = gorseSettings.positiveFeedbackType,
+      negativeFeedbackType = gorseSettings.negativeFeedbackType,
       anonymousUserId = gorseSettings.anonymousUserId,
       readThreshold = gorseSettings.readThreshold,
       tagPenaltyExponent = gorseSettings.tagPenaltyExponent,
@@ -47,11 +48,23 @@ class GorseController(
   fun updateGorseSettings(
     @Valid @RequestBody newSettings: GorseSettingsUpdateDto,
   ) {
+    val feedbackType = (newSettings.feedbackType ?: gorseSettings.feedbackType).trim()
+    val positiveFeedbackType = (newSettings.positiveFeedbackType ?: gorseSettings.positiveFeedbackType).trim()
+    val negativeFeedbackType = (newSettings.negativeFeedbackType ?: gorseSettings.negativeFeedbackType).trim()
+    val feedbackTypes = listOf(feedbackType, positiveFeedbackType, negativeFeedbackType)
+    if (feedbackTypes.any { it.isBlank() } || feedbackTypes.distinct().size != feedbackTypes.size) {
+      throw org.springframework.web.server.ResponseStatusException(
+        HttpStatus.BAD_REQUEST,
+        "Read, positive, and negative feedback types must be non-blank and pairwise distinct",
+      )
+    }
+
     newSettings.enabled?.let { gorseSettings.enabled = it }
     newSettings.apiUrl?.let { gorseSettings.apiUrl = it }
     newSettings.apiKey?.let { gorseSettings.apiKey = it }
-    newSettings.feedbackType?.let { gorseSettings.feedbackType = it }
-    newSettings.positiveFeedbackType?.let { gorseSettings.positiveFeedbackType = it }
+    gorseSettings.feedbackType = feedbackType
+    gorseSettings.positiveFeedbackType = positiveFeedbackType
+    gorseSettings.negativeFeedbackType = negativeFeedbackType
     newSettings.anonymousUserId?.let { gorseSettings.anonymousUserId = it }
     newSettings.readThreshold?.let { gorseSettings.readThreshold = it }
     newSettings.tagPenaltyExponent?.let { gorseSettings.tagPenaltyExponent = it }

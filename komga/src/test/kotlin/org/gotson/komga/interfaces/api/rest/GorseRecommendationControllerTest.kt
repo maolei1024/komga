@@ -7,6 +7,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.domain.model.KomgaUser
 import org.gotson.komga.infrastructure.gorse.GorseClient
+import org.gotson.komga.infrastructure.gorse.GorsePreferenceService
 import org.gotson.komga.infrastructure.gorse.GorseRecommendation
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
@@ -21,18 +22,20 @@ class GorseRecommendationControllerTest {
   private val gorseClient = mockk<GorseClient>()
   private val gorseSettings = mockk<GorseSettingsProvider>()
   private val seriesDtoRepository = mockk<SeriesDtoRepository>()
+  private val preferenceService = mockk<GorsePreferenceService>()
   private val principal = mockk<KomgaPrincipal>()
   private val user = mockk<KomgaUser>()
-  private val controller = GorseRecommendationController(gorseClient, gorseSettings, seriesDtoRepository)
+  private val controller = GorseRecommendationController(gorseClient, gorseSettings, seriesDtoRepository, preferenceService)
 
   @BeforeEach
   fun setup() {
-    clearMocks(gorseClient, gorseSettings, seriesDtoRepository, principal, user)
+    clearMocks(gorseClient, gorseSettings, seriesDtoRepository, preferenceService, principal, user)
     every { gorseSettings.enabled } returns true
     every { gorseSettings.tagPenaltyExponent } returns 0.0
     every { principal.user } returns user
     every { user.id } returns "user"
     every { user.isAdmin } returns true
+    every { preferenceService.getDislikedSeriesIds("user") } returns emptySet()
   }
 
   @Test
@@ -91,6 +94,26 @@ class GorseRecommendationControllerTest {
     val result = controller.getRecommendedSeries(principal, page = 0, size = 20)
 
     assertThat(result.content).containsExactly(first, second)
+  }
+
+  @Test
+  fun `given disliked candidates when retrieving recommendations then they are filtered before pagination`() {
+    val first = series()
+    val third = series()
+    every { gorseClient.getRecommendations("user", n = 100, offset = 0) } returns
+      listOf(
+        GorseRecommendation(Id = "first", Score = 0.9),
+        GorseRecommendation(Id = "second", Score = 0.8),
+        GorseRecommendation(Id = "third", Score = 0.7),
+      )
+    every { preferenceService.getDislikedSeriesIds("user") } returns setOf("second")
+    every { seriesDtoRepository.findByIdOrNull("first", "user") } returns first
+    every { seriesDtoRepository.findByIdOrNull("third", "user") } returns third
+
+    val result = controller.getRecommendedSeries(principal, page = 0, size = 20)
+
+    assertThat(result.content).containsExactly(first, third)
+    verify(exactly = 0) { seriesDtoRepository.findByIdOrNull("second", any()) }
   }
 
   private fun series(
