@@ -31,3 +31,9 @@ data class GorseRecommendation(
   val Id: String,
   val Score: Double,
 )
+
+data class GorseHealthStatus(
+  val Ready: Boolean,
+  val DataStoreConnected: Boolean,
+  val CacheStoreConnected: Boolean,
+)

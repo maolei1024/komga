@@ -2,9 +2,12 @@ package org.gotson.komga.infrastructure.gorse
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Mono
+import java.time.Duration
 
 private val logger = KotlinLogging.logger {}
 
@@ -12,13 +15,53 @@ private val logger = KotlinLogging.logger {}
 class GorseClient(
   private val gorseSettings: GorseSettingsProvider,
 ) {
-  private fun buildClient(): WebClient =
+  private fun buildClient(
+    apiUrl: String = gorseSettings.apiUrl,
+    apiKey: String = gorseSettings.apiKey,
+  ): WebClient =
     WebClient
       .builder()
-      .baseUrl(gorseSettings.apiUrl)
+      .baseUrl(apiUrl)
       .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-      .defaultHeader("X-API-Key", gorseSettings.apiKey)
+      .defaultHeader("X-API-Key", apiKey)
       .build()
+
+  fun testConnection(
+    apiUrl: String,
+    apiKey: String,
+  ): GorseHealthStatus = testConnection(apiUrl, apiKey, CONNECTION_TEST_TIMEOUT)
+
+  internal fun testConnection(
+    apiUrl: String,
+    apiKey: String,
+    timeout: Duration,
+  ): GorseHealthStatus {
+    val client = buildClient(apiUrl, apiKey)
+    val healthCheck =
+      client
+        .get()
+        .uri("/api/health/ready")
+        .retrieve()
+        .bodyToMono(GorseHealthStatus::class.java)
+        .switchIfEmpty(Mono.error(IllegalStateException("Gorse returned an empty health response")))
+        .flatMap { health ->
+          if (!health.Ready || !health.DataStoreConnected || !health.CacheStoreConnected) {
+            Mono.just(health)
+          } else {
+            client
+              .get()
+              .uri("/api/item/{itemId}", CONNECTION_TEST_ITEM_ID)
+              .exchangeToMono { response ->
+                when {
+                  response.statusCode().is2xxSuccessful || response.statusCode() == HttpStatus.NOT_FOUND -> response.releaseBody()
+                  else -> response.createException().flatMap { Mono.error<Void>(it) }
+                }
+              }.thenReturn(health)
+          }
+        }
+
+    return requireNotNull(healthCheck.block(timeout)) { "Gorse returned an empty connection test response" }
+  }
 
   fun insertItem(item: GorseItem) {
     try {
@@ -282,5 +325,10 @@ class GorseClient(
       .retrieve()
       .bodyToMono(String::class.java)
       .block()
+  }
+
+  companion object {
+    private val CONNECTION_TEST_TIMEOUT: Duration = Duration.ofSeconds(5)
+    private const val CONNECTION_TEST_ITEM_ID = "__komga_connection_test__"
   }
 }

@@ -3,14 +3,20 @@ package org.gotson.komga.interfaces.api.rest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.gotson.komga.infrastructure.gorse.GorseClient
 import org.gotson.komga.infrastructure.gorse.GorseEventListener
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
+import org.gotson.komga.interfaces.api.rest.dto.GorseConnectionTestErrorDto
+import org.gotson.komga.interfaces.api.rest.dto.GorseConnectionTestRequestDto
+import org.gotson.komga.interfaces.api.rest.dto.GorseConnectionTestResultDto
 import org.gotson.komga.interfaces.api.rest.dto.GorseSettingsDto
 import org.gotson.komga.interfaces.api.rest.dto.GorseSettingsUpdateDto
 import org.gotson.komga.interfaces.api.rest.dto.GorseSyncResultDto
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -18,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.reactive.function.client.WebClientResponseException
+import java.net.URI
 
 @RestController
 @RequestMapping(value = ["api/v1/gorse"], produces = [MediaType.APPLICATION_JSON_VALUE])
@@ -26,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController
 class GorseController(
   private val gorseSettings: GorseSettingsProvider,
   private val gorseEventListener: GorseEventListener,
+  private val gorseClient: GorseClient,
 ) {
   @GetMapping
   @Operation(summary = "Retrieve Gorse settings")
@@ -70,6 +79,45 @@ class GorseController(
     newSettings.tagPenaltyExponent?.let { gorseSettings.tagPenaltyExponent = it }
   }
 
+  @PostMapping("test-connection")
+  @Operation(summary = "Test Gorse readiness and API authentication")
+  fun testConnection(
+    @Valid @RequestBody request: GorseConnectionTestRequestDto,
+  ): GorseConnectionTestResultDto {
+    val apiUrl = validateApiUrl(request.apiUrl)
+    val health =
+      try {
+        gorseClient.testConnection(apiUrl, request.apiKey)
+      } catch (e: WebClientResponseException) {
+        val message =
+          if (e.statusCode == HttpStatus.UNAUTHORIZED || e.statusCode == HttpStatus.FORBIDDEN) {
+            "Gorse API 密钥验证失败"
+          } else {
+            "无法连接到 Gorse"
+          }
+        throw GorseConnectionTestException(HttpStatus.BAD_GATEWAY, message, e)
+      } catch (e: Exception) {
+        throw GorseConnectionTestException(HttpStatus.BAD_GATEWAY, "无法连接到 Gorse", e)
+      }
+
+    if (!health.Ready || !health.DataStoreConnected || !health.CacheStoreConnected) {
+      throw GorseConnectionTestException(HttpStatus.BAD_GATEWAY, "Gorse 尚未就绪")
+    }
+
+    return GorseConnectionTestResultDto(
+      ready = health.Ready,
+      dataStoreConnected = health.DataStoreConnected,
+      cacheStoreConnected = health.CacheStoreConnected,
+      apiAuthenticated = true,
+    )
+  }
+
+  @ExceptionHandler(GorseConnectionTestException::class)
+  fun handleConnectionTestException(exception: GorseConnectionTestException): ResponseEntity<GorseConnectionTestErrorDto> =
+    ResponseEntity
+      .status(exception.status)
+      .body(GorseConnectionTestErrorDto(exception.message))
+
   @PostMapping("sync/items")
   @Operation(summary = "Sync all series to Gorse as items")
   fun syncItems(): GorseSyncResultDto {
@@ -90,4 +138,24 @@ class GorseController(
     val count = gorseEventListener.syncAllFeedback()
     return GorseSyncResultDto("feedback", count)
   }
+
+  private fun validateApiUrl(value: String): String {
+    val apiUrl = value.trim()
+    val uri =
+      try {
+        URI(apiUrl)
+      } catch (e: Exception) {
+        throw GorseConnectionTestException(HttpStatus.BAD_REQUEST, "Gorse API 地址必须是有效的 HTTP(S) 地址")
+      }
+    if (uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+      throw GorseConnectionTestException(HttpStatus.BAD_REQUEST, "Gorse API 地址必须是有效的 HTTP(S) 地址")
+    }
+    return apiUrl
+  }
 }
+
+class GorseConnectionTestException(
+  val status: HttpStatus,
+  override val message: String,
+  cause: Throwable? = null,
+) : RuntimeException(message, cause)

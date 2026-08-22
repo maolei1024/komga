@@ -31,6 +31,18 @@ export interface GorseSyncResultDto {
     count: number
 }
 
+export interface GorseConnectionTestRequestDto {
+    apiUrl: string
+    apiKey: string
+}
+
+export interface GorseConnectionTestResultDto {
+    ready: boolean
+    dataStoreConnected: boolean
+    cacheStoreConnected: boolean
+    apiAuthenticated: boolean
+}
+
 export type GorsePreference = 'NONE' | 'LIKE' | 'DISLIKE'
 
 export interface GorsePreferenceDto {
@@ -65,6 +77,15 @@ export default class KomgaGorseService {
             if (e.response?.data?.message) {
                 msg += `: ${e.response.data.message}`
             }
+            throw new Error(msg)
+        }
+    }
+
+    async testConnection(settings: GorseConnectionTestRequestDto): Promise<GorseConnectionTestResultDto> {
+        try {
+            return (await this.http.post(`${API_GORSE}/test-connection`, settings)).data
+        } catch (e) {
+            const msg = e.response?.data?.message || 'Gorse 连接检测失败'
             throw new Error(msg)
         }
     }

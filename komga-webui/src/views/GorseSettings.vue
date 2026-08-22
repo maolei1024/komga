@@ -119,17 +119,28 @@
               计算时忽略 tagSize_* 和 pageSize_* 技术标签。
             </div>
           </v-card-text>
-          <v-card-actions>
+          <v-card-actions class="flex-wrap">
+            <v-btn
+              data-testid="gorse-test-connection"
+              color="primary"
+              outlined
+              :loading="testingConnection"
+              :disabled="!canTestConnection || saving || testingConnection"
+              @click="testConnection"
+            >
+              <v-icon left>mdi-lan-connect</v-icon>
+              检测连接
+            </v-btn>
             <v-spacer/>
             <v-btn
               text
-              :disabled="!formDirty"
+              :disabled="!formDirty || testingConnection"
               @click="refreshSettings"
             >放弃修改
             </v-btn>
             <v-btn
               color="primary"
-              :disabled="!formDirty"
+              :disabled="!formDirty || testingConnection"
               :loading="saving"
               @click="saveSettings"
             >保存设置
@@ -252,6 +263,7 @@ export default Vue.extend({
     } as GorseSettingsDto,
     formDirty: false,
     saving: false,
+    testingConnection: false,
     showApiKey: false,
     syncingItems: false,
     syncingUsers: false,
@@ -267,6 +279,9 @@ export default Vue.extend({
     this.refreshSettings()
   },
   computed: {
+    canTestConnection(): boolean {
+      return this.form.apiUrl.trim().length > 0
+    },
     readThresholdPercent: {
       get(): number {
         return Math.round(this.form.readThreshold * 100)
@@ -296,6 +311,25 @@ export default Vue.extend({
         this.showSnackbar('保存设置失败', 'error')
       } finally {
         this.saving = false
+      }
+    },
+    async testConnection() {
+      if (!this.canTestConnection || this.saving || this.testingConnection) return
+
+      this.testingConnection = true
+      try {
+        const result = await this.$komgaGorse.testConnection({
+          apiUrl: this.form.apiUrl,
+          apiKey: this.form.apiKey,
+        })
+        if (!result.ready || !result.dataStoreConnected || !result.cacheStoreConnected || !result.apiAuthenticated) {
+          throw new Error('Gorse 尚未就绪')
+        }
+        this.showSnackbar('Gorse 运行正常', 'success')
+      } catch (e) {
+        this.showSnackbar(e instanceof Error ? e.message : 'Gorse 连接检测失败', 'error')
+      } finally {
+        this.testingConnection = false
       }
     },
     async syncItems() {

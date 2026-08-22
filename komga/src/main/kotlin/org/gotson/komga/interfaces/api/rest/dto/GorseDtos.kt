@@ -2,6 +2,7 @@ package org.gotson.komga.interfaces.api.rest.dto
 
 import jakarta.validation.constraints.DecimalMax
 import jakarta.validation.constraints.DecimalMin
+import jakarta.validation.constraints.NotBlank
 
 data class GorseSettingsDto(
   val enabled: Boolean,
@@ -32,6 +33,23 @@ data class GorseSettingsUpdateDto(
 data class GorseSyncResultDto(
   val type: String,
   val count: Int,
+)
+
+data class GorseConnectionTestRequestDto(
+  @field:NotBlank
+  val apiUrl: String,
+  val apiKey: String = "",
+)
+
+data class GorseConnectionTestResultDto(
+  val ready: Boolean,
+  val dataStoreConnected: Boolean,
+  val cacheStoreConnected: Boolean,
+  val apiAuthenticated: Boolean,
+)
+
+data class GorseConnectionTestErrorDto(
+  val message: String,
 )
 
 enum class GorsePreference {
