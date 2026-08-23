@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve --port 8081",
-    "build": "vue-cli-service build",
+    "build": "npm run typecheck && vue-cli-service build",
+    "typecheck": "tsc --noEmit --pretty false -p tsconfig.app.json",
     "test:unit": "vue-cli-service test:unit",
     "lint": "vue-cli-service lint --mode production"
   },

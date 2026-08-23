@@ -1,4 +1,5 @@
 import i18n from '@/i18n'
+import {NameValue} from '@/types/filter'
 
 export enum SeriesStatus {
   ENDED = 'ENDED',

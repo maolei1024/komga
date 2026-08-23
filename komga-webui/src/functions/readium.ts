@@ -33,7 +33,9 @@ function locationsToR2Location(location: Locations): R2Location {
   }
 }
 
-export function r2ProgressionToReadingPosition(progression?: R2Progression, bookId: string): ReadingPosition | undefined {
+export function r2ProgressionToReadingPosition(progression: R2Progression | undefined, bookId: string): ReadingPosition | undefined {
+  if (!progression) return undefined
+
   try {
     return {
       created: progression.modified,

@@ -1,5 +1,4 @@
 import {AxiosInstance} from 'axios'
-import {Page} from '@/types/komga-api'
 import {
   DedupClusterDetailDto,
   DedupClusterSummaryDto,
