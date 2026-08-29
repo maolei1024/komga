@@ -66,6 +66,25 @@ class MetadataEnrichmentControllerTest {
   }
 
   @Test
+  fun `changing the AI prompt persists it and only marks AI results stale`() {
+    stubSettings()
+
+    controller.updateSettings(MetadataEnrichmentSettingsUpdateDto(aiPrompt = "model-specific prompt"))
+
+    verify { settings.aiPrompt = "model-specific prompt" }
+    verify { lifecycle.invalidate(MetadataEnrichmentProcessor.AI_TITLE, autoRun = false) }
+  }
+
+  @Test
+  fun `blank AI prompt is rejected before settings are persisted`() {
+    stubSettings()
+
+    assertThatThrownBy { controller.updateSettings(MetadataEnrichmentSettingsUpdateDto(aiPrompt = "  ")) }
+      .isInstanceOf(ResponseStatusException::class.java)
+    verify(exactly = 0) { settings.aiPrompt = any() }
+  }
+
+  @Test
   fun `controller requires administrator role`() {
     assertThat(MetadataEnrichmentController::class.java.getAnnotation(PreAuthorize::class.java).value)
       .isEqualTo("hasRole('ADMIN')")
@@ -91,6 +110,7 @@ class MetadataEnrichmentControllerTest {
     every { settings.aiAutoOnNew } returns true
     every { settings.aiBaseUrl } returns ""
     every { settings.aiModel } returns ""
+    every { settings.aiPrompt } returns MetadataEnrichmentSettingsProvider.DEFAULT_AI_PROMPT
     every { settings.aiApiKey } returns apiKey
     every { settings.aiTimeoutSeconds } returns 60
     every { settings.aiMaxRetries } returns 3

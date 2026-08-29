@@ -11,6 +11,7 @@ const settings = {
   aiAutoOnNew: true,
   aiBaseUrl: 'https://ai.example/v1',
   aiModel: 'model',
+  aiPrompt: 'model-specific prompt',
   apiKeyConfigured: true,
   aiTimeoutSeconds: 60,
   aiMaxRetries: 3,
@@ -77,6 +78,7 @@ describe('MetadataEnrichmentSettings', () => {
     expect(service.updateSettings).toHaveBeenCalledTimes(1)
     expect(service.updateSettings.mock.calls[0][0]).not.toHaveProperty('aiApiKey')
     expect(service.updateSettings.mock.calls[0][0]).not.toHaveProperty('clearAiApiKey')
+    expect(service.updateSettings.mock.calls[0][0]).toHaveProperty('aiPrompt', 'model-specific prompt')
   })
 
   it('submits the visible processor status and library scope for a confirmed batch run', async () => {

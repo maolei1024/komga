@@ -36,6 +36,15 @@ class MetadataEnrichmentSettingsProvider(
       field = value.trim()
     }
 
+  var aiPrompt: String = string(Setting.AI_PROMPT, DEFAULT_AI_PROMPT).ifBlank { DEFAULT_AI_PROMPT }
+    set(value) {
+      val normalized = value.trim()
+      require(normalized.isNotBlank()) { "AI prompt cannot be blank" }
+      require(normalized.length <= 20_000) { "AI prompt cannot exceed 20000 characters" }
+      serverSettingsDao.saveSetting(Setting.AI_PROMPT.name, normalized)
+      field = normalized
+    }
+
   var aiApiKey: String = string(Setting.AI_API_KEY, "")
     set(value) {
       if (value.isBlank()) serverSettingsDao.deleteSetting(Setting.AI_API_KEY.name) else serverSettingsDao.saveSetting(Setting.AI_API_KEY.name, value.trim())
@@ -91,7 +100,7 @@ class MetadataEnrichmentSettingsProvider(
     }
 
   val aiConfigured: Boolean
-    get() = aiBaseUrl.isNotBlank() && aiModel.isNotBlank() && aiApiKey.isNotBlank()
+    get() = aiBaseUrl.isNotBlank() && aiModel.isNotBlank() && aiPrompt.isNotBlank() && aiApiKey.isNotBlank()
 
   fun clearAiApiKey() {
     aiApiKey = ""
@@ -123,6 +132,10 @@ class MetadataEnrichmentSettingsProvider(
       }?.takeIf { it.isNotEmpty() } ?: default
 
   companion object {
+    const val DEFAULT_AI_PROMPT = """你需要将日语、英语或其他语言翻译成恰当的中文标题。
+只回复 AAAA翻译后的标题BBBB，不要附加解释。
+删除无意义的展会、语言和汉化组标签，忽略作者名；保留大众熟知的作品来源并放在标题前。"""
+
     val DEFAULT_PAGE_SIZE_BUCKETS =
       listOf(
         MetadataEnrichmentBucket(1, 10, "pageSize_1-10"),
@@ -173,6 +186,7 @@ class MetadataEnrichmentSettingsProvider(
     METADATA_ENRICHMENT_AI_AUTO_ON_NEW,
     METADATA_ENRICHMENT_AI_BASE_URL,
     METADATA_ENRICHMENT_AI_MODEL,
+    METADATA_ENRICHMENT_AI_PROMPT,
     METADATA_ENRICHMENT_AI_API_KEY,
     METADATA_ENRICHMENT_AI_TIMEOUT_SECONDS,
     METADATA_ENRICHMENT_AI_MAX_RETRIES,
@@ -188,6 +202,7 @@ class MetadataEnrichmentSettingsProvider(
       val AI_AUTO_ON_NEW = METADATA_ENRICHMENT_AI_AUTO_ON_NEW
       val AI_BASE_URL = METADATA_ENRICHMENT_AI_BASE_URL
       val AI_MODEL = METADATA_ENRICHMENT_AI_MODEL
+      val AI_PROMPT = METADATA_ENRICHMENT_AI_PROMPT
       val AI_API_KEY = METADATA_ENRICHMENT_AI_API_KEY
       val AI_TIMEOUT_SECONDS = METADATA_ENRICHMENT_AI_TIMEOUT_SECONDS
       val AI_MAX_RETRIES = METADATA_ENRICHMENT_AI_MAX_RETRIES

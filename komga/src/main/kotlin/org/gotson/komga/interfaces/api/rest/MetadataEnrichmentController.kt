@@ -71,6 +71,7 @@ class MetadataEnrichmentController(
   ) {
     val nextBaseUrl = update.aiBaseUrl?.trim() ?: settings.aiBaseUrl
     val nextModel = update.aiModel?.trim() ?: settings.aiModel
+    val nextPrompt = update.aiPrompt?.trim() ?: settings.aiPrompt
     val nextEnabled = update.aiEnabled ?: settings.aiEnabled
     val clearKey = update.clearAiApiKey == true
     if (clearKey && update.aiApiKey != null) badRequest("Cannot set and clear the AI API key in the same request")
@@ -82,21 +83,24 @@ class MetadataEnrichmentController(
       }
 
     validateBaseUrl(nextBaseUrl)
+    if (nextPrompt.isBlank()) badRequest("AI prompt cannot be blank")
+    if (nextPrompt.length > 20_000) badRequest("AI prompt cannot exceed 20000 characters")
     update.aiTimeoutSeconds?.let { if (it !in 1..600) badRequest("AI timeout must be between 1 and 600 seconds") }
     update.aiMaxRetries?.let { if (it !in 0..10) badRequest("AI max retries must be between 0 and 10") }
     update.pageSizeBuckets?.let { validateBuckets(it, 1, "pageSize_") }
     update.tagSizeBuckets?.let { validateBuckets(it, 0, "tagSize_") }
-    if (nextEnabled && (nextBaseUrl.isBlank() || nextModel.isBlank() || !nextKeyConfigured)) {
-      badRequest("AI requires a base URL, model, and API key before it can be enabled")
+    if (nextEnabled && (nextBaseUrl.isBlank() || nextModel.isBlank() || nextPrompt.isBlank() || !nextKeyConfigured)) {
+      badRequest("AI requires a base URL, model, prompt, and API key before it can be enabled")
     }
 
-    val aiDefinitionChanged = nextBaseUrl != settings.aiBaseUrl || nextModel != settings.aiModel
+    val aiDefinitionChanged = nextBaseUrl != settings.aiBaseUrl || nextModel != settings.aiModel || nextPrompt != settings.aiPrompt
     val aiDisabled = settings.aiEnabled && !nextEnabled
     val pageBucketsChanged = update.pageSizeBuckets != null && update.pageSizeBuckets != settings.pageSizeBuckets
     val tagBucketsChanged = update.tagSizeBuckets != null && update.tagSizeBuckets != settings.tagSizeBuckets
 
     update.aiBaseUrl?.let { settings.aiBaseUrl = it }
     update.aiModel?.let { settings.aiModel = it }
+    update.aiPrompt?.let { settings.aiPrompt = it }
     if (clearKey) settings.clearAiApiKey() else update.aiApiKey?.let { settings.aiApiKey = it }
     update.aiAutoOnNew?.let { settings.aiAutoOnNew = it }
     update.aiTimeoutSeconds?.let { settings.aiTimeoutSeconds = it }
@@ -261,6 +265,7 @@ class MetadataEnrichmentController(
       aiAutoOnNew = settings.aiAutoOnNew,
       aiBaseUrl = settings.aiBaseUrl,
       aiModel = settings.aiModel,
+      aiPrompt = settings.aiPrompt,
       apiKeyConfigured = settings.aiApiKey.isNotBlank(),
       aiTimeoutSeconds = settings.aiTimeoutSeconds,
       aiMaxRetries = settings.aiMaxRetries,

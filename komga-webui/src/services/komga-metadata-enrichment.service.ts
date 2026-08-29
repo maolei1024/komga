@@ -17,6 +17,7 @@ export interface MetadataEnrichmentSettingsDto {
   aiAutoOnNew: boolean
   aiBaseUrl: string
   aiModel: string
+  aiPrompt: string
   apiKeyConfigured: boolean
   aiTimeoutSeconds: number
   aiMaxRetries: number
@@ -33,6 +34,7 @@ export interface MetadataEnrichmentSettingsUpdateDto {
   aiAutoOnNew?: boolean
   aiBaseUrl?: string
   aiModel?: string
+  aiPrompt?: string
   aiApiKey?: string
   clearAiApiKey?: boolean
   aiTimeoutSeconds?: number

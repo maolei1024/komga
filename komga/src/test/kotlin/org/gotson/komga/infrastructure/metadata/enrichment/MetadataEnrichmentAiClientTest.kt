@@ -17,6 +17,7 @@ class MetadataEnrichmentAiClientTest {
   private lateinit var server: HttpServer
   private val requestPath = AtomicReference<String>()
   private val authorization = AtomicReference<String>()
+  private val requestBody = AtomicReference<String>()
 
   @BeforeEach
   fun setup() {
@@ -24,6 +25,7 @@ class MetadataEnrichmentAiClientTest {
     server.createContext("/v1/chat/completions") { exchange ->
       requestPath.set(exchange.requestURI.path)
       authorization.set(exchange.requestHeaders.getFirst("Authorization"))
+      requestBody.set(exchange.requestBody.bufferedReader().use { it.readText() })
       respond(exchange, """{"choices":[{"message":{"content":"AAAA中文标题BBBB"}}]}""")
     }
     server.start()
@@ -41,6 +43,7 @@ class MetadataEnrichmentAiClientTest {
     every { settings.aiConfigured } returns true
     every { settings.aiBaseUrl } returns "HTTP://${server.address.hostString}:${server.address.port}"
     every { settings.aiModel } returns "model"
+    every { settings.aiPrompt } returns "model-specific system prompt"
     every { settings.aiApiKey } returns "secret"
     every { settings.aiTimeoutSeconds } returns 5
     every { settings.aiMaxRetries } returns 0
@@ -49,6 +52,7 @@ class MetadataEnrichmentAiClientTest {
     assertThat(client.translate("原始简介")).isEqualTo("中文标题")
     assertThat(requestPath.get()).isEqualTo("/v1/chat/completions")
     assertThat(authorization.get()).isEqualTo("Bearer secret")
+    assertThat(requestBody.get()).contains("model-specific system prompt")
   }
 
   @Test

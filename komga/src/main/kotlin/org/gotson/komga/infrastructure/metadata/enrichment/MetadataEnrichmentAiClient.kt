@@ -39,7 +39,7 @@ class MetadataEnrichmentAiClient(
                 "model" to settings.aiModel,
                 "messages" to
                   listOf(
-                    mapOf("role" to "system", "content" to PROMPT),
+                    mapOf("role" to "system", "content" to settings.aiPrompt),
                     mapOf("role" to "user", "content" to "待翻译文本:$summary"),
                   ),
                 "temperature" to 0.2,
@@ -105,9 +105,6 @@ class MetadataEnrichmentAiClient(
   }
 
   companion object {
-    private const val PROMPT = """你需要将日语、英语或其他语言翻译成恰当的中文标题。
-只回复 AAAA翻译后的标题BBBB，不要附加解释。
-删除无意义的展会、语言和汉化组标签，忽略作者名；保留大众熟知的作品来源并放在标题前。"""
     private val REFUSAL = Regex("^(抱歉|对不起|无法|不能|我不能|i\\s+(?:am\\s+sorry|cannot|can't)|sorry\\b)", RegexOption.IGNORE_CASE)
     private val AUTHORIZATION = Regex("(?i)(authorization\\s*[:=]\\s*)(?:bearer|key)?\\s*\\S+")
   }

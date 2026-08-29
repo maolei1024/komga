@@ -1,11 +1,19 @@
 package org.gotson.komga.infrastructure.metadata.enrichment
 
+import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.gotson.komga.domain.model.MetadataEnrichmentBucket
 import org.junit.jupiter.api.Test
 
 class MetadataEnrichmentSettingsProviderTest {
+  @Test
+  fun `default AI prompt preserves the legacy translation instructions`() {
+    assertThat(MetadataEnrichmentSettingsProvider.DEFAULT_AI_PROMPT)
+      .contains("AAAA翻译后的标题BBBB")
+      .contains("保留大众熟知的作品来源")
+  }
+
   @Test
   fun `default bucket configurations are valid and preserve existing labels`() {
     assertThatCode {

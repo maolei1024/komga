@@ -74,7 +74,18 @@
                     v-model="settings.aiModel"
                     label="模型"
                     persistent-hint
-                    hint="模型或地址变化会把现有 AI 状态标记为过期"
+                    hint="切换模型时请同步调整下方 Prompt"
+                    class="mb-3"
+                    @input="markSettingsDirty"
+                  />
+                  <v-textarea
+                    v-model="settings.aiPrompt"
+                    label="System Prompt"
+                    hint="Prompt 与当前模型一起使用；模型、地址或 Prompt 变化只会标记旧结果过期，不会自动调用 AI"
+                    persistent-hint
+                    auto-grow
+                    rows="6"
+                    :counter="20000"
                     class="mb-3"
                     @input="markSettingsDirty"
                   />
@@ -248,7 +259,9 @@
       <v-tab-item>
         <v-card outlined class="mb-4">
           <v-card-title>状态总览</v-card-title>
-          <v-card-subtitle>点击数量即可将对应处理器和状态带入下方筛选。</v-card-subtitle>
+          <v-card-subtitle>
+            成功表示当前 revision 已完成；过期表示输入或配置已经变化、尚未重跑，最后一次成功结果仍继续生效。点击数量可带入下方筛选。
+          </v-card-subtitle>
           <v-card-text>
             <v-simple-table>
               <thead>
@@ -500,6 +513,7 @@ const emptySettings = (): MetadataEnrichmentSettingsDto => ({
   aiAutoOnNew: true,
   aiBaseUrl: '',
   aiModel: '',
+  aiPrompt: '',
   apiKeyConfigured: false,
   aiTimeoutSeconds: 60,
   aiMaxRetries: 3,
@@ -689,6 +703,7 @@ export default Vue.extend({
           aiAutoOnNew: this.settings.aiAutoOnNew,
           aiBaseUrl: this.settings.aiBaseUrl,
           aiModel: this.settings.aiModel,
+          aiPrompt: this.settings.aiPrompt,
           aiTimeoutSeconds: Number(this.settings.aiTimeoutSeconds),
           aiMaxRetries: Number(this.settings.aiMaxRetries),
           dictionaryUpdatePolicy: this.settings.dictionaryUpdatePolicy,
