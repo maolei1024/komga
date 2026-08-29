@@ -15,6 +15,7 @@ import org.gotson.komga.domain.service.DedupResolutionLifecycle
 import org.gotson.komga.domain.service.DedupWorkLifecycle
 import org.gotson.komga.domain.service.LibraryContentLifecycle
 import org.gotson.komga.domain.service.LocalArtworkLifecycle
+import org.gotson.komga.domain.service.MetadataEnrichmentLifecycle
 import org.gotson.komga.domain.service.PageHashLifecycle
 import org.gotson.komga.domain.service.SeriesLifecycle
 import org.gotson.komga.domain.service.SeriesMetadataLifecycle
@@ -47,6 +48,7 @@ class TaskHandler(
   private val pageHashLifecycle: PageHashLifecycle,
   private val dedupWorkLifecycle: DedupWorkLifecycle,
   private val dedupResolutionLifecycle: DedupResolutionLifecycle,
+  private val metadataEnrichmentLifecycle: MetadataEnrichmentLifecycle,
   private val meterRegistry: MeterRegistry,
 ) {
   fun handleTask(task: Task) {
@@ -100,6 +102,7 @@ class TaskHandler(
 
           is Task.RefreshBookMetadata ->
             bookRepository.findByIdOrNull(task.bookId)?.let { book ->
+              metadataEnrichmentLifecycle.observe(book.id)
               bookMetadataLifecycle.refreshMetadata(book, task.capabilities)
               taskEmitter.refreshSeriesMetadata(book.seriesId, priority = task.priority - 1)
             } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
@@ -189,6 +192,10 @@ class TaskHandler(
           is Task.DrainDedupQueue -> dedupWorkLifecycle.drain(task.libraryId)
 
           is Task.ExecuteDedupResolution -> dedupResolutionLifecycle.executeQueued(task.resolutionId)
+
+          is Task.ObserveMetadataEnrichment -> metadataEnrichmentLifecycle.observe(task.bookId)
+
+          is Task.EnrichMetadata -> metadataEnrichmentLifecycle.process(task.bookId, task.processor, task.revision, task.priority)
         }
       }.also {
         logger.info { "Task $task executed in $it" }

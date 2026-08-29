@@ -7,6 +7,8 @@ import org.gotson.komga.domain.model.BookPageNumbered
 import org.gotson.komga.domain.model.CopyMode
 import org.gotson.komga.domain.model.Library
 import org.gotson.komga.domain.model.Media
+import org.gotson.komga.domain.model.MetadataEnrichmentProcessor
+import org.gotson.komga.domain.model.MetadataEnrichmentState
 import org.gotson.komga.domain.model.SearchCondition
 import org.gotson.komga.domain.model.SearchContext
 import org.gotson.komga.domain.model.SearchOperator
@@ -178,8 +180,9 @@ class TaskEmitter(
     book: Book,
     capabilities: Set<BookMetadataPatchCapability> = BookMetadataPatchCapability.entries.toSet(),
     priority: Int = DEFAULT_PRIORITY,
+    requestId: String? = null,
   ) {
-    submitTask(Task.RefreshBookMetadata(book.id, capabilities, priority, book.seriesId))
+    submitTask(Task.RefreshBookMetadata(book.id, capabilities, priority, book.seriesId, requestId))
   }
 
   fun refreshBookMetadata(
@@ -294,6 +297,36 @@ class TaskEmitter(
     priority: Int = HIGHEST_PRIORITY,
   ) {
     submitTask(Task.ExecuteDedupResolution(resolutionId, libraryId, priority))
+  }
+
+  fun observeMetadataEnrichment(
+    book: Book,
+    priority: Int = LOWEST_PRIORITY,
+  ) {
+    submitTask(Task.ObserveMetadataEnrichment(book.id, priority, book.seriesId))
+  }
+
+  fun observeMetadataEnrichment(
+    books: Collection<Book>,
+    priority: Int = LOWEST_PRIORITY,
+  ) {
+    books.map { Task.ObserveMetadataEnrichment(it.id, priority, it.seriesId) }.let { submitTasks(it) }
+  }
+
+  fun enrichMetadata(
+    bookId: String,
+    processor: MetadataEnrichmentProcessor,
+    revision: Long,
+    priority: Int = LOWEST_PRIORITY,
+  ) {
+    submitTask(Task.EnrichMetadata(bookId, processor, revision, priority))
+  }
+
+  fun enrichMetadata(
+    states: Collection<MetadataEnrichmentState>,
+    priority: Int = LOWEST_PRIORITY,
+  ) {
+    states.map { Task.EnrichMetadata(it.bookId, it.processor, it.revision, priority) }.let { submitTasks(it) }
   }
 
   private fun submitTask(task: Task) {

@@ -19,6 +19,7 @@ import org.gotson.komga.infrastructure.metadata.SeriesMetadataFromBookProvider
 import org.gotson.komga.infrastructure.metadata.comicrack.dto.ComicInfo
 import org.gotson.komga.infrastructure.metadata.comicrack.dto.Manga
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.net.URI
 import java.time.LocalDate
@@ -28,6 +29,7 @@ private val logger = KotlinLogging.logger {}
 private const val COMIC_INFO = "ComicInfo.xml"
 
 @Service
+@Order(0)
 class ComicInfoProvider(
   @param:Autowired(required = false) private val mapper: XmlMapper = XmlMapper(),
   private val bookAnalyzer: BookAnalyzer,

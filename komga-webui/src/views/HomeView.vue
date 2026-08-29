@@ -256,6 +256,10 @@
               <v-list-item-title>Gorse</v-list-item-title>
             </v-list-item>
 
+            <v-list-item :to="{name: 'settings-metadata-enrichment'}">
+              <v-list-item-title>元数据增强</v-list-item-title>
+            </v-list-item>
+
             <v-list-item :to="{name: 'metrics'}">
               <v-list-item-title>{{ $t('metrics.title') }}</v-list-item-title>
             </v-list-item>

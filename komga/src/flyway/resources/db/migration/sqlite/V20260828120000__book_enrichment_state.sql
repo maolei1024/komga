@@ -1,0 +1,21 @@
+CREATE TABLE BOOK_ENRICHMENT_STATE
+(
+    BOOK_ID            varchar NOT NULL,
+    PROCESSOR          varchar NOT NULL,
+    STATUS             varchar NOT NULL,
+    REVISION           bigint  NOT NULL DEFAULT 1,
+    INPUT_HASH         varchar NOT NULL DEFAULT '',
+    INPUT_JSON         text    NOT NULL DEFAULT '{}',
+    RESULT_JSON        text,
+    RESULT_REVISION    bigint,
+    LAST_ERROR         text,
+    STARTED_DATE       datetime,
+    COMPLETED_DATE     datetime,
+    CREATED_DATE       datetime NOT NULL,
+    LAST_MODIFIED_DATE datetime NOT NULL,
+    PRIMARY KEY (BOOK_ID, PROCESSOR),
+    FOREIGN KEY (BOOK_ID) REFERENCES BOOK (ID) ON DELETE CASCADE
+);
+
+CREATE INDEX IDX_BOOK_ENRICHMENT_STATE_STATUS
+    ON BOOK_ENRICHMENT_STATE (PROCESSOR, STATUS, LAST_MODIFIED_DATE);

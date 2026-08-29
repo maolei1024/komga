@@ -3,6 +3,7 @@ package org.gotson.komga.application.tasks
 import org.gotson.komga.domain.model.BookMetadataPatchCapability
 import org.gotson.komga.domain.model.BookPageNumbered
 import org.gotson.komga.domain.model.CopyMode
+import org.gotson.komga.domain.model.MetadataEnrichmentProcessor
 import org.gotson.komga.infrastructure.search.LuceneEntity
 
 const val HIGHEST_PRIORITY = 8
@@ -87,10 +88,11 @@ sealed class Task(
     val capabilities: Set<BookMetadataPatchCapability>,
     priority: Int = DEFAULT_PRIORITY,
     groupId: String,
+    val requestId: String? = null,
   ) : Task(priority, groupId) {
-    override val uniqueId = "REFRESH_BOOK_METADATA_$bookId"
+    override val uniqueId = "REFRESH_BOOK_METADATA_$bookId${requestId?.let { "_$it" }.orEmpty()}"
 
-    override fun toString(): String = "RefreshBookMetadata(bookId='$bookId', capabilities=$capabilities, priority='$priority')"
+    override fun toString(): String = "RefreshBookMetadata(bookId='$bookId', capabilities=$capabilities, requestId=$requestId, priority='$priority')"
   }
 
   class HashBook(
@@ -266,5 +268,29 @@ sealed class Task(
     override val uniqueId = "EXECUTE_DEDUP_RESOLUTION_$resolutionId"
 
     override fun toString(): String = "ExecuteDedupResolution(resolutionId='$resolutionId', libraryId='$libraryId', priority='$priority')"
+  }
+
+  class ObserveMetadataEnrichment(
+    val bookId: String,
+    priority: Int = LOWEST_PRIORITY,
+    groupId: String,
+  ) : Task(priority, groupId) {
+    override val uniqueId = "OBSERVE_METADATA_ENRICHMENT_$bookId"
+
+    override fun toString(): String = "ObserveMetadataEnrichment(bookId='$bookId', priority='$priority')"
+  }
+
+  class EnrichMetadata(
+    val bookId: String,
+    val processor: MetadataEnrichmentProcessor,
+    val revision: Long,
+    priority: Int = LOWEST_PRIORITY,
+  ) : Task(
+      priority,
+      if (processor == MetadataEnrichmentProcessor.AI_TITLE) "METADATA_ENRICHMENT_AI" else "METADATA_ENRICHMENT_TAGS_$bookId",
+    ) {
+    override val uniqueId = "ENRICH_METADATA_${bookId}_${processor.name}_$revision"
+
+    override fun toString(): String = "EnrichMetadata(bookId='$bookId', processor=$processor, revision=$revision, priority='$priority')"
   }
 }

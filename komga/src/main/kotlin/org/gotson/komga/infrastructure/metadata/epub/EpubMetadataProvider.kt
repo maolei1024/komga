@@ -17,11 +17,13 @@ import org.gotson.komga.infrastructure.metadata.SeriesMetadataFromBookProvider
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import org.jsoup.safety.Safelist
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Service
+@Order(0)
 class EpubMetadataProvider(
   private val isbnValidator: ISBNValidator,
 ) : BookMetadataProvider,

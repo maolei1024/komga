@@ -110,6 +110,12 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "settings-gorse" */ './views/GorseSettings.vue'),
         },
         {
+          path: '/settings/metadata-enrichment',
+          name: 'settings-metadata-enrichment',
+          beforeEnter: adminGuard,
+          component: () => import(/* webpackChunkName: "settings-metadata-enrichment" */ './views/MetadataEnrichmentSettings.vue'),
+        },
+        {
           path: '/settings/metrics',
           name: 'metrics',
           beforeEnter: adminGuard,

@@ -35,6 +35,7 @@ import komgaSettings from './plugins/komga-settings.plugin'
 import komgaFonts from './plugins/komga-fonts.plugin'
 import komgaGorse from './plugins/komga-gorse.plugin'
 import komgaDedup from './plugins/komga-dedup.plugin'
+import komgaMetadataEnrichment from './plugins/komga-metadata-enrichment.plugin'
 import vuetify from './plugins/vuetify'
 import logger from './plugins/logger.plugin'
 import './public-path'
@@ -86,6 +87,7 @@ Vue.use(komgaReleases, { http: Vue.prototype.$http })
 Vue.use(komgaFonts, { http: Vue.prototype.$http })
 Vue.use(komgaGorse, { http: Vue.prototype.$http })
 Vue.use(komgaDedup, {http: Vue.prototype.$http})
+Vue.use(komgaMetadataEnrichment, {http: Vue.prototype.$http})
 
 Vue.config.productionTip = false
 
