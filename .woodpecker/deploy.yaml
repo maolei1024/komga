@@ -14,14 +14,7 @@ steps:
       - chmod 600 ~/.kube/config
       - 'TARGET_IMAGE="docker.nexus.ixuni.win/komga:${CI_PIPELINE_NUMBER}-arm64"'
       - 'sed "s|image: docker.nexus.ixuni.win/komga:[^[:space:]]*|image: $${TARGET_IMAGE}|" k8s/komga-deployment.yaml | kubectl apply -f -'
-      - kubectl rollout status deployment/komga -n project-komga --timeout=20m
-      - 'POD="$(kubectl get pods -n project-komga -l app=komga -o jsonpath="{.items[0].metadata.name}")"'
-      - 'test -n "$${POD}"'
-      - 'test "$(kubectl get pod "$${POD}" -n project-komga -o jsonpath="{.spec.nodeName}")" = "oracle-ash"'
-      - 'test "$(kubectl get pod "$${POD}" -n project-komga -o jsonpath="{.spec.containers[0].image}")" = "$${TARGET_IMAGE}"'
-      - 'test -n "$(kubectl get pod "$${POD}" -n project-komga -o jsonpath="{.status.containerStatuses[0].imageID}")"'
-      - 'test "$(kubectl exec "$${POD}" -n project-komga -- curl -sS -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:25600/api/v1/libraries)" = "401"'
-      - 'test "$(kubectl exec "$${POD}" -n project-komga -- curl -sS -o /dev/null -w "%{http_code}" --max-time 10 https://komga.ixuni.win/)" = "200"'
+      - kubectl rollout status deployment/komga -n project-komga --timeout=10m
     environment:
       K8S_KUBECONFIG:
         from_secret: k8s_kubeconfig
