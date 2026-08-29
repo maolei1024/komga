@@ -1348,37 +1348,43 @@ class DedupDao(
       }
   }
 
+  @Transactional
   override fun enqueueGorseSync(
     seriesId: String,
     libraryId: String,
     desiredHidden: Boolean,
     now: LocalDateTime,
-  ): DedupGorseSync =
-    requireNotNull(
+  ): DedupGorseSync {
+    dslRW
+      .insertInto(
+        gorseSync,
+        gorseSync.SERIES_ID,
+        gorseSync.LIBRARY_ID,
+        gorseSync.DESIRED_HIDDEN,
+        gorseSync.STATE,
+        gorseSync.ATTEMPT_COUNT,
+        gorseSync.CREATED_DATE,
+        gorseSync.LAST_MODIFIED_DATE,
+      ).values(seriesId, libraryId, desiredHidden, "PENDING", 0, now, now)
+      .onDuplicateKeyUpdate()
+      .set(gorseSync.LIBRARY_ID, libraryId)
+      .set(gorseSync.DESIRED_HIDDEN, desiredHidden)
+      .set(gorseSync.STATE, "PENDING")
+      .set(gorseSync.REVISION, gorseSync.REVISION.plus(1L))
+      .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
+      .set(gorseSync.LAST_ERROR, null as String?)
+      .set(gorseSync.COMPLETED_DATE, null as LocalDateTime?)
+      .set(gorseSync.LAST_MODIFIED_DATE, now)
+      .execute()
+
+    return requireNotNull(
       dslRW
-        .insertInto(
-          gorseSync,
-          gorseSync.SERIES_ID,
-          gorseSync.LIBRARY_ID,
-          gorseSync.DESIRED_HIDDEN,
-          gorseSync.STATE,
-          gorseSync.ATTEMPT_COUNT,
-          gorseSync.CREATED_DATE,
-          gorseSync.LAST_MODIFIED_DATE,
-        ).values(seriesId, libraryId, desiredHidden, "PENDING", 0, now, now)
-        .onDuplicateKeyUpdate()
-        .set(gorseSync.LIBRARY_ID, libraryId)
-        .set(gorseSync.DESIRED_HIDDEN, desiredHidden)
-        .set(gorseSync.STATE, "PENDING")
-        .set(gorseSync.REVISION, gorseSync.REVISION.plus(1L))
-        .set(gorseSync.NEXT_RETRY_AT, null as LocalDateTime?)
-        .set(gorseSync.LAST_ERROR, null as String?)
-        .set(gorseSync.COMPLETED_DATE, null as LocalDateTime?)
-        .set(gorseSync.LAST_MODIFIED_DATE, now)
-        .returning()
+        .selectFrom(gorseSync)
+        .where(gorseSync.SERIES_ID.eq(seriesId))
         .fetchOne()
         ?.toGorseSync(),
-    ) { "Gorse desired-state upsert did not return Series $seriesId" }
+    ) { "Gorse desired-state upsert did not persist Series $seriesId" }
+  }
 
   @Transactional
   override fun findPendingGorseSync(now: LocalDateTime): DedupGorseSync? {

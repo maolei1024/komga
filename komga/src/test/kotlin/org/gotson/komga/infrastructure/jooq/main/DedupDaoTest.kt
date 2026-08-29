@@ -7,6 +7,7 @@ import org.gotson.komga.domain.model.DedupClusterStatus
 import org.gotson.komga.domain.model.DedupEvidenceMaturity
 import org.gotson.komga.domain.model.DedupFeature
 import org.gotson.komga.domain.model.DedupFeatureState
+import org.gotson.komga.domain.model.DedupGorseSync
 import org.gotson.komga.domain.model.DedupLibrarySettings
 import org.gotson.komga.domain.model.DedupPairDecision
 import org.gotson.komga.domain.model.DedupRelation
@@ -32,6 +33,9 @@ import java.net.URL
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -467,6 +471,33 @@ class DedupDaoTest(
 
     val latestClaim = dao.findPendingGorseSync(now.plusSeconds(2))!!
     assertThat(dao.completeGorseSync(series, false, latestClaim.revision, now.plusSeconds(3))).isTrue()
+  }
+
+  @Test
+  fun `concurrent Gorse desired state enqueues always return the persisted revision`() {
+    val series = "series-${UUID.randomUUID()}"
+    val taskCount = 32
+    val start = CountDownLatch(1)
+    val executor = Executors.newFixedThreadPool(8)
+
+    try {
+      val futures =
+        (0 until taskCount).map { offset ->
+          executor.submit<DedupGorseSync> {
+            start.await()
+            dao.enqueueGorseSync(series, library.id, false, LocalDateTime.now().plusNanos(offset.toLong()))
+          }
+        }
+      start.countDown()
+      val revisions = futures.map { it.get(30, TimeUnit.SECONDS).revision }
+
+      assertThat(revisions).doesNotHaveDuplicates()
+      assertThat(revisions).containsExactlyInAnyOrderElementsOf((1L..taskCount.toLong()).toList())
+      assertThat(dao.findGorseSync(series)?.revision).isEqualTo(taskCount.toLong())
+      assertThat(dao.completeGorseSync(series, false, taskCount.toLong(), LocalDateTime.now().plusSeconds(1))).isTrue()
+    } finally {
+      executor.shutdownNow()
+    }
   }
 
   @Test
