@@ -54,7 +54,7 @@ pipeline {
             steps {
                 script {
                     try {
-                        IMAGE_REPO = "${env.NEXUS_DOCKER_REGISTRY}/${env.APP_NAME}".toLowerCase()
+                        IMAGE_REPO = "${env.NEXUS_DOCKER_REGISTRY}/komga/server".toLowerCase()
                         TAG_BUILD_NUMBER = env.BUILD_NUMBER
                         IMAGE_WITH_TAG = "${IMAGE_REPO}:${TAG_BUILD_NUMBER}"
                         LATEST_IMAGE_WITH_TAG = "${IMAGE_REPO}:latest"
