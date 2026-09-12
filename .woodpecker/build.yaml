@@ -24,14 +24,13 @@ steps:
     password:
       from_secret: nexus_password
     labels:
-      org.opencontainers.image.source: ${CI_REPO_LINK}
-      org.opencontainers.image.revision: ${CI_COMMIT_SHA}
-      org.opencontainers.image.version: build-${CI_PIPELINE_NUMBER}
+    - org.opencontainers.image.source=https://github.com/maolei1024/komga
+    - org.opencontainers.image.revision=${CI_COMMIT_SHA}
+    - org.opencontainers.image.version=build-${CI_PIPELINE_NUMBER}
 - name: build-publish
   image: docker.io/library/python:3.12-alpine
   commands:
-  - python3 .ci/image_release.py promote komga/server candidate-${CI_PIPELINE_NUMBER}-arm64 build-${CI_PIPELINE_NUMBER}-arm64
-    arm64
+  - python3 .ci/image_release.py promote komga/server candidate-${CI_PIPELINE_NUMBER}-arm64 build-${CI_PIPELINE_NUMBER}-arm64 arm64
   environment:
     NEXUS_USERNAME:
       from_secret: nexus_username
