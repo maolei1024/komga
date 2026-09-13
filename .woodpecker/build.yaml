@@ -9,6 +9,11 @@ when:
 steps:
 - name: gradle-build
   image: docker.nexus.ixuni.win/baseimg/java21-node20
+  environment:
+    NPM_CONFIG_FETCH_RETRIES: '5'
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '10000'
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '60000'
+    NPM_CONFIG_FETCH_TIMEOUT: '300000'
   commands:
   - chmod +x ./gradlew
   - ./gradlew :komga:ktlintCheck :komga:test :komga:prepareThymeLeaf :komga:bootJar --no-daemon
