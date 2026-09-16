@@ -25,7 +25,7 @@ steps:
   - chmod 600 ~/.kube/config
   - TARGET_IMAGE="docker.nexus.ixuni.win/komga/server:build-${CI_PIPELINE_NUMBER}-arm64"
   - 'sed "s|image: docker.nexus.ixuni.win/komga/server:[^[:space:]]*|image: $${TARGET_IMAGE}|" k8s/komga-deployment.yaml |
-    kubectl apply -f -'
+    kubectl apply --validate=false --openapi-patch=false -f -'
   - kubectl rollout status deployment/komga -n project-komga --timeout=10m
   environment:
     K8S_KUBECONFIG:
