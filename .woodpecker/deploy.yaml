@@ -10,7 +10,7 @@ steps:
 - name: resolve-image
   image: docker.io/library/python:3.12-alpine
   commands:
-  - python3 .ci/image_release.py resolve komga/server build-${CI_PIPELINE_NUMBER}-arm64
+  - python3 .ci/image_release.py resolve komga/server build-${CI_PIPELINE_NUMBER}-arm64 --alias latest
   - python3 .ci/image_release.py pin-files
   environment:
     NEXUS_USERNAME:
@@ -23,7 +23,7 @@ steps:
   - mkdir -p ~/.kube
   - echo "$${K8S_KUBECONFIG}" > ~/.kube/config
   - chmod 600 ~/.kube/config
-  - TARGET_IMAGE="docker.nexus.ixuni.win/komga/server:build-${CI_PIPELINE_NUMBER}-arm64@$$(cat .ci/digests/komga__server)"
+  - TARGET_IMAGE="docker.nexus.ixuni.win/komga/server:build-${CI_PIPELINE_NUMBER}-arm64"
   - 'sed "s|image: docker.nexus.ixuni.win/komga/server:[^[:space:]]*|image: $${TARGET_IMAGE}|" k8s/komga-deployment.yaml |
     kubectl apply -f -'
   - kubectl rollout status deployment/komga -n project-komga --timeout=10m
@@ -31,9 +31,9 @@ steps:
     K8S_KUBECONFIG:
       from_secret: k8s_kubeconfig
   when:
-  - event: push
+  - event: [push, manual]
 - name: notify-success
-  image: docker.nexus.ixuni.win/mlntfy/ci:v12@sha256:7a629cffafa1efe242ffada2631177f61f88fd4b3a758a8b71056bc5253a18d5
+  image: docker.nexus.ixuni.win/mlntfy/ci:latest
   pull: true
   when:
   - status:
@@ -44,7 +44,7 @@ steps:
     status: success
     tags: ci,success,deploy,arm64
 - name: notify-failure
-  image: docker.nexus.ixuni.win/mlntfy/ci:v12@sha256:7a629cffafa1efe242ffada2631177f61f88fd4b3a758a8b71056bc5253a18d5
+  image: docker.nexus.ixuni.win/mlntfy/ci:latest
   pull: true
   when:
   - status:

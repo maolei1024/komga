@@ -29,7 +29,7 @@ spec:
       containers:
         - name: komga
           # Bootstrap image only; CI substitutes the exact <pipeline>-arm64 tag locally.
-          image: docker.nexus.ixuni.win/komga/server:60-arm64@sha256:f9a457d0e46667486134fd01bdf7299f36b7a2e107bdef696a3ab4d14de68e02
+          image: docker.nexus.ixuni.win/komga/server:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: SERVER_ADDRESS
