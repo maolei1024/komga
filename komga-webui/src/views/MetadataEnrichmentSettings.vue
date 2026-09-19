@@ -32,7 +32,7 @@
             <v-btn text :disabled="!settingsDirty || settingsSaving" @click="loadSettings">放弃修改</v-btn>
             <v-btn
               color="primary"
-              :disabled="!settingsDirty"
+              :disabled="!settingsDirty || !bucketsValid || settingsSaving"
               :loading="settingsSaving"
               @click="saveSettings"
             >保存配置</v-btn>
@@ -137,18 +137,28 @@
               <v-card outlined height="100%">
                 <v-card-title>分桶</v-card-title>
                 <v-card-subtitle>
-                  区间必须连续、不重叠，最后一档留空表示无上限。标签名保持现有兼容格式。
+                  区间自动衔接，可拆分或删除。新增、删除和边界调整会更新自动命名的标签；保存后生效。
                 </v-card-subtitle>
                 <v-card-text>
                   <div class="text-subtitle-2 mb-2">pageSize</div>
                   <bucket-editor
                     :buckets="settings.pageSizeBuckets"
+                    :start="1"
+                    prefix="pageSize_"
+                    :default-width="10"
+                    @update:buckets="settings.pageSizeBuckets = $event"
+                    @validity="pageBucketsValid = $event"
                     @changed="markSettingsDirty"
                   />
 
                   <div class="text-subtitle-2 mt-6 mb-2">tagSize</div>
                   <bucket-editor
                     :buckets="settings.tagSizeBuckets"
+                    :start="0"
+                    prefix="tagSize_"
+                    :default-width="5"
+                    @update:buckets="settings.tagSizeBuckets = $event"
+                    @validity="tagBucketsValid = $event"
                     @changed="markSettingsDirty"
                   />
                 </v-card-text>
@@ -507,6 +517,7 @@ import {
   MetadataEnrichmentStatusCountDto,
 } from '@/services/komga-metadata-enrichment.service'
 import BucketEditor from '@/components/MetadataEnrichmentBucketEditor.vue'
+import {validBuckets} from '@/functions/metadata-enrichment-buckets'
 
 const emptySettings = (): MetadataEnrichmentSettingsDto => ({
   aiEnabled: false,
@@ -534,6 +545,8 @@ export default Vue.extend({
     refreshing: false,
     settings: emptySettings(),
     settingsDirty: false,
+    pageBucketsValid: true,
+    tagBucketsValid: true,
     settingsSaving: false,
     newApiKey: '',
     clearApiKey: false,
@@ -574,6 +587,11 @@ export default Vue.extend({
     statuses: ['WAITING', 'RUNNING', 'FAILED', 'STALE', 'SUCCESS'] as MetadataEnrichmentStatus[],
   }),
   computed: {
+    bucketsValid(): boolean {
+      return this.pageBucketsValid && this.tagBucketsValid &&
+        validBuckets(this.settings.pageSizeBuckets, 1, 'pageSize_') &&
+        validBuckets(this.settings.tagSizeBuckets, 0, 'tagSize_')
+    },
     processorItems(): object[] {
       return this.processors.map(value => ({value, text: this.processorLabel(value)}))
     },
@@ -674,6 +692,8 @@ export default Vue.extend({
       try {
         const settings = await this.$komgaMetadataEnrichment.getSettings()
         this.settings = JSON.parse(JSON.stringify(settings))
+        this.pageBucketsValid = true
+        this.tagBucketsValid = true
         this.newApiKey = ''
         this.clearApiKey = false
         this.settingsDirty = false
@@ -696,6 +716,11 @@ export default Vue.extend({
       }))
     },
     async saveSettings() {
+      if (this.settingsSaving) return
+      if (!this.bucketsValid) {
+        this.notify('请先修正分桶错误，并完成结束值输入（按 Enter 或离开输入框）', 'error')
+        return
+      }
       this.settingsSaving = true
       try {
         const update: any = {

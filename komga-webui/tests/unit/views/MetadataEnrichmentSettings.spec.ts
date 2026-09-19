@@ -124,4 +124,58 @@ describe('MetadataEnrichmentSettings', () => {
 
     expect((view.vm as any).bulkDialog).toBe(false)
   })
+  it('blocks invalid arrays and uncommitted editor drafts before calling the API', async () => {
+    const view = await mount()
+    const vm = view.vm as any
+    await view.setData({settingsDirty: true, pageBucketsValid: false})
+    await vm.saveSettings()
+    expect(service.updateSettings).not.toHaveBeenCalled()
+    await view.setData({pageBucketsValid: true})
+    vm.settings.tagSizeBuckets[0].label = 'wrong'
+    await vm.saveSettings()
+    expect(service.updateSettings).not.toHaveBeenCalled()
+    vm.settings.tagSizeBuckets = []
+    await vm.saveSettings()
+    expect(service.updateSettings).not.toHaveBeenCalled()
+  })
+
+  it('accepts editor updates, saves only API fields and reloads saved buckets', async () => {
+    const view = await mount()
+    const vm = view.vm as any
+    const buckets = [
+      {min: 1, max: 5, label: 'pageSize_1-5'},
+      {min: 6, max: 10, label: 'pageSize_6-10'},
+      {min: 11, max: null, label: 'pageSize_10+'},
+    ]
+    const editor = view.findAll('bucket-editor-stub').at(0)
+    editor.vm.$emit('update:buckets', buckets)
+    editor.vm.$emit('changed')
+    editor.vm.$emit('validity', true)
+    await view.vm.$nextTick()
+    expect(vm.settingsDirty).toBe(true)
+    expect(vm.settings.pageSizeBuckets).toEqual(buckets)
+    service.getSettings.mockResolvedValueOnce({...settings, pageSizeBuckets: buckets})
+    await vm.saveSettings()
+    expect(service.updateSettings.mock.calls[0][0]).toHaveProperty('pageSizeBuckets', buckets)
+    expect(vm.settings.pageSizeBuckets).toEqual(buckets)
+    expect(vm.settingsDirty).toBe(false)
+  })
+
+  it('preserves drafts on save failure and discards them on explicit reload', async () => {
+    const view = await mount()
+    const vm = view.vm as any
+    vm.settings.pageSizeBuckets[0].label = 'pageSize_custom'
+    await view.setData({settingsDirty: true})
+    service.updateSettings.mockRejectedValueOnce(new Error('offline'))
+    await vm.saveSettings()
+    expect(vm.settings.pageSizeBuckets[0].label).toBe('pageSize_custom')
+    expect(vm.settingsDirty).toBe(true)
+    expect(vm.settingsSaving).toBe(false)
+    await view.setData({pageBucketsValid: false})
+    await vm.loadSettings()
+    expect(vm.settings.pageSizeBuckets).toEqual(settings.pageSizeBuckets)
+    expect(vm.pageBucketsValid).toBe(true)
+    expect(vm.settingsDirty).toBe(false)
+  })
+
 })
