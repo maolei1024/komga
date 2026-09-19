@@ -5,19 +5,26 @@ import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.spyk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.DedupDeletionResultCode
 import org.gotson.komga.infrastructure.hash.Hasher
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.DosFileAttributeView
 import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -134,14 +141,15 @@ class DedupPhysicalBookDeletionLifecycleTest {
   }
 
   @Test
-  fun `a same-size fileKey replacement during full hash capture is rejected`() {
+  fun `a same-size replacement during full hash capture is rejected`() {
     val cbz = Files.write(directory.resolve("replaced-during-hash.cbz"), "first".toByteArray())
     val book = bookFor(cbz)
     val mutatingHasher = mockk<Hasher>()
     every { mutatingHasher.computeHash(cbz) } answers {
+      val hash = hasher.computeHash(cbz)
       val replacement = Files.write(directory.resolve("replacement.cbz"), "other".toByteArray())
       Files.move(replacement, cbz, StandardCopyOption.REPLACE_EXISTING)
-      "unstable-hash"
+      hash
     }
 
     assertThatThrownBy { DedupPhysicalBookDeletionLifecycle(mutatingHasher, bookLifecycle).captureStrongIdentity(book) }
@@ -178,6 +186,7 @@ class DedupPhysicalBookDeletionLifecycleTest {
     val cbz = Files.write(directory.resolve("readonly.cbz"), "archive".toByteArray())
     val book = bookFor(cbz)
     val expected = lifecycle.captureStrongIdentity(book)
+    assumeTrue(Files.getFileStore(cbz).supportsFileAttributeView(PosixFileAttributeView::class.java))
     val original = Files.getPosixFilePermissions(cbz)
     Files.setPosixFilePermissions(cbz, setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.GROUP_READ, PosixFilePermission.OTHERS_READ))
     try {
@@ -189,6 +198,92 @@ class DedupPhysicalBookDeletionLifecycleTest {
     } finally {
       Files.setPosixFilePermissions(cbz, original)
     }
+  }
+
+  @Test
+  @EnabledOnOs(OS.WINDOWS)
+  fun `a DOS read-only archive is not unlinked`() {
+    val cbz = Files.write(directory.resolve("dos-readonly.cbz"), "archive".toByteArray())
+    val book = bookFor(cbz)
+    val expected = lifecycle.captureStrongIdentity(book)
+    val attributes = Files.getFileAttributeView(cbz, DosFileAttributeView::class.java)
+    val original = attributes.readAttributes().isReadOnly
+    attributes.setReadOnly(true)
+    try {
+      assertThat(lifecycle.precheck(book).status).isEqualTo(DedupFilePrecheckStatus.UNAVAILABLE)
+      assertThat(lifecycle.deleteVerifiedBook(book, expected).code).isEqualTo(DedupDeletionResultCode.NOT_WRITABLE)
+      assertThat(cbz).exists()
+      verify(exactly = 0) { bookLifecycle.softDeleteMany(any()) }
+    } finally {
+      attributes.setReadOnly(original)
+    }
+  }
+
+  @Test
+  fun `missing file keys require matching hashes and still allow mtime drift`() {
+    val cbz = Files.write(directory.resolve("no-key-stable.cbz"), "stable archive".toByteArray())
+    val book = bookFor(cbz)
+    val driftingHasher = mockk<Hasher>()
+    every { driftingHasher.computeHash(cbz) } answers {
+      Files.setLastModifiedTime(cbz, FileTime.fromMillis(System.currentTimeMillis() + 60_000))
+      hasher.computeHash(cbz)
+    }
+    val withoutKeys = withoutFileKeys(driftingHasher)
+
+    assertThat(withoutKeys.captureStrongIdentity(book).archiveHash).isEqualTo(hasher.computeHash(cbz))
+    verify(exactly = 2) { driftingHasher.computeHash(cbz) }
+    every { bookLifecycle.softDeleteMany(listOf(book)) } just Runs
+    val expected = withoutKeys.captureStrongIdentity(book)
+    assertThat(withoutKeys.deleteVerifiedBook(book, expected).code).isEqualTo(DedupDeletionResultCode.DELETED)
+  }
+
+  @Test
+  fun `same-size replacement without file keys is rejected and never deleted`() {
+    val cbz = Files.write(directory.resolve("no-key-replaced.cbz"), "first".toByteArray())
+    val book = bookFor(cbz)
+    val expected = lifecycle.captureStrongIdentity(book)
+    val replacingHasher = mockk<Hasher>()
+    every { replacingHasher.computeHash(cbz) } answers {
+      val hash = hasher.computeHash(cbz)
+      val replacement = Files.write(directory.resolve("no-key-replacement.cbz"), "other".toByteArray())
+      Files.move(replacement, cbz, StandardCopyOption.REPLACE_EXISTING)
+      hash
+    }
+    val withoutKeys = withoutFileKeys(replacingHasher)
+
+    val result = withoutKeys.deleteVerifiedBook(book, expected)
+
+    assertThat(result.code).isEqualTo(DedupDeletionResultCode.GENERATION_MISMATCH)
+    assertThat(result.detail).contains("changed while its full archive hash")
+    assertThat(cbz).exists()
+    verify(exactly = 2) { replacingHasher.computeHash(cbz) }
+    verify(exactly = 0) { bookLifecycle.softDeleteMany(any()) }
+  }
+
+  @Test
+  fun `size changes during the fallback hash are rejected even when hashes match`() {
+    val cbz = Files.write(directory.resolve("no-key-size-change.cbz"), "first".toByteArray())
+    val book = bookFor(cbz)
+    val changingHasher = mockk<Hasher>()
+    var reads = 0
+    every { changingHasher.computeHash(cbz) } answers {
+      if (++reads == 2) Files.write(cbz, "changed during second read".toByteArray())
+      "same-hash"
+    }
+
+    assertThatThrownBy { withoutFileKeys(changingHasher).captureStrongIdentity(book) }
+      .hasMessageContaining("changed while its full archive hash")
+  }
+
+  private fun withoutFileKeys(testHasher: Hasher): DedupPhysicalBookDeletionLifecycle {
+    val subject = spyk(DedupPhysicalBookDeletionLifecycle(testHasher, bookLifecycle))
+    every { subject.readStableAttributes(any()) } answers {
+      val attributes = callOriginal() as BasicFileAttributes
+      object : BasicFileAttributes by attributes {
+        override fun fileKey(): Any? = null
+      }
+    }
+    return subject
   }
 
   private fun bookFor(path: Path): Book {

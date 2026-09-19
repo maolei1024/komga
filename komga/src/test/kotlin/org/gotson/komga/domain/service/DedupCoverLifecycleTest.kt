@@ -23,10 +23,14 @@ import org.gotson.komga.infrastructure.dedup.CoverNeighbor
 import org.gotson.komga.infrastructure.dedup.CoverPerceptualHasher
 import org.gotson.komga.infrastructure.dedup.CoverSimilarityIndex
 import org.junit.jupiter.api.Test
-import java.net.URL
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import java.time.LocalDateTime
 
 class DedupCoverLifecycleTest {
+  @TempDir
+  lateinit var directory: Path
+
   @Test
   fun `Book audit time is ignored while an unhashed file timestamp changes content generation`() {
     val books = mockk<BookRepository>()
@@ -36,7 +40,7 @@ class DedupCoverLifecycleTest {
     var book =
       Book(
         name = "book.cbz",
-        url = URL("file:/tmp/book.cbz"),
+        url = directory.resolve("book.cbz").toUri().toURL(),
         fileLastModified = LocalDateTime.MIN,
         fileSize = 42,
         id = "book",
@@ -74,7 +78,12 @@ class DedupCoverLifecycleTest {
     book = book.copy(fileLastModified = LocalDateTime.MIN)
 
     feature = feature("book").copy(pageState = DedupFeatureState.READY)
-    lifecycle.persistArchiveIdentity("book", DedupStrongFileIdentity("/tmp/book.cbz", 42, "archive-hash"))
+    val archivePath =
+      book.path
+        .toAbsolutePath()
+        .normalize()
+        .toString()
+    lifecycle.persistArchiveIdentity("book", DedupStrongFileIdentity(archivePath, 42, "archive-hash"))
     assertThat(feature!!.sourceContentGeneration).isEqualTo("dedup-v2:42:${LocalDateTime.MIN}:archive-hash")
     assertThat(feature!!.pageState).isEqualTo(DedupFeatureState.WAITING)
     assertThat(feature!!.archiveHashDate).isNotNull()
@@ -94,7 +103,7 @@ class DedupCoverLifecycleTest {
 
     book = book.copy(fileHash = "")
     listOf(
-      readyFeature.copy(archiveHashPath = "/tmp/moved.cbz"),
+      readyFeature.copy(archiveHashPath = book.path.resolveSibling("moved.cbz").toString()),
       readyFeature.copy(archiveHashSize = 43),
       readyFeature.copy(archiveHashSchemaVersion = DEDUP_ARCHIVE_HASH_SCHEMA_VERSION + 1),
     ).forEach { staleFeature ->

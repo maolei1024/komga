@@ -57,6 +57,14 @@ class DedupPhysicalBookDeletionLifecycle(
     val hash = hasher.computeHash(path)
     val after = readStableAttributes(path)
     check(before.sameFileVersion(after)) { "Book changed while its full archive hash was being computed" }
+    if (before.fileKey() == null) {
+      // Windows and some remote file systems do not expose a file key. Equal sizes
+      // alone cannot detect replacement during hashing; require a second content read.
+      // Do not compare mtime: rclone can change it without changing archive contents.
+      val verifiedHash = hasher.computeHash(path)
+      val verified = readStableAttributes(path)
+      check(hash == verifiedHash && after.sameFileVersion(verified)) { "Book changed while its full archive hash was being computed" }
+    }
     val identity = DedupStrongFileIdentity(path.toString(), after.size(), hash)
     if (requireDatabaseStat) {
       check(book.fileSize == identity.size) { "Live file size no longer matches Komga" }
@@ -139,7 +147,7 @@ class DedupPhysicalBookDeletionLifecycle(
     }
   }
 
-  private fun readStableAttributes(path: Path): BasicFileAttributes {
+  internal fun readStableAttributes(path: Path): BasicFileAttributes {
     check(path.isCbz()) { "Expected path is not a CBZ archive" }
     check(Files.isRegularFile(path)) { "Expected path is not a regular file" }
     return Files.readAttributes(path, BasicFileAttributes::class.java)
