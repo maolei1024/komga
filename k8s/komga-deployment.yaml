@@ -68,7 +68,7 @@ spec:
       volumes:
         - name: config
           hostPath:
-            path: /opt/1panel/apps/komga/komga/config
+            path: /srv/k3s-local/project-komga/komga/config
             type: Directory
         - name: data
           hostPath:
