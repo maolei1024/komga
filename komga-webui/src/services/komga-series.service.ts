@@ -76,6 +76,21 @@ export default class KomgaSeriesService {
     }
   }
 
+  async getRecommendedSeries(pageRequest?: PageRequest): Promise<Page<SeriesDto>> {
+    try {
+      return (await this.http.get(`${API_SERIES}/recommended`, {
+        params: {...pageRequest},
+        paramsSerializer: params => qs.stringify(params, {indices: false}),
+      })).data
+    } catch (e) {
+      let msg = 'An error occurred while trying to retrieve recommended series'
+      if (e.response.data.message) {
+        msg += `: ${e.response.data.message}`
+      }
+      throw new Error(msg)
+    }
+  }
+
   async getOneSeries(seriesId: string): Promise<SeriesDto> {
     try {
       return (await this.http.get(`${API_SERIES}/${seriesId}`)).data

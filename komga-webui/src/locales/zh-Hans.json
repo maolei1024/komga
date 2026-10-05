@@ -287,6 +287,7 @@
   },
   "dashboard": {
     "keep_reading": "继续阅读",
+    "gorse_recommended_series": "Gorse 推荐系列",
     "on_deck": "导航",
     "recently_added_books": "最近添加的书籍",
     "recently_added_series": "最近添加的系列",

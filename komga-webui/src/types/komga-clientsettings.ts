@@ -131,6 +131,7 @@ export interface ClientSettingsRecommendedViewSection {
 
 export enum RecommendedViewSection {
   KEEP_READING = 'KEEP_READING',
+  GORSE_RECOMMENDED_SERIES = 'GORSE_RECOMMENDED_SERIES',
   ON_DECK = 'ON_DECK',
   RECENTLY_RELEASED_BOOKS = 'RECENTLY_RELEASED_BOOKS',
   RECENTLY_ADDED_BOOKS = 'RECENTLY_ADDED_BOOKS',
@@ -142,6 +143,7 @@ export enum RecommendedViewSection {
 export const RECOMMENDED_DEFAULT = {
   sections: [
     {section: RecommendedViewSection.KEEP_READING},
+    {section: RecommendedViewSection.GORSE_RECOMMENDED_SERIES},
     {section: RecommendedViewSection.ON_DECK},
     {section: RecommendedViewSection.RECENTLY_RELEASED_BOOKS},
     {section: RecommendedViewSection.RECENTLY_ADDED_BOOKS},

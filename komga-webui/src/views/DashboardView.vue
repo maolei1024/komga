@@ -196,6 +196,7 @@ export default Vue.extend({
       modalEditRecommended: false,
       loaderRecentlyAddedSeries: undefined as PageLoader<SeriesDto> | undefined,
       loaderRecentlyUpdatedSeries: undefined as PageLoader<SeriesDto> | undefined,
+      loaderGorseRecommendedSeries: undefined as PageLoader<SeriesDto> | undefined,
       loaderRecentlyAddedBooks: undefined as PageLoader<BookDto> | undefined,
       loaderKeepReadingBooks: undefined as PageLoader<BookDto> | undefined,
       loaderOnDeckBooks: undefined as PageLoader<BookDto> | undefined,
@@ -306,6 +307,7 @@ export default Vue.extend({
     allEmpty(): boolean {
       return (this.loaderRecentlyAddedSeries == undefined || this.loaderRecentlyAddedSeries?.items.length === 0) &&
         (this.loaderRecentlyUpdatedSeries == undefined || this.loaderRecentlyUpdatedSeries?.items.length === 0) &&
+        (this.loaderGorseRecommendedSeries == undefined || this.loaderGorseRecommendedSeries?.items.length === 0) &&
         (this.loaderRecentlyAddedBooks == undefined || this.loaderRecentlyAddedBooks?.items.length === 0) &&
         (this.loaderKeepReadingBooks == undefined || this.loaderKeepReadingBooks?.items.length === 0) &&
         (this.loaderOnDeckBooks == undefined || this.loaderOnDeckBooks?.items.length === 0) &&
@@ -337,6 +339,12 @@ export default Vue.extend({
             type: SectionType.BOOK,
             value: section,
             itemContext: [ItemContext.SHOW_SERIES],
+          }
+        case RecommendedViewSection.GORSE_RECOMMENDED_SERIES:
+          return {
+            loader: this.loaderGorseRecommendedSeries,
+            type: SectionType.SERIES,
+            value: section,
           }
         case RecommendedViewSection.ON_DECK:
           return {
@@ -408,6 +416,7 @@ export default Vue.extend({
     readProgressSeriesChanged(event: ReadProgressSeriesSseDto) {
       if (this.loaderRecentlyUpdatedSeries?.items.some(s => s.id === event.seriesId)) this.reload()
       else if (this.loaderRecentlyAddedSeries?.items.some(s => s.id === event.seriesId)) this.reload()
+      else if (this.loaderGorseRecommendedSeries?.items.some(s => s.id === event.seriesId)) this.reload()
     },
     reload: throttle(function (this: any) {
       this.loadAll(true)
@@ -425,6 +434,10 @@ export default Vue.extend({
         (pageable: PageRequest) => this.$komgaBooks.getBooksList({
           condition: new SearchConditionAllOfBook([...baseBookConditions, new SearchConditionReadStatus(new SearchOperatorIs(ReadStatus.IN_PROGRESS))]),
         } as BookSearch, pageable),
+      ) : undefined
+      this.loaderGorseRecommendedSeries = this.hasSection(RecommendedViewSection.GORSE_RECOMMENDED_SERIES) ? new PageLoader<SeriesDto>(
+        {},
+        (pageable: PageRequest) => this.$komgaSeries.getRecommendedSeries(pageable),
       ) : undefined
       this.loaderOnDeckBooks = this.hasSection(RecommendedViewSection.ON_DECK) ? new PageLoader<BookDto>(
         {},
@@ -467,6 +480,7 @@ export default Vue.extend({
       if (reload) {
         Promise.all([
           this.loaderKeepReadingBooks?.reload(),
+          this.loaderGorseRecommendedSeries?.reload(),
           this.loaderOnDeckBooks?.reload(),
           this.loaderRecentlyReleasedBooks?.reload(),
           this.loaderRecentlyAddedBooks?.reload(),
@@ -479,6 +493,7 @@ export default Vue.extend({
       } else {
         Promise.all([
           this.loaderKeepReadingBooks?.loadNext(),
+          this.loaderGorseRecommendedSeries?.loadNext(),
           this.loaderOnDeckBooks?.loadNext(),
           this.loaderRecentlyReleasedBooks?.loadNext(),
           this.loaderRecentlyAddedBooks?.loadNext(),
