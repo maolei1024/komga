@@ -32,6 +32,9 @@ class MetadataEnrichmentDictionaryService(
   @Volatile
   private var translations: Map<String, String> = emptyMap()
 
+  @Volatile
+  private var dictionaryHash: String = ""
+
   @PostConstruct
   fun initialize() {
     directory.createDirectories()
@@ -46,12 +49,15 @@ class MetadataEnrichmentDictionaryService(
 
   @Synchronized
   fun reload() {
-    baseEntries = readAndValidate(basePath.readBytes(), requireNonEmpty = true)
-    overrideEntries = readAndValidate(overridesPath.readBytes(), requireNonEmpty = false)
+    val baseBytes = basePath.readBytes()
+    val overrideBytes = overridesPath.readBytes()
+    baseEntries = readAndValidate(baseBytes, requireNonEmpty = true)
+    overrideEntries = readAndValidate(overrideBytes, requireNonEmpty = false)
     val merged = linkedMapOf<String, String>()
     baseEntries.forEach { entry -> merged[entry.key()] = entry.v.trim() }
     overrideEntries.forEach { entry -> merged[entry.key()] = entry.v.trim() }
     translations = merged
+    dictionaryHash = sha256(baseBytes + overrideBytes)
   }
 
   fun lookup(
@@ -63,7 +69,7 @@ class MetadataEnrichmentDictionaryService(
 
   fun overrides(): List<EhtagsDictionaryEntry> = overrideEntries.sortedWith(compareBy({ it.t }, { it.k.lowercase() }))
 
-  fun fingerprint(): String = sha256(basePath.readBytes() + overridesPath.readBytes())
+  fun fingerprint(): String = dictionaryHash
 
   @Synchronized
   fun replaceBase(bytes: ByteArray) {
@@ -144,6 +150,6 @@ class MetadataEnrichmentDictionaryService(
     // The bundled e-hentai dictionary also contains parody entries. They are
     // retained for file compatibility even though enrichment only indexes the
     // four self-nhentai source tag types below.
-    private val SUPPORTED_TYPES = setOf("tag", "character", "artist", "group", "parody")
+    private val SUPPORTED_TYPES = setOf("tag", "character", "artist", "group", "parody", "genre")
   }
 }

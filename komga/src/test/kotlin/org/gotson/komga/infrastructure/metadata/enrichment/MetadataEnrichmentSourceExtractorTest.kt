@@ -1,10 +1,8 @@
 package org.gotson.komga.infrastructure.metadata.enrichment
 
-import com.fasterxml.jackson.dataformat.xml.XmlMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.domain.model.BookWithMedia
 import org.gotson.komga.domain.model.Media
@@ -15,46 +13,67 @@ import org.junit.jupiter.api.Test
 
 class MetadataEnrichmentSourceExtractorTest {
   private val analyzer = mockk<BookAnalyzer>()
-  private val extractor = MetadataEnrichmentSourceExtractor(analyzer, jacksonObjectMapper(), XmlMapper())
+  private val extractor = MetadataEnrichmentSourceExtractor(analyzer, jacksonObjectMapper())
 
   @Test
-  fun `valid self-nhentai source uses media page count and deduplicated semantic tags`() {
-    val book = compatibleBook(pageCount = 42)
+  fun `JSON works without XML or a supported source URL and counts only content tags`() {
+    val book = book("metadata.json")
     every { analyzer.getFileContent(book, "metadata.json") } returns
-      """{"URL":"https://nhentai.net/g/123/","tag":["one","ONE","unknown"],"character":["Alice"],"artist":["Artist"],"group":["Circle"]}""".toByteArray()
-    every { analyzer.getFileContent(book, "ComicInfo.xml") } returns
-      """<ComicInfo><Title>Raw title</Title><Series>Raw series</Series><Summary>Raw summary</Summary><Tags>old</Tags></ComicInfo>""".toByteArray()
-
-    val source = extractor.extract(book)
-
-    assertThat(source).isNotNull
-    assertThat(source!!.galleryId).isEqualTo(123)
+      """{"URL":"https://example.com/item","tag":["one","ONE","pagesize_10","unknown"],"artist":["A","B"],"group":["Circle"]}""".toByteArray()
+    val source = extractor.extract(book)!!
     assertThat(source.pageCount).isEqualTo(42)
-    assertThat(source.summary).isEqualTo("Raw summary")
-    assertThat(source.legacyProcessed).isFalse()
-    assertThat(source.tags.map { it.key })
-      .containsExactly("tag:one", "character:alice", "artist:artist", "group:circle")
+    assertThat(source.contentTagCount).isEqualTo(1)
+    assertThat(source.tags.map { it.key }).containsExactly("tag:one", "artist:a", "artist:b", "group:circle")
   }
 
   @Test
-  fun `non-nhentai URL is incompatible and does not read ComicInfo`() {
-    val book = compatibleBook()
-    every { analyzer.getFileContent(book, "metadata.json") } returns
-      """{"URL":"https://example.com/g/123","tag":["one"]}""".toByteArray()
-
-    assertThat(extractor.extract(book)).isNull()
-    verify(exactly = 0) { analyzer.getFileContent(book, "ComicInfo.xml") }
+  fun `XML works independently and separates creators and characters`() {
+    val book = book("ComicInfo.xml")
+    every { analyzer.getFileContent(book, "ComicInfo.xml") } returns
+      """<ComicInfo><Writer>A &amp; B</Writer><Groups>C</Groups><Characters>D</Characters><Tags>one,two,tagSize_0-5</Tags></ComicInfo>""".toByteArray()
+    val source = extractor.extract(book)!!
+    assertThat(source.contentTagCount).isEqualTo(2)
+    assertThat(source.tags.map { it.key }).contains("artist:a", "artist:b", "group:c", "character:d")
   }
 
-  private fun compatibleBook(pageCount: Int = 1): BookWithMedia =
+  @Test
+  fun `missing metadata is unknown rather than zero and explicit empty tags are zero`() {
+    assertThat(extractor.extract(book())!!.contentTagCount).isNull()
+    val book = book("metadata.json")
+    every { analyzer.getFileContent(book, "metadata.json") } returns """{"tag":[]}""".toByteArray()
+    assertThat(extractor.extract(book)!!.contentTagCount).isZero()
+  }
+
+  @Test
+  fun `broken JSON falls back to valid XML`() {
+    val book = book("metadata.json", "ComicInfo.xml")
+    every { analyzer.getFileContent(book, "metadata.json") } returns "{".toByteArray()
+    every { analyzer.getFileContent(book, "ComicInfo.xml") } returns """<ComicInfo><Tags>one</Tags></ComicInfo>""".toByteArray()
+    assertThat(extractor.extract(book)!!.contentTagCount).isEqualTo(1)
+  }
+
+  @Test
+  fun `JSON categories take precedence while XML supplies missing namespaces`() {
+    val book = book("metadata.json", "ComicInfo.xml")
+    every { analyzer.getFileContent(book, "metadata.json") } returns
+      """{"tag":["Raw"],"artist":["Unknown","First","Second"],"category":["Manga"]}""".toByteArray()
+    every { analyzer.getFileContent(book, "ComicInfo.xml") } returns
+      """<ComicInfo><Tags>Translated,artist_legacy</Tags><Writer>Combined &amp; Old</Writer><Characters>Character</Characters></ComicInfo>""".toByteArray()
+    val source = extractor.extract(book)!!
+    assertThat(source.tags.map { it.key }).containsExactly("tag:raw", "artist:first", "artist:second", "character:character", "genre:manga")
+    assertThat(source.contentTagCount).isEqualTo(1)
+  }
+
+  @Test
+  fun `both damaged metadata inputs leave the content count unknown`() {
+    val book = book("metadata.json", "ComicInfo.xml")
+    every { analyzer.getFileContent(book, any()) } returns "broken".toByteArray()
+    assertThat(extractor.extract(book)!!.contentTagCount).isNull()
+  }
+
+  private fun book(vararg files: String) =
     BookWithMedia(
       makeBook("book.cbz", id = "book"),
-      Media(
-        status = Media.Status.READY,
-        mediaType = "application/zip",
-        pageCount = pageCount,
-        files = listOf(MediaFile("metadata.json"), MediaFile("ComicInfo.xml")),
-        bookId = "book",
-      ),
+      Media(bookId = "book", pageCount = 42, files = files.map { MediaFile(it) }),
     )
 }

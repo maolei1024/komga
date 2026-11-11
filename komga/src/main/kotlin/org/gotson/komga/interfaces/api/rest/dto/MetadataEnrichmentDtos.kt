@@ -60,6 +60,8 @@ data class MetadataEnrichmentStateDto(
   val startedDate: LocalDateTime?,
   val completedDate: LocalDateTime?,
   val lastModifiedDate: LocalDateTime,
+  val contentTagCount: Int? = null,
+  val unclassifiedTags: Set<String> = emptySet(),
 )
 
 data class MetadataEnrichmentRunRequestDto(

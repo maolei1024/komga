@@ -1,6 +1,7 @@
 package org.gotson.komga.infrastructure.metadata.enrichment
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.gotson.komga.domain.model.Author
 import org.gotson.komga.domain.model.BookMetadataPatch
 import org.gotson.komga.domain.model.BookMetadataPatchCapability
 import org.gotson.komga.domain.model.BookWithMedia
@@ -23,19 +24,29 @@ class MetadataEnrichmentProvider(
   private val objectMapper: ObjectMapper,
 ) : BookMetadataProvider,
   SeriesMetadataFromBookProvider {
-  override val capabilities = setOf(BookMetadataPatchCapability.TITLE, BookMetadataPatchCapability.TAGS)
+  override val capabilities = setOf(BookMetadataPatchCapability.TITLE, BookMetadataPatchCapability.TAGS, BookMetadataPatchCapability.AUTHORS)
   override val supportsAppendVolume = false
 
   override fun getBookMetadataFromBook(book: BookWithMedia): BookMetadataPatch? {
     val states = stateRepository.findAllByBookId(book.book.id).associateBy { it.processor }
-    if (states.isEmpty()) return null
-
     val title =
       states[MetadataEnrichmentProcessor.AI_TITLE]?.resultJson?.let {
-        runCatching { objectMapper.readValue(it, MetadataEnrichmentAiResult::class.java).title }.getOrNull()
+        objectMapper.readValue(it, MetadataEnrichmentAiResult::class.java).title
       }
-    val tags = buildTags(states) ?: return if (title != null) BookMetadataPatch(title = title) else null
-    return BookMetadataPatch(title = title, tags = tags)
+    val state = states[MetadataEnrichmentProcessor.METADATA] ?: return title?.let { BookMetadataPatch(title = it) }
+    val source = objectMapper.readValue(state.inputJson, MetadataEnrichmentSource::class.java)
+    val result =
+      state.resultJson?.takeIf { state.resultRevision == state.revision }?.let {
+        objectMapper.readValue(it, MetadataEnrichmentTagResult::class.java)
+      }
+    val tags =
+      source.tags
+        .filter { it.normalizedType == "tag" }
+        .map {
+          result?.mapping?.get(it.key) ?: it.value
+        }.toSet() + source.unclassifiedTags
+    val authors = source.tags.filter { it.normalizedType == "artist" }.map { Author(result?.mapping?.get(it.key) ?: it.value, "writer") }
+    return BookMetadataPatch(title = title, tags = tags, authors = authors.takeIf { it.isNotEmpty() })
   }
 
   override fun getSeriesMetadataFromBook(
@@ -43,7 +54,7 @@ class MetadataEnrichmentProvider(
     appendVolumeToTitle: Boolean,
   ): SeriesMetadataPatch? {
     val state = stateRepository.find(book.book.id, MetadataEnrichmentProcessor.AI_TITLE) ?: return null
-    val title = state.resultJson?.let { runCatching { objectMapper.readValue(it, MetadataEnrichmentAiResult::class.java).title }.getOrNull() } ?: return null
+    val title = state.resultJson?.let { objectMapper.readValue(it, MetadataEnrichmentAiResult::class.java).title } ?: return null
     if (bookRepository.findAllBySeriesId(book.book.seriesId).count { it.deletedDate == null } != 1) return null
     return SeriesMetadataPatch(
       status = null,
@@ -64,26 +75,4 @@ class MetadataEnrichmentProvider(
     library: Library,
     target: MetadataPatchTarget,
   ): Boolean = target == MetadataPatchTarget.BOOK || target == MetadataPatchTarget.SERIES
-
-  private fun buildTags(states: Map<MetadataEnrichmentProcessor, org.gotson.komga.domain.model.MetadataEnrichmentState>): Set<String>? {
-    val translationState = states[MetadataEnrichmentProcessor.TAG_TRANSLATION] ?: return null
-    val source = runCatching { objectMapper.readValue(translationState.inputJson, MetadataEnrichmentSource::class.java) }.getOrNull() ?: return null
-    val translation = translationState.resultJson?.let { runCatching { objectMapper.readValue(it, MetadataEnrichmentTagResult::class.java) }.getOrNull() }
-
-    val tags = linkedSetOf<String>()
-    if (translation != null && translationState.resultRevision == translationState.revision && translation.exactTags.isNotEmpty()) {
-      tags += translation.exactTags
-    } else {
-      source.tags.forEach { tag ->
-        tags += translation?.mapping?.get(tag.key) ?: if (tag.normalizedType == "tag") tag.value else "${tag.normalizedType}_${tag.value}"
-      }
-    }
-    states[MetadataEnrichmentProcessor.PAGE_SIZE]?.resultJson?.let {
-      runCatching { objectMapper.readValue(it, MetadataEnrichmentBucketResult::class.java).label }.getOrNull()?.let(tags::add)
-    }
-    states[MetadataEnrichmentProcessor.TAG_SIZE]?.resultJson?.let {
-      runCatching { objectMapper.readValue(it, MetadataEnrichmentBucketResult::class.java).label }.getOrNull()?.let(tags::add)
-    }
-    return tags
-  }
 }

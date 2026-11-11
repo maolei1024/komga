@@ -9,12 +9,10 @@ import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThatCode
 import org.gotson.komga.domain.model.DomainEvent
 import org.gotson.komga.domain.model.makeBook
-import org.gotson.komga.domain.persistence.BookMetadataAggregationRepository
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.KomgaUserRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
-import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -26,8 +24,6 @@ class GorseEventListenerTest {
     GorseEventListener(
       mockk<GorseClient>(relaxed = true),
       settings,
-      mockk<SeriesMetadataRepository>(relaxed = true),
-      mockk<BookMetadataAggregationRepository>(relaxed = true),
       mockk<SeriesRepository>(relaxed = true),
       mockk<BookRepository>(relaxed = true),
       mockk<KomgaUserRepository>(relaxed = true),

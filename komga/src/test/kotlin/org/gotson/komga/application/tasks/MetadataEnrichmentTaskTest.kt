@@ -11,9 +11,9 @@ class MetadataEnrichmentTaskTest {
   fun `AI tasks share one global group while tag writers serialize per book`() {
     val aiOne = Task.EnrichMetadata("book-1", MetadataEnrichmentProcessor.AI_TITLE, 1)
     val aiTwo = Task.EnrichMetadata("book-2", MetadataEnrichmentProcessor.AI_TITLE, 1)
-    val translation = Task.EnrichMetadata("book-1", MetadataEnrichmentProcessor.TAG_TRANSLATION, 1)
-    val pageSize = Task.EnrichMetadata("book-1", MetadataEnrichmentProcessor.PAGE_SIZE, 1)
-    val otherBook = Task.EnrichMetadata("book-2", MetadataEnrichmentProcessor.TAG_SIZE, 1)
+    val translation = Task.EnrichMetadata("book-1", MetadataEnrichmentProcessor.METADATA, 1)
+    val pageSize = Task.EnrichMetadata("book-1", MetadataEnrichmentProcessor.METADATA, 2)
+    val otherBook = Task.EnrichMetadata("book-2", MetadataEnrichmentProcessor.METADATA, 1)
 
     assertThat(aiOne.groupId).isEqualTo(aiTwo.groupId).isEqualTo("METADATA_ENRICHMENT_AI")
     assertThat(translation.groupId).isEqualTo(pageSize.groupId)
@@ -22,8 +22,8 @@ class MetadataEnrichmentTaskTest {
 
   @Test
   fun `task identity contains revision so a newer trigger is not lost`() {
-    val old = Task.EnrichMetadata("book", MetadataEnrichmentProcessor.TAG_TRANSLATION, 1)
-    val newer = Task.EnrichMetadata("book", MetadataEnrichmentProcessor.TAG_TRANSLATION, 2)
+    val old = Task.EnrichMetadata("book", MetadataEnrichmentProcessor.METADATA, 1)
+    val newer = Task.EnrichMetadata("book", MetadataEnrichmentProcessor.METADATA, 2)
 
     assertThat(old.uniqueId).isNotEqualTo(newer.uniqueId)
   }
@@ -42,7 +42,7 @@ class MetadataEnrichmentTaskTest {
         "book",
         setOf(BookMetadataPatchCapability.TAGS),
         groupId = "series",
-        requestId = "METADATA_ENRICHMENT_TAG_TRANSLATION_1",
+        requestId = "METADATA_ENRICHMENT_METADATA_1",
       )
 
     assertThat(title.uniqueId).isNotEqualTo(tags.uniqueId)
@@ -69,12 +69,12 @@ class MetadataEnrichmentTaskTest {
   @Test
   fun `persistent enrichment task round trips through the task JSON format`() {
     val mapper = jacksonObjectMapper()
-    val task = Task.EnrichMetadata("book", MetadataEnrichmentProcessor.TAG_TRANSLATION, 7, HIGH_PRIORITY)
+    val task = Task.EnrichMetadata("book", MetadataEnrichmentProcessor.METADATA, 7, HIGH_PRIORITY)
 
     val restored = mapper.readValue(mapper.writeValueAsString(task), Task.EnrichMetadata::class.java)
 
     assertThat(restored.bookId).isEqualTo("book")
-    assertThat(restored.processor).isEqualTo(MetadataEnrichmentProcessor.TAG_TRANSLATION)
+    assertThat(restored.processor).isEqualTo(MetadataEnrichmentProcessor.METADATA)
     assertThat(restored.revision).isEqualTo(7)
     assertThat(restored.priority).isEqualTo(HIGH_PRIORITY)
     assertThat(restored.uniqueId).isEqualTo(task.uniqueId)

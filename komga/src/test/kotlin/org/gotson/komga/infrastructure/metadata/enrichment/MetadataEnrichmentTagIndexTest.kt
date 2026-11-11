@@ -22,7 +22,7 @@ class MetadataEnrichmentTagIndexTest {
         state("book-1", listOf(MetadataEnrichmentSourceTag("tag", "missing"), MetadataEnrichmentSourceTag("artist", "known")), mapper),
         state("book-2", listOf(MetadataEnrichmentSourceTag("tag", "Missing")), mapper),
       )
-    every { repository.findAllByProcessor(MetadataEnrichmentProcessor.TAG_TRANSLATION) } answers { states }
+    every { repository.findAllByProcessor(MetadataEnrichmentProcessor.METADATA) } answers { states }
     every { dictionary.lookup(any(), any()) } answers {
       if (firstArg<String>() == "artist") "已翻译" else null
     }
@@ -46,7 +46,7 @@ class MetadataEnrichmentTagIndexTest {
     mapper: com.fasterxml.jackson.databind.ObjectMapper,
   ) = MetadataEnrichmentState(
     bookId = bookId,
-    processor = MetadataEnrichmentProcessor.TAG_TRANSLATION,
+    processor = MetadataEnrichmentProcessor.METADATA,
     status = MetadataEnrichmentStatus.SUCCESS,
     revision = 1,
     inputHash = "hash",
@@ -60,8 +60,7 @@ class MetadataEnrichmentTagIndexTest {
           summary = "summary",
           pageCount = 1,
           tags = tags,
-          existingTags = emptySet(),
-          legacyProcessed = false,
+          contentTagsKnown = true,
         ),
       ),
   )

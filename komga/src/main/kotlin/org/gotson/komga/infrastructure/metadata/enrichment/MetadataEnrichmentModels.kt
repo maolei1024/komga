@@ -1,20 +1,27 @@
 package org.gotson.komga.infrastructure.metadata.enrichment
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.JsonNode
 import org.gotson.komga.domain.model.MetadataEnrichmentSourceTag
 
 data class MetadataEnrichmentSource(
-  val galleryId: Long,
+  val galleryId: Long? = null,
   val sourceRevision: String,
+  val sourceUrl: String = "",
   val originalTitle: String,
   val originalSeries: String,
   val summary: String,
   val pageCount: Int,
   val tags: List<MetadataEnrichmentSourceTag>,
-  val existingTags: Set<String>,
-  val legacyProcessed: Boolean,
-)
+  val contentTagsKnown: Boolean = false,
+  val contentTagsFromJson: Boolean = false,
+  val unclassifiedTags: Set<String> = emptySet(),
+) {
+  @get:JsonIgnore
+  val contentTagCount: Int?
+    get() = if (contentTagsKnown) tags.filter { it.normalizedType == "tag" }.distinctBy { it.key }.size else null
+}
 
 data class MetadataEnrichmentAiResult(
   val title: String? = null,
@@ -22,11 +29,7 @@ data class MetadataEnrichmentAiResult(
 
 data class MetadataEnrichmentTagResult(
   val mapping: Map<String, String> = emptyMap(),
-  val exactTags: Set<String> = emptySet(),
-)
-
-data class MetadataEnrichmentBucketResult(
-  val label: String,
+  val preferenceBuckets: List<String> = emptyList(),
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)

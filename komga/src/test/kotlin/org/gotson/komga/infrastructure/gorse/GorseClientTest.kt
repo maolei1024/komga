@@ -64,6 +64,9 @@ class GorseClientTest {
         }
       writeResponse(exchange, responseCode, body)
     }
+    server.createContext("/api/user/user/feedback") { exchange ->
+      writeResponse(exchange, responseCode, responseBody)
+    }
     server.createContext("/api/health/ready") { exchange ->
       connectionTestRequests += "${exchange.requestMethod} ${exchange.requestURI.path}"
       if (!hangHealthResponse) writeResponse(exchange, healthResponseCode, healthResponseBody)
@@ -116,6 +119,16 @@ class GorseClientTest {
     responseCode = 500
     assertThatThrownBy { client.insertFeedbackChecked(listOf(GorseFeedback("like", "user", "item", "now"))) }
       .isInstanceOf(Exception::class.java)
+  }
+
+  @Test
+  fun `managed preference feedback is streamed beyond the default response buffer limit`() {
+    responseBody =
+      List(5000) { index ->
+        """{"FeedbackType":"favorite","UserId":"user","ItemId":"synthetic:komga:user:batch:$index","Timestamp":"2026-11-11T00:00:00Z"}"""
+      }.joinToString(",", "[", "]")
+    assertThat(responseBody.length).isGreaterThan(256 * 1024)
+    assertThat(client.getUserFeedbackChecked("user")).hasSize(5000)
   }
 
   @ParameterizedTest

@@ -49,6 +49,18 @@ class MetadataEnrichmentDictionaryServiceTest {
     assertThat(service.lookup("parody", "series")).isEqualTo("作品")
   }
 
+  @Test
+  fun `genre dictionaries are independent of content tags and refresh the fingerprint`() {
+    val service = service()
+    val before = service.fingerprint()
+    val contentTranslation = service.lookup("tag", "Manga")
+    assertThat(service.lookup("genre", "Manga")).isNull()
+    service.putOverride(EhtagsDictionaryEntry(k = "Manga", v = "漫画", t = "genre"))
+    assertThat(service.lookup("genre", "Manga")).isEqualTo("漫画")
+    assertThat(service.lookup("tag", "Manga")).isEqualTo(contentTranslation)
+    assertThat(service.fingerprint()).isNotEqualTo(before)
+  }
+
   private fun service(): MetadataEnrichmentDictionaryService {
     val properties = KomgaProperties().apply { configDir = directory.toString() }
     return MetadataEnrichmentDictionaryService(properties, jacksonObjectMapper()).also { it.initialize() }

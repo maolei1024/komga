@@ -52,7 +52,7 @@ class MetadataEnrichmentTagIndex(
   private fun index(): Map<String, IndexedTag> {
     cache?.let { return it }
     val mutable = linkedMapOf<String, MutableIndexedTag>()
-    stateRepository.findAllByProcessor(MetadataEnrichmentProcessor.TAG_TRANSLATION).forEach { state ->
+    stateRepository.findAllByProcessor(MetadataEnrichmentProcessor.METADATA).forEach { state ->
       runCatching { objectMapper.readValue(state.inputJson, MetadataEnrichmentSource::class.java) }.getOrNull()?.tags?.forEach { tag ->
         val indexed = mutable.getOrPut(tag.key) { MutableIndexedTag(tag.normalizedType, tag.value.trim()) }
         indexed.bookIds += state.bookId

@@ -1,13 +1,16 @@
 package org.gotson.komga.infrastructure.metadata.enrichment
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.xml.XmlMapper
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.domain.model.BookWithMedia
 import org.gotson.komga.domain.model.MetadataEnrichmentSourceTag
 import org.gotson.komga.domain.service.BookAnalyzer
-import org.gotson.komga.infrastructure.metadata.comicrack.dto.ComicInfo
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
+
+private val sourceLogger = KotlinLogging.logger {}
 
 @Service
 class MetadataEnrichmentSourceExtractor(
@@ -16,62 +19,64 @@ class MetadataEnrichmentSourceExtractor(
   @param:Autowired(required = false) private val xmlMapper: XmlMapper = XmlMapper(),
 ) {
   fun extract(book: BookWithMedia): MetadataEnrichmentSource? {
-    if (book.media.files.none { it.fileName == METADATA_JSON } || book.media.files.none { it.fileName == COMIC_INFO }) return null
-
-    val metadata = objectMapper.readTree(bookAnalyzer.getFileContent(book, METADATA_JSON))
-    val url = metadata.path("URL").asText(metadata.path("url").asText(""))
-    val galleryId =
-      GALLERY_ID
-        .find(url)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toLongOrNull() ?: return null
-    val comicInfo = xmlMapper.readValue(bookAnalyzer.getFileContent(book, COMIC_INFO), ComicInfo::class.java)
-
+    val metadata = read(book, "metadata.json", objectMapper)
+    val comicInfo = read(book, "ComicInfo.xml", xmlMapper)
     val tags = mutableListOf<MetadataEnrichmentSourceTag>()
-    addTags(tags, metadata.path("tag"), "tag")
-    addTags(tags, metadata.path("character"), "character")
-    addTags(tags, metadata.path("artist"), "artist")
-    addTags(tags, metadata.path("group"), "group")
-    val distinctTags = tags.distinctBy { it.key }
-
-    val title = comicInfo.title.orEmpty().trim()
-    val series = comicInfo.series.orEmpty().trim()
-    val existingTags =
-      comicInfo.tags
-        ?.split(',')
-        ?.mapNotNull { it.trim().ifBlank { null } }
-        ?.toSet()
-        .orEmpty()
+    val fields = mapOf("tag" to "Tags", "artist" to "Writer", "group" to "Groups", "character" to "Characters", "genre" to "Genre")
+    fields.forEach { (type, xmlField) ->
+      val jsonField = if (type == "genre" && metadata?.has("genre") != true) "category" else type
+      val values =
+        if (metadata?.path(jsonField)?.isArray == true)
+          metadata.path(jsonField).map { it.asText() }
+        else
+          comicInfo?.path(xmlField)?.asText()?.split(if (type == "artist") Regex(",| & ") else Regex(",")) ?: emptyList()
+      values.map(String::trim).filter { it.isNotBlank() && !it.equals("unknown", true) }.forEach { value ->
+        if (!technicalTag(value)) tags += MetadataEnrichmentSourceTag(type, value)
+      }
+    }
+    val title =
+      metadata?.path("title")?.asText()?.takeIf(String::isNotBlank)
+        ?: comicInfo?.path("Title")?.asText().orEmpty()
+    val summary =
+      metadata?.path("subtitle")?.asText()?.takeIf(String::isNotBlank)
+        ?: comicInfo?.path("Summary")?.asText().orEmpty()
+    val url = metadata?.path("URL")?.asText(metadata.path("url").asText("")) ?: comicInfo?.path("URL")?.asText().orEmpty()
     return MetadataEnrichmentSource(
-      galleryId = galleryId,
-      sourceRevision = listOf(book.book.fileLastModified, book.book.fileSize, book.book.fileHash).joinToString("|"),
+      galleryId =
+        Regex("/g/(\\d+)")
+          .find(url)
+          ?.groupValues
+          ?.get(1)
+          ?.toLongOrNull(),
+      sourceRevision = revision(book),
+      sourceUrl = url,
       originalTitle = title,
-      originalSeries = series,
-      summary = comicInfo.summary.orEmpty().trim(),
+      originalSeries = comicInfo?.path("Series")?.asText().orEmpty(),
+      summary = summary,
       pageCount = book.media.pageCount,
-      tags = distinctTags,
-      existingTags = existingTags,
-      legacyProcessed = title.isNotBlank() && title == series,
+      tags = tags.distinctBy { it.key },
+      contentTagsKnown = metadata?.path("tag")?.isArray == true || comicInfo?.has("Tags") == true,
+      contentTagsFromJson = metadata?.path("tag")?.isArray == true,
     )
   }
 
-  private fun addTags(
-    target: MutableList<MetadataEnrichmentSourceTag>,
-    values: com.fasterxml.jackson.databind.JsonNode,
-    type: String,
-  ) {
-    if (!values.isArray) return
-    values.forEach { node ->
-      node.asText().trim().takeIf { it.isNotBlank() && !it.equals("unknown", true) }?.let {
-        target += MetadataEnrichmentSourceTag(type, it)
-      }
+  private fun read(
+    book: BookWithMedia,
+    name: String,
+    mapper: ObjectMapper,
+  ): JsonNode? {
+    val entry = book.media.files.firstOrNull { it.fileName.equals(name, true) } ?: return null
+    return try {
+      mapper.readTree(bookAnalyzer.getFileContent(book, entry.fileName))
+    } catch (exception: Exception) {
+      sourceLogger.warn { "Could not read $name for book ${book.book.id}: ${exception.javaClass.simpleName}" }
+      null
     }
   }
 
   companion object {
-    private const val METADATA_JSON = "metadata.json"
-    private const val COMIC_INFO = "ComicInfo.xml"
-    private val GALLERY_ID = Regex("^https?://(?:www\\.)?nhentai\\.net/g/(\\d+)(?:/.*)?$", RegexOption.IGNORE_CASE)
+    fun revision(book: BookWithMedia): String = listOf(book.book.fileLastModified, book.book.fileSize, book.book.fileHash).joinToString("|")
+
+    fun technicalTag(value: String): Boolean = value.startsWith("pagesize_", true) || value.startsWith("tagsize_", true)
   }
 }

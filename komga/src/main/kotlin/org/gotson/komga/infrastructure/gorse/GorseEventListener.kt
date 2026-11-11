@@ -2,12 +2,10 @@ package org.gotson.komga.infrastructure.gorse
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.domain.model.DomainEvent
-import org.gotson.komga.domain.persistence.BookMetadataAggregationRepository
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.KomgaUserRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
-import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
@@ -23,8 +21,6 @@ private val ISO_UTC_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:
 class GorseEventListener(
   private val gorseClient: GorseClient,
   private val gorseSettings: GorseSettingsProvider,
-  private val seriesMetadataRepository: SeriesMetadataRepository,
-  private val bookMetadataAggregationRepository: BookMetadataAggregationRepository,
   private val seriesRepository: SeriesRepository,
   private val bookRepository: BookRepository,
   private val userRepository: KomgaUserRepository,
@@ -60,83 +56,6 @@ class GorseEventListener(
   ) {
     desiredStateLifecycle.enqueue(seriesId, libraryId)
     desiredStateLifecycle.reconcile(1)
-  }
-
-  /**
-   * 构建 Gorse Labels，合并 SeriesMetadata (genres, tags) 和
-   * BookMetadataAggregation (authors, tags) 的信息
-   */
-  private fun buildLabelsForSeries(seriesId: String): Map<String, Any> {
-    val labels = mutableMapOf<String, Any>()
-
-    val metadata = seriesMetadataRepository.findByIdOrNull(seriesId)
-    if (metadata != null) {
-      if (metadata.genres.isNotEmpty()) labels["genres"] = metadata.genres.toList()
-    }
-
-    val aggregation = bookMetadataAggregationRepository.findByIdOrNull(seriesId)
-    if (aggregation != null) {
-      if (aggregation.authors.isNotEmpty()) {
-        labels["authors"] = aggregation.authors.map { it.name }.distinct()
-      }
-      val allTags = mutableSetOf<String>()
-      if (metadata != null) allTags.addAll(metadata.tags)
-      allTags.addAll(aggregation.tags)
-      if (allTags.isNotEmpty()) labels["tags"] = allTags.toList()
-    } else if (metadata != null && metadata.tags.isNotEmpty()) {
-      labels["tags"] = metadata.tags.toList()
-    }
-
-    return labels
-  }
-
-  private fun getSeriesTitle(seriesId: String): String = seriesMetadataRepository.findByIdOrNull(seriesId)?.title ?: ""
-
-  private fun handleSeriesAdded(event: DomainEvent.SeriesAdded) {
-    val series = event.series
-    val item =
-      GorseItem(
-        ItemId = series.id,
-        Labels = buildLabelsForSeries(series.id),
-        Categories = listOf(series.libraryId),
-        Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-        Comment = getSeriesTitle(series.id),
-      )
-    logger.info { "Gorse: inserting item ${series.id}, labels=${item.Labels}" }
-    gorseClient.insertItem(item)
-  }
-
-  private fun handleSeriesUpdated(event: DomainEvent.SeriesUpdated) {
-    val series = event.series
-    val item =
-      GorseItem(
-        ItemId = series.id,
-        Labels = buildLabelsForSeries(series.id),
-        Categories = listOf(series.libraryId),
-        Timestamp = series.createdDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
-        Comment = getSeriesTitle(series.id),
-      )
-    logger.info { "Gorse: updating item ${series.id}, labels=${item.Labels}" }
-    gorseClient.updateItem(series.id, item)
-  }
-
-  private fun handleSeriesDeleted(event: DomainEvent.SeriesDeleted) {
-    logger.info { "Gorse: hiding item ${event.series.id} (series deleted from Komga)" }
-    gorseClient.hideItem(event.series.id)
-  }
-
-  private fun handleBookDeleted(event: DomainEvent.BookDeleted) {
-    val book = event.book
-    val remainingBooks =
-      bookRepository
-        .findAllBySeriesId(book.seriesId)
-        .filter { it.deletedDate == null }
-    if (remainingBooks.isEmpty()) {
-      logger.info { "Gorse: all books deleted for series ${book.seriesId}, hiding item" }
-      gorseClient.hideItem(book.seriesId)
-    } else {
-      logger.debug { "Gorse: book deleted but series ${book.seriesId} still has ${remainingBooks.size} books" }
-    }
   }
 
   private fun handleReadProgressChanged(event: DomainEvent.ReadProgressChanged) {

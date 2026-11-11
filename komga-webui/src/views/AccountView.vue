@@ -30,6 +30,8 @@
       </v-col>
     </v-row>
 
+    <gorse-preference-panel/>
+
     <password-change-dialog v-model="modalPasswordChange"
                             :user="me"
     />
@@ -39,12 +41,13 @@
 
 <script lang="ts">
 import PasswordChangeDialog from '@/components/dialogs/PasswordChangeDialog.vue'
+import GorsePreferencePanel from '@/components/GorsePreferencePanel.vue'
 import Vue from 'vue'
 import {UserDto} from '@/types/komga-users'
 
 export default Vue.extend({
   name: 'AccountSettings',
-  components: {PasswordChangeDialog},
+  components: {PasswordChangeDialog, GorsePreferencePanel},
   data: () => {
     return {
       modalPasswordChange: false,

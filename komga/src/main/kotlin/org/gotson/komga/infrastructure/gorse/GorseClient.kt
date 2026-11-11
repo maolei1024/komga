@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Mono
 import java.time.Duration
 
@@ -128,6 +129,36 @@ class GorseClient(
       logger.error(e) { "Gorse: failed to update item $itemId" }
     }
   }
+
+  fun deleteItemChecked(itemId: String) {
+    buildClient()
+      .delete()
+      .uri("/api/item/{itemId}", itemId)
+      .retrieve()
+      .bodyToMono(String::class.java)
+      .onErrorResume(WebClientResponseException.NotFound::class.java) { Mono.empty() }
+      .block(Duration.ofSeconds(30))
+  }
+
+  fun insertItemsChecked(items: List<GorseItem>) {
+    if (items.isEmpty()) return
+    buildClient()
+      .post()
+      .uri("/api/items")
+      .bodyValue(items)
+      .retrieve()
+      .bodyToMono(String::class.java)
+      .block(Duration.ofSeconds(30))
+  }
+
+  fun getUserFeedbackChecked(userId: String): List<GorseFeedback> =
+    buildClient()
+      .get()
+      .uri("/api/user/{userId}/feedback", userId)
+      .retrieve()
+      .bodyToFlux(GorseFeedback::class.java)
+      .collectList()
+      .block(Duration.ofSeconds(30)) ?: emptyList()
 
   fun deleteItem(itemId: String) {
     try {

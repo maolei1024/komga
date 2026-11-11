@@ -232,6 +232,8 @@
       </v-col>
     </v-row>
 
+    <gorse-preference-panel/>
+
     <!-- Snackbar for notifications -->
     <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000">
       {{ snackbarText }}
@@ -245,10 +247,12 @@
 
 <script lang="ts">
 import Vue from 'vue'
+import GorsePreferencePanel from '@/components/GorsePreferencePanel.vue'
 import {GorseSettingsDto} from '@/services/komga-gorse.service'
 
 export default Vue.extend({
   name: 'GorseSettings',
+  components: {GorsePreferencePanel},
   data: () => ({
     form: {
       enabled: false,

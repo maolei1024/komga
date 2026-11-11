@@ -29,35 +29,45 @@ class MetadataEnrichmentStateDao(
   MetadataEnrichmentStateRepository {
   private val state = Tables.BOOK_ENRICHMENT_STATE
   private val book = Tables.BOOK
+  private val source = DSL.table(DSL.name("BOOK_ENRICHMENT_SOURCE"))
+  private val sourceBookId = DSL.field(DSL.name("BOOK_ENRICHMENT_SOURCE", "BOOK_ID"), String::class.java)
+  private val sourceJson = DSL.field(DSL.name("BOOK_ENRICHMENT_SOURCE", "INPUT_JSON"), String::class.java)
+
+  private fun selectData() =
+    dslRO
+      .select(state.asterisk(), sourceJson)
+      .from(state)
+      .leftJoin(source)
+      .on(sourceBookId.eq(state.BOOK_ID))
+
+  private fun saveSource(value: MetadataEnrichmentState) {
+    dslRW.execute("INSERT INTO BOOK_ENRICHMENT_SOURCE (BOOK_ID, INPUT_JSON) VALUES (?, ?) ON CONFLICT (BOOK_ID) DO UPDATE SET INPUT_JSON = excluded.INPUT_JSON", value.bookId, value.inputJson)
+  }
 
   override fun find(
     bookId: String,
     processor: MetadataEnrichmentProcessor,
   ): MetadataEnrichmentState? =
-    dslRO
-      .selectFrom(state)
+    selectData()
       .where(state.BOOK_ID.eq(bookId))
       .and(state.PROCESSOR.eq(processor.name))
       .fetchOne()
       ?.toDomain()
 
   override fun findAllByBookId(bookId: String): List<MetadataEnrichmentState> =
-    dslRO
-      .selectFrom(state)
+    selectData()
       .where(state.BOOK_ID.eq(bookId))
       .fetch()
       .map { it.toDomain() }
 
   override fun findAllByProcessor(processor: MetadataEnrichmentProcessor): List<MetadataEnrichmentState> =
-    dslRO
-      .selectFrom(state)
+    selectData()
       .where(state.PROCESSOR.eq(processor.name))
       .fetch()
       .map { it.toDomain() }
 
   override fun findAllByStatus(status: MetadataEnrichmentStatus): List<MetadataEnrichmentState> =
-    dslRO
-      .selectFrom(state)
+    selectData()
       .where(state.STATUS.eq(status.name))
       .fetch()
       .map { it.toDomain() }
@@ -84,9 +94,7 @@ class MetadataEnrichmentStateDao(
         .fetchOne(0, Long::class.java) ?: 0L
 
     val items =
-      dslRO
-        .select(state.asterisk())
-        .from(state)
+      selectData()
         .join(book)
         .on(book.ID.eq(state.BOOK_ID))
         .where(condition)
@@ -112,11 +120,15 @@ class MetadataEnrichmentStateDao(
         (MetadataEnrichmentProcessor.valueOf(it.value1()) to MetadataEnrichmentStatus.valueOf(it.value2())) to it.value3().toLong()
       }
 
+  @Transactional
   override fun save(state: MetadataEnrichmentState) {
+    saveSource(state)
     state.toQuery(dslRW).execute()
   }
 
+  @Transactional
   override fun save(states: Collection<MetadataEnrichmentState>) {
+    states.distinctBy { it.bookId }.forEach(::saveSource)
     if (states.isNotEmpty()) dslRW.batch(states.map { it.toQuery(dslRW) }).execute()
   }
 
@@ -228,7 +240,6 @@ class MetadataEnrichmentStateDao(
       .set(state.STATUS, status.name)
       .set(state.REVISION, revision)
       .set(state.INPUT_HASH, inputHash)
-      .set(state.INPUT_JSON, inputJson)
       .set(state.RESULT_JSON, resultJson)
       .set(state.RESULT_REVISION, resultRevision)
       .set(state.LAST_ERROR, lastError)
@@ -240,7 +251,6 @@ class MetadataEnrichmentStateDao(
       .set(state.STATUS, status.name)
       .set(state.REVISION, revision)
       .set(state.INPUT_HASH, inputHash)
-      .set(state.INPUT_JSON, inputJson)
       .set(state.RESULT_JSON, resultJson)
       .set(state.RESULT_REVISION, resultRevision)
       .set(state.LAST_ERROR, lastError)
@@ -255,7 +265,7 @@ class MetadataEnrichmentStateDao(
       status = MetadataEnrichmentStatus.valueOf(get(state.STATUS)!!),
       revision = get(state.REVISION)!!,
       inputHash = get(state.INPUT_HASH)!!,
-      inputJson = get(state.INPUT_JSON)!!,
+      inputJson = get(sourceJson) ?: "{}",
       resultJson = get(state.RESULT_JSON),
       resultRevision = get(state.RESULT_REVISION),
       lastError = get(state.LAST_ERROR),

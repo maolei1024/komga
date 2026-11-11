@@ -41,34 +41,27 @@ class BookMetadataDao(
 
   private fun DSLContext.find(
     bookIds: Collection<String>,
-  ) = this
-    .select(*groupFields)
-    .from(d)
-    .leftJoin(a)
-    .on(d.BOOK_ID.eq(a.BOOK_ID))
-    .where(d.BOOK_ID.`in`(bookIds))
-    .groupBy(*groupFields)
-    .fetchGroups(
-      { it.into(d) },
-      { it.into(a) },
-    ).map { (dr, ar) ->
-      dr.toDomain(ar.filterNot { it.name == null }.map { it.toDomain() }, this.findTags(dr.bookId), this.findLinks(dr.bookId))
-    }
-
-  private fun DSLContext.findTags(bookId: String) =
-    this
-      .select(bt.TAG)
-      .from(bt)
-      .where(bt.BOOK_ID.eq(bookId))
-      .fetchSet(bt.TAG)
-
-  private fun DSLContext.findLinks(bookId: String) =
-    this
-      .select(bl.LABEL, bl.URL)
-      .from(bl)
-      .where(bl.BOOK_ID.eq(bookId))
-      .fetchInto(bl)
-      .map { WebLink(it.label, URI(it.url)) }
+  ): List<BookMetadata> {
+    if (bookIds.isEmpty()) return emptyList()
+    val tags = selectFrom(bt).where(bt.BOOK_ID.`in`(bookIds)).fetch().groupBy { it.bookId }
+    val links = selectFrom(bl).where(bl.BOOK_ID.`in`(bookIds)).fetch().groupBy { it.bookId }
+    return select(*groupFields)
+      .from(d)
+      .leftJoin(a)
+      .on(d.BOOK_ID.eq(a.BOOK_ID))
+      .where(d.BOOK_ID.`in`(bookIds))
+      .groupBy(*groupFields)
+      .fetchGroups(
+        { it.into(d) },
+        { it.into(a) },
+      ).map { (record, authors) ->
+        record.toDomain(
+          authors.filterNot { it.name == null }.map { it.toDomain() },
+          tags[record.bookId].orEmpty().map { it.tag }.toSet(),
+          links[record.bookId].orEmpty().map { WebLink(it.label, URI(it.url)) },
+        )
+      }
+  }
 
   @Transactional
   override fun insert(metadata: BookMetadata) {

@@ -350,6 +350,13 @@
                 </router-link>
               </template>
               <template v-slot:item.processor="{ item }">{{ processorLabel(item.processor) }}</template>
+              <template v-slot:item.contentTagCount="{ item }">
+                {{ item.contentTagCount == null ? '未知' : item.contentTagCount }}
+                <details v-if="item.unclassifiedTags && item.unclassifiedTags.length">
+                  <summary>{{ item.unclassifiedTags.length }} 个未分类标签</summary>
+                  {{ item.unclassifiedTags.join('、') }}
+                </details>
+              </template>
               <template v-slot:item.status="{ item }">
                 <v-chip small :color="statusColor(item.status)" :text-color="statusTextColor(item.status)">
                   {{ statusLabel(item.status) }}
@@ -583,7 +590,7 @@ export default Vue.extend({
     snackbar: false,
     snackbarText: '',
     snackbarColor: 'success',
-    processors: ['AI_TITLE', 'TAG_TRANSLATION', 'PAGE_SIZE', 'TAG_SIZE'] as MetadataEnrichmentProcessor[],
+    processors: ['AI_TITLE', 'METADATA'] as MetadataEnrichmentProcessor[],
     statuses: ['WAITING', 'RUNNING', 'FAILED', 'STALE', 'SUCCESS'] as MetadataEnrichmentStatus[],
   }),
   computed: {
@@ -604,6 +611,7 @@ export default Vue.extend({
         {value: 'character', text: '角色'},
         {value: 'artist', text: '作者'},
         {value: 'group', text: '社团'},
+        {value: 'genre', text: '类型'},
       ]
     },
     dictionaryPolicyItems(): object[] {
@@ -638,6 +646,7 @@ export default Vue.extend({
       return [
         {text: '书籍', value: 'bookTitle', sortable: false},
         {text: '处理器', value: 'processor', sortable: false},
+        {text: '内容 Tag 数／未分类', value: 'contentTagCount', sortable: false},
         {text: '状态', value: 'status', sortable: false},
         {text: '更新时间', value: 'lastModifiedDate', sortable: false},
         {text: '错误', value: 'error', sortable: false, align: 'center'},
@@ -955,13 +964,13 @@ export default Vue.extend({
       this.settings.dictionaryFingerprint = result.dictionaryFingerprint
     },
     processorLabel(processor: MetadataEnrichmentProcessor): string {
-      return ({AI_TITLE: 'AI 标题', TAG_TRANSLATION: 'Tag 翻译', PAGE_SIZE: 'pageSize', TAG_SIZE: 'tagSize'} as any)[processor]
+      return ({AI_TITLE: 'AI 标题', METADATA: '分类、翻译与分桶'} as any)[processor]
     },
     statusLabel(status: MetadataEnrichmentStatus): string {
       return ({WAITING: '等待', RUNNING: '运行', FAILED: '失败', STALE: '过期', SUCCESS: '成功'} as any)[status]
     },
     tagTypeLabel(type: string): string {
-      return ({tag: '普通 Tag', character: '角色', artist: '作者', group: '社团'} as any)[type] || type
+      return ({tag: '普通 Tag', character: '角色', artist: '作者', group: '社团', genre: '类型'} as any)[type] || type
     },
     statusColor(status: MetadataEnrichmentStatus): string {
       return ({WAITING: 'blue-grey lighten-4', RUNNING: 'info', FAILED: 'error', STALE: 'warning', SUCCESS: 'success'} as any)[status]

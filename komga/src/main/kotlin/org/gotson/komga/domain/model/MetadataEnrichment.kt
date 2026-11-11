@@ -1,12 +1,11 @@
 package org.gotson.komga.domain.model
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.LocalDateTime
 
 enum class MetadataEnrichmentProcessor {
   AI_TITLE,
-  TAG_TRANSLATION,
-  PAGE_SIZE,
-  TAG_SIZE,
+  METADATA,
 }
 
 enum class MetadataEnrichmentStatus {
@@ -48,7 +47,12 @@ data class MetadataEnrichmentSourceTag(
   val type: String,
   val value: String,
 ) {
+  @get:JsonIgnore
   val normalizedType: String = type.trim().lowercase()
+
+  @get:JsonIgnore
   val normalizedValue: String = value.trim().lowercase()
+
+  @get:JsonIgnore
   val key: String = "$normalizedType:$normalizedValue"
 }

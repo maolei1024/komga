@@ -59,6 +59,10 @@ class MetadataEnrichmentController(
   private val bookMetadataRepository: BookMetadataRepository,
   private val lifecycle: MetadataEnrichmentLifecycle,
 ) {
+  private val sourceMapper =
+    com.fasterxml.jackson.module.kotlin
+      .jacksonObjectMapper()
+
   @GetMapping
   @Operation(summary = "Retrieve metadata enrichment settings")
   fun getSettings(): MetadataEnrichmentSettingsDto = settingsDto()
@@ -111,8 +115,7 @@ class MetadataEnrichmentController(
     update.aiEnabled?.let { settings.aiEnabled = it }
 
     if (aiDefinitionChanged || aiDisabled) lifecycle.invalidate(MetadataEnrichmentProcessor.AI_TITLE, autoRun = false)
-    if (pageBucketsChanged) lifecycle.invalidate(MetadataEnrichmentProcessor.PAGE_SIZE, autoRun = true)
-    if (tagBucketsChanged) lifecycle.invalidate(MetadataEnrichmentProcessor.TAG_SIZE, autoRun = true)
+    if (pageBucketsChanged || tagBucketsChanged) lifecycle.invalidate(MetadataEnrichmentProcessor.METADATA, autoRun = true)
   }
 
   @GetMapping("stats")
@@ -140,6 +143,7 @@ class MetadataEnrichmentController(
     val metadata = bookMetadataRepository.findAllByIds(bookIds).associateBy { it.bookId }
     return states.map { state ->
       val book = books[state.bookId]
+      val source = runCatching { sourceMapper.readValue(state.inputJson, org.gotson.komga.infrastructure.metadata.enrichment.MetadataEnrichmentSource::class.java) }.getOrNull()
       MetadataEnrichmentStateDto(
         bookId = state.bookId,
         bookName = book?.name.orEmpty(),
@@ -155,6 +159,8 @@ class MetadataEnrichmentController(
         startedDate = state.startedDate,
         completedDate = state.completedDate,
         lastModifiedDate = state.lastModifiedDate,
+        contentTagCount = source?.contentTagCount,
+        unclassifiedTags = source?.unclassifiedTags.orEmpty(),
       )
     }
   }

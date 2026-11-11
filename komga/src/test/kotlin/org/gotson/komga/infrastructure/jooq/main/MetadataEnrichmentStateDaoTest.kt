@@ -60,19 +60,19 @@ class MetadataEnrichmentStateDaoTest(
 
   @Test
   fun `restart recovery restores running work and statistics include it`() {
-    dao.save(state(processor = MetadataEnrichmentProcessor.TAG_TRANSLATION, status = MetadataEnrichmentStatus.RUNNING))
+    dao.save(state(processor = MetadataEnrichmentProcessor.METADATA, status = MetadataEnrichmentStatus.RUNNING))
 
     val recovered = dao.resetRunning()
 
     assertThat(recovered).singleElement().extracting("status").isEqualTo(MetadataEnrichmentStatus.WAITING)
-    assertThat(dao.countByProcessorAndStatus()[MetadataEnrichmentProcessor.TAG_TRANSLATION to MetadataEnrichmentStatus.WAITING]).isEqualTo(1)
-    assertThat(dao.findAll(MetadataEnrichmentProcessor.TAG_TRANSLATION, MetadataEnrichmentStatus.WAITING, library.id, PageRequest.of(0, 20)).totalElements)
+    assertThat(dao.countByProcessorAndStatus()[MetadataEnrichmentProcessor.METADATA to MetadataEnrichmentStatus.WAITING]).isEqualTo(1)
+    assertThat(dao.findAll(MetadataEnrichmentProcessor.METADATA, MetadataEnrichmentStatus.WAITING, library.id, PageRequest.of(0, 20)).totalElements)
       .isEqualTo(1)
   }
 
   @Test
   fun `book deletion cascades enrichment state`() {
-    dao.save(state(processor = MetadataEnrichmentProcessor.PAGE_SIZE))
+    dao.save(state(processor = MetadataEnrichmentProcessor.METADATA))
 
     bookDao.delete(book.id)
 

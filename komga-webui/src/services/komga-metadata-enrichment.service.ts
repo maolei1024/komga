@@ -2,7 +2,7 @@ import {AxiosInstance} from 'axios'
 
 const API_METADATA_ENRICHMENT = '/api/v1/metadata-enrichment'
 
-export type MetadataEnrichmentProcessor = 'AI_TITLE' | 'TAG_TRANSLATION' | 'PAGE_SIZE' | 'TAG_SIZE'
+export type MetadataEnrichmentProcessor = 'AI_TITLE' | 'METADATA'
 export type MetadataEnrichmentStatus = 'WAITING' | 'RUNNING' | 'FAILED' | 'STALE' | 'SUCCESS'
 export type DictionaryUpdatePolicy = 'MARK_STALE' | 'AUTO_LOW_PRIORITY'
 
@@ -65,6 +65,8 @@ export interface MetadataEnrichmentStateDto {
   startedDate: string | null
   completedDate: string | null
   lastModifiedDate: string
+  contentTagCount: number | null
+  unclassifiedTags: string[]
 }
 
 export interface MetadataEnrichmentRunRequestDto {
