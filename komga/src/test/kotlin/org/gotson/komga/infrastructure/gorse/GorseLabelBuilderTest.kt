@@ -101,6 +101,41 @@ class GorseLabelBuilderTest {
   }
 
   @Test
+  fun `approved fallback counts current tags without using unclassified content for matching`() {
+    setSource(source.copy(contentTagsKnown = false, fallbackTags = setOf("outdated")))
+    val currentTags = (1..8).map { "uncertain-$it" }.toSet() + setOf("UNCERTAIN-1", "pageSize_31-50", "tagSize_50+")
+    every { metadata.findByIdOrNull("book") } returns BookMetadata("Title", number = "1", numberSort = 1f, tags = currentTags)
+    val labels = builder.build("series")
+    assertThat(labels["tags"]).isEqualTo(listOf("content"))
+    assertThat(labels["preference_buckets"]).isEqualTo(listOf("pagesize_11-30", "tagsize_6-10"))
+  }
+
+  @Test
+  fun `fallback coverage matches projection and respects manual tag changes`() {
+    setSource(source.copy(contentTagsKnown = false, fallbackTags = setOf("old")))
+    val fields = BookMetadata("Title", number = "1", numberSort = 1f, bookId = book.id, tags = (1..12).map { "uncertain-$it" }.toSet(), tagsLock = true)
+    every { books.findAll() } returns listOf(book)
+    every { metadata.findByIdOrNull("book") } returns fields
+    every { metadata.findAllByIds(any()) } returns listOf(fields)
+    every { media.getPagesSizes(any()) } returns listOf(book.id to 30)
+    every { states.findAllByProcessor(MetadataEnrichmentProcessor.METADATA) } returns listOf(states.find(book.id, MetadataEnrichmentProcessor.METADATA)!!)
+    val user = KomgaUser("test@example.com", "password", sharedAllLibraries = true)
+    assertThat(builder.build("series")["preference_buckets"]).isEqualTo(listOf("pagesize_11-30", "tagsize_11-15"))
+    assertThat(builder.coverage(user)).isEqualTo(mapOf(("pagesize_11-30" to "tagsize_11-15") to 1))
+  }
+
+  @Test
+  fun `a partially unknown series does not claim a complete count from another fallback book`() {
+    val secondBook = makeBook("second.cbz", id = "second", seriesId = "series")
+    every { books.findAllBySeriesId("series") } returns listOf(book, secondBook)
+    every { media.findByIdOrNull("second") } returns Media(bookId = "second", pageCount = 20)
+    every { metadata.findByIdOrNull("second") } returns BookMetadata("Second", number = "2", numberSort = 2f)
+    every { states.find("second", MetadataEnrichmentProcessor.METADATA) } returns null
+    setSource(source.copy(contentTagsKnown = false, fallbackTags = setOf("one")))
+    assertThat(builder.build("series")["preference_buckets"]).isEqualTo(listOf("pagesize_31-70"))
+  }
+
+  @Test
   fun `coverage uses the same buckets and limits works to the users libraries`() {
     every { books.findAll() } returns listOf(book)
     every { metadata.findAllByIds(any()) } returns listOf(BookMetadata("Title", number = "1", numberSort = 1f, bookId = book.id))

@@ -12,6 +12,10 @@ when:
   branch: master
   evaluate: CI_REPO_OWNER == "maolei1024"
 steps:
+- name: metadata-recovery-test
+  image: docker.io/library/python:3.12-alpine
+  commands:
+  - python3 -m unittest discover -s komga/tools -p 'test_*.py'
 - name: gradle-build
   image: docker.nexus.ixuni.win/baseimg/java21-node20
   environment:

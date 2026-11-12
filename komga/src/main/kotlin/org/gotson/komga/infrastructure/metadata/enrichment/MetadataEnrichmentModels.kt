@@ -17,10 +17,19 @@ data class MetadataEnrichmentSource(
   val contentTagsKnown: Boolean = false,
   val contentTagsFromJson: Boolean = false,
   val unclassifiedTags: Set<String> = emptySet(),
+  val fallbackTags: Set<String>? = null,
 ) {
   @get:JsonIgnore
   val contentTagCount: Int?
-    get() = if (contentTagsKnown) tags.filter { it.normalizedType == "tag" }.distinctBy { it.key }.size else null
+    get() =
+      if (contentTagsKnown)
+        tags.filter { it.normalizedType == "tag" }.distinctBy { it.key }.size
+      else
+        fallbackTags
+          ?.map { it.trim().lowercase() }
+          ?.filter { it.isNotBlank() && !MetadataEnrichmentSourceExtractor.technicalTag(it) }
+          ?.distinct()
+          ?.size
 }
 
 data class MetadataEnrichmentAiResult(

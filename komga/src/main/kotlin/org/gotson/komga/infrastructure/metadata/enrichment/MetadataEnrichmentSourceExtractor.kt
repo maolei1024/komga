@@ -75,7 +75,16 @@ class MetadataEnrichmentSourceExtractor(
   }
 
   companion object {
-    fun revision(book: BookWithMedia): String = listOf(book.book.fileLastModified, book.book.fileSize, book.book.fileHash).joinToString("|")
+    fun revision(book: BookWithMedia): String {
+      val metadataFiles =
+        book.media.files
+          .map { it.fileName.lowercase() }
+          .filter { it == "metadata.json" || it == "comicinfo.xml" }
+          .distinct()
+          .sorted()
+          .joinToString(",")
+      return listOf(book.book.fileLastModified, book.book.fileSize, book.book.fileHash, metadataFiles).joinToString("|")
+    }
 
     fun technicalTag(value: String): Boolean = value.startsWith("pagesize_", true) || value.startsWith("tagsize_", true)
   }

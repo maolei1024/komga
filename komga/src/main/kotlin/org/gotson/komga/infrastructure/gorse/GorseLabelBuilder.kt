@@ -155,7 +155,12 @@ class GorseLabelBuilder(
       } else {
         rawAuthors.map { it.value }.ifEmpty { fields?.authors.orEmpty().flatMap { it.name.split(" & ") } }
       }
-    return LabelInput(source, pages, tags.distinct(), authors.map { it.trim().lowercase() }.filter { it.isNotBlank() && it != "unknown" }.distinct())
+    val currentTags =
+      (fields?.tags ?: source?.fallbackTags ?: tags.toSet())
+        .map { it.trim().lowercase() }
+        .filter { it.isNotBlank() && !MetadataEnrichmentSourceExtractor.technicalTag(it) }
+        .distinct()
+    return LabelInput(source, pages, tags.distinct(), currentTags, authors.map { it.trim().lowercase() }.filter { it.isNotBlank() && it != "unknown" }.distinct())
   }
 
   private fun buckets(inputs: List<LabelInput>): List<String> =
@@ -164,6 +169,8 @@ class GorseLabelBuilder(
       if (pages > 0) add(MetadataEnrichmentBuckets.label(pages, settings.pageSizeBuckets))
       if (inputs.isNotEmpty() && inputs.all { it.source?.contentTagsKnown == true }) {
         add(MetadataEnrichmentBuckets.label(inputs.flatMap { it.tags }.distinct().size, settings.tagSizeBuckets))
+      } else if (inputs.isNotEmpty() && inputs.all { it.source?.contentTagsKnown == true || it.source?.fallbackTags != null }) {
+        add(MetadataEnrichmentBuckets.label(inputs.flatMap { it.currentTags }.distinct().size, settings.tagSizeBuckets))
       }
     }
 
@@ -171,6 +178,7 @@ class GorseLabelBuilder(
     val source: MetadataEnrichmentSource?,
     val pages: Int,
     val tags: List<String>,
+    val currentTags: List<String>,
     val authors: List<String>,
   )
 

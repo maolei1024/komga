@@ -71,6 +71,15 @@ class MetadataEnrichmentSourceExtractorTest {
     assertThat(extractor.extract(book)!!.contentTagCount).isNull()
   }
 
+  @Test
+  fun `newly discovered metadata entries invalidate an unchanged archive identity`() {
+    val previous = book("ComicInfo.xml")
+    val updated = previous.copy(media = previous.media.copy(files = listOf(MediaFile("ComicInfo.xml"), MediaFile("metadata.json"))))
+    assertThat(MetadataEnrichmentSourceExtractor.revision(updated)).isNotEqualTo(MetadataEnrichmentSourceExtractor.revision(previous))
+    val reordered = updated.copy(media = updated.media.copy(files = listOf(MediaFile("METADATA.JSON"), MediaFile("comicinfo.xml"), MediaFile("notes.txt"))))
+    assertThat(MetadataEnrichmentSourceExtractor.revision(reordered)).isEqualTo(MetadataEnrichmentSourceExtractor.revision(updated))
+  }
+
   private fun book(vararg files: String) =
     BookWithMedia(
       makeBook("book.cbz", id = "book"),

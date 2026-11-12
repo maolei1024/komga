@@ -79,6 +79,16 @@ class MetadataEnrichmentLifecycle(
                 tags = extracted.tags.filterNot { it.normalizedType == "tag" && it.normalizedValue in unknownKeys },
                 contentTagsKnown = false,
                 unclassifiedTags = unknown,
+                fallbackTags =
+                  if (previous?.fallbackTags != null)
+                    extracted.fallbackTags ?: (
+                      extracted.tags
+                        .filter { it.normalizedType == "tag" }
+                        .map { it.normalizedValue }
+                        .toSet() + unknown
+                    )
+                  else
+                    null,
               )
           val inputJson = objectMapper.writeValueAsString(source)
           val changed =

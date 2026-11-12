@@ -141,4 +141,37 @@ class MetadataEnrichmentLifecycleTest {
     assertThat(decoded).isEqualTo(source)
     assertThat(decoded.contentTagCount).isEqualTo(1)
   }
+
+  @Test
+  fun `fallback count remains explicit and ignores technical buckets and duplicate spelling`() {
+    val fallback = source.copy(contentTagsKnown = false, fallbackTags = setOf("One", "one", "Two", "pageSize_11-30", "tagSize_0-5", " "))
+    val decoded = mapper.readValue(mapper.writeValueAsString(fallback), MetadataEnrichmentSource::class.java)
+    assertThat(decoded.contentTagsKnown).isFalse()
+    assertThat(decoded.fallbackTags).isEqualTo(fallback.fallbackTags)
+    assertThat(decoded.contentTagCount).isEqualTo(2)
+    assertThat(decoded.copy(fallbackTags = null).contentTagCount).isNull()
+  }
+
+  @Test
+  fun `changed archive preserves an approved fallback without classifying unresolved tags`() {
+    val previous = source.copy(contentTagsKnown = false, unclassifiedTags = setOf("uncertain"), fallbackTags = setOf("one", "uncertain"))
+    every { books.findByIdOrNull("book") } returns makeBook("book.cbz", id = "book")
+    every { media.findByIdOrNull("book") } returns Media(bookId = "book", pageCount = 30, status = Media.Status.READY)
+    every { extractor.extract(any()) } returns source.copy(tags = listOf(MetadataEnrichmentSourceTag("tag", "two"), MetadataEnrichmentSourceTag("tag", "uncertain")))
+    every { dictionary.fingerprint() } returns "dictionary"
+    every { settings.pageSizeBuckets } returns MetadataEnrichmentSettingsProvider.DEFAULT_PAGE_SIZE_BUCKETS
+    every { settings.tagSizeBuckets } returns MetadataEnrichmentSettingsProvider.DEFAULT_TAG_SIZE_BUCKETS
+    every { states.find("book", any()) } answers {
+      MetadataEnrichmentState("book", secondArg(), MetadataEnrichmentStatus.SUCCESS, 1, "old", mapper.writeValueAsString(previous))
+    }
+    val saved = mutableListOf<MetadataEnrichmentState>()
+    every { states.save(any<Collection<MetadataEnrichmentState>>()) } answers { saved += firstArg<Collection<MetadataEnrichmentState>>() }
+    assertThat(lifecycle.observe("book")).isTrue()
+    val recovered = mapper.readValue(saved.first().inputJson, MetadataEnrichmentSource::class.java)
+    assertThat(recovered.contentTagsKnown).isFalse()
+    assertThat(recovered.tags.map { it.value }).containsExactly("two")
+    assertThat(recovered.fallbackTags).containsExactlyInAnyOrder("two", "uncertain")
+    assertThat(recovered.contentTagCount).isEqualTo(2)
+    verify(exactly = 0) { ai.translate(any()) }
+  }
 }
