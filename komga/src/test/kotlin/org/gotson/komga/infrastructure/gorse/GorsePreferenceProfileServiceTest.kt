@@ -77,7 +77,9 @@ class GorsePreferenceProfileServiceTest {
     val first = items.keys.toSet()
     assertThat(first).hasSize(20)
     assertThat(feedback.values.filter { it.ItemId in first }).allMatch { java.time.Instant.parse(it.Timestamp) < java.time.Instant.parse(real.Timestamp) }
-    assertThat(items.values).allMatch { it.IsHidden && it.Labels["tags"] == emptyList<String>() }
+    assertThat(items.values).allMatch {
+      it.IsHidden && it.Labels == mapOf("preference_buckets" to listOf("pagesize_1-10", "tagsize_0-5"))
+    }
     service.apply("user")
     delivered()
     assertThat(items.keys).hasSize(20).doesNotContainAnyElementsOf(first)

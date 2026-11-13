@@ -136,11 +136,6 @@ class GorsePreferenceProfileService(
                 id,
                 true,
                 mapOf(
-                  "tags" to emptyList<String>(),
-                  "authors" to emptyList<String>(),
-                  "groups" to emptyList<String>(),
-                  "characters" to emptyList<String>(),
-                  "genres" to emptyList<String>(),
                   "preference_buckets" to listOf(cell.pageBucket, cell.tagBucket),
                 ),
                 Timestamp = timestamp,

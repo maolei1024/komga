@@ -75,6 +75,40 @@ class GorseLabelBuilderTest {
     assertThat(labels["groups"]).isEqualTo(listOf("circle"))
     assertThat(labels["characters"]).isEqualTo(listOf("character"))
     assertThat(labels["preference_buckets"]).isEqualTo(listOf("pagesize_11-30", "tagsize_0-5"))
+    assertThat(labels).doesNotContainKey("genres")
+  }
+
+  @Test
+  fun `absent classifications and unknown authors are omitted while content and buckets remain`() {
+    setSource(source.copy(tags = listOf(MetadataEnrichmentSourceTag("tag", "Content"))))
+    every { metadata.findByIdOrNull("book") } returns
+      BookMetadata("Title", number = "1", numberSort = 1f, authors = listOf(Author("Unknown", "writer")))
+
+    assertThat(builder.build("series")).isEqualTo(
+      mapOf(
+        "tags" to listOf("content"),
+        "preference_buckets" to listOf("pagesize_11-30", "tagsize_0-5"),
+      ),
+    )
+  }
+
+  @Test
+  fun `nonempty genres remain in their namespace`() {
+    setSource(source.copy(tags = source.tags + MetadataEnrichmentSourceTag("genre", "Genre")))
+    assertThat(builder.build("series")["genres"]).isEqualTo(listOf("genre"))
+  }
+
+  @Test
+  fun `missing metadata and page counts produce an empty label object`() {
+    every { states.find("book", MetadataEnrichmentProcessor.METADATA) } returns null
+    every { media.findByIdOrNull("book") } returns null
+    assertThat(builder.build("series")).isEmpty()
+  }
+
+  @Test
+  fun `empty series omit every label namespace`() {
+    every { books.findAllBySeriesId("series") } returns emptyList()
+    assertThat(builder.build("series")).isEmpty()
   }
 
   @Test

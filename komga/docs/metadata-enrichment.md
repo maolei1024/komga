@@ -18,7 +18,7 @@
 
 字典加载或人工修订时计算一次指纹，逐本处理复用内存中的字典及指纹。类型分类可以独立修订译名。作者译名用于显示，锁定译名也保留其原始推荐键；显示字段不再自动拼接命名空间前缀，人工覆盖保持原值。
 
-Gorse 仍以系列 ID 为 ItemId，Categories 表示书库。Labels 使用 `tags`、`authors`、`groups`、`characters`、`genres`、`preference_buckets`，人工标签和作者锁定也作用于投递结果。
+Gorse 仍以系列 ID 为 ItemId，Categories 表示书库。Labels 使用 `tags`、`authors`、`groups`、`characters`、`genres`、`preference_buckets`，人工标签和作者锁定也作用于投递结果。投递时省略空分类，不发送空数组、null 或占位标签；全部为空时明确发送 `Labels: {}`。这避免当前官方 Gorse 在特征转换时因空字段丢失此前累计的特征，不影响 Komga 存储和中文显示。已有漫画需重新同步；已有人工样本和历史条目仅通过数据 API 原地清理空标签字段，保留 ID、批次及反馈，不重新应用偏好。
 
 ## 人工偏好
 

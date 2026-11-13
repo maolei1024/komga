@@ -73,7 +73,7 @@ class GorseLabelBuilder(
       "characters" to values("character"),
       "genres" to genres.map { it.lowercase() }.distinct().sorted(),
       "preference_buckets" to buckets(inputs),
-    )
+    ).filterValues { it.isNotEmpty() }
   }
 
   fun coverage(user: KomgaUser): Map<Pair<String, String>, Int> {

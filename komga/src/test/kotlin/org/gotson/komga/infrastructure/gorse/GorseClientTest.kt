@@ -1,5 +1,7 @@
 package org.gotson.komga.infrastructure.gorse
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.mockk.every
@@ -108,6 +110,41 @@ class GorseClientTest {
     responseBody = "server error"
 
     assertThat(client.getRecommendations("user", n = 100, offset = 0)).isEmpty()
+  }
+
+  @Test
+  fun `item requests preserve sparse namespaces and explicitly serialize empty labels`() {
+    val mapper = jacksonObjectMapper()
+    val requestBody = AtomicReference<String>()
+    listOf("/api/item", "/api/items").forEach { path ->
+      server.createContext(path) { exchange ->
+        requestBody.set(exchange.requestBody.bufferedReader().use { it.readText() })
+        writeResponse(exchange, 200, "{}")
+      }
+    }
+    val buckets = listOf("pagesize_11-30", "tagsize_21-25")
+    val items =
+      listOf(
+        GorseItem("real", Labels = mapOf("tags" to listOf("content"), "preference_buckets" to buckets), Categories = listOf("library"), Timestamp = "2026-11-13T00:00:00Z"),
+        GorseItem("synthetic", IsHidden = true, Labels = mapOf("preference_buckets" to buckets), Timestamp = "2026-11-13T00:00:00Z"),
+        GorseItem("empty", IsHidden = true, Timestamp = "0001-01-01T00:00:00Z"),
+      )
+    items.forEach { item ->
+      client.upsertItemChecked(item)
+      val payload = mapper.readTree(requestBody.get())
+      assertThat(payload.has("labels")).isTrue()
+      assertThat(payload["labels"]).isEqualTo(mapper.valueToTree<JsonNode>(item.Labels))
+      assertThat(payload["categories"]).isEqualTo(mapper.valueToTree<JsonNode>(item.Categories))
+      assertThat(payload).isEqualTo(mapper.valueToTree<JsonNode>(item))
+    }
+    client.insertItemsChecked(items)
+    val payload = mapper.readTree(requestBody.get())
+    items.forEachIndexed { index, item ->
+      assertThat(payload[index].has("labels")).isTrue()
+      assertThat(payload[index]["labels"]).isEqualTo(mapper.valueToTree<JsonNode>(item.Labels))
+    }
+    assertThat(payload[2]["labels"].isObject).isTrue()
+    assertThat(payload[2]["labels"].size()).isZero()
   }
 
   @Test
