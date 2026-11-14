@@ -36,6 +36,7 @@
                   :no-link="draggable || deletable"
                   :preselect="shouldPreselect"
                   :onEdit="(draggable || deletable) ? undefined : editFunction"
+                  :on-open="(draggable || deletable) ? undefined : openFunction"
                   :onSelected="(draggable || deletable) ? undefined : selectable ? (item, event) => handleSelectClick(toggle, item, event): undefined"
                   :action-menu="(draggable || deletable) ? false : actionMenu"
                   :disable-fab="draggable || deletable"
@@ -123,6 +124,9 @@ export default Vue.extend({
       default: () => [],
     },
     editFunction: {
+      type: Function,
+    },
+    openFunction: {
       type: Function,
     },
     resizeFunction: {

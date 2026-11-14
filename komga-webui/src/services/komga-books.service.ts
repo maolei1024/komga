@@ -89,10 +89,10 @@ export default class KomgaBooksService {
       return (await this.http.get(`${API_BOOKS}/${bookId}/next`)).data
     } catch (e) {
       let msg = 'An error occurred while trying to retrieve book'
-      if (e.response.data.message) {
+      if (e.response?.data?.message) {
         msg += `: ${e.response.data.message}`
       }
-      throw new Error(msg)
+      throw Object.assign(new Error(msg), {status: e.response?.status})
     }
   }
 
@@ -101,10 +101,10 @@ export default class KomgaBooksService {
       return (await this.http.get(`${API_BOOKS}/${bookId}/previous`)).data
     } catch (e) {
       let msg = 'An error occurred while trying to retrieve book'
-      if (e.response.data.message) {
+      if (e.response?.data?.message) {
         msg += `: ${e.response.data.message}`
       }
-      throw new Error(msg)
+      throw Object.assign(new Error(msg), {status: e.response?.status})
     }
   }
 

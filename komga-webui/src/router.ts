@@ -15,6 +15,11 @@ const adminGuard = (to: any, from: any, next: any) => {
   else next()
 }
 
+const readingGuard = (to: any, from: any, next: any) => {
+  if (!lStore.getters.mePageStreaming) next({name: 'home'})
+  else next()
+}
+
 const noLibraryGuard = (to: any, from: any, next: any) => {
   if (lStore.state.komgaLibraries.libraries.length === 0) {
     next({ name: 'welcome' })
@@ -106,12 +111,14 @@ const router = new Router({
         {
           path: '/settings/gorse',
           name: 'settings-gorse',
+          meta: {navigationGroup: 'custom'},
           beforeEnter: adminGuard,
           component: () => import(/* webpackChunkName: "settings-gorse" */ './views/GorseSettings.vue'),
         },
         {
           path: '/settings/metadata-enrichment',
           name: 'settings-metadata-enrichment',
+          meta: {navigationGroup: 'custom'},
           beforeEnter: adminGuard,
           component: () => import(/* webpackChunkName: "settings-metadata-enrichment" */ './views/MetadataEnrichmentSettings.vue'),
         },
@@ -148,6 +155,7 @@ const router = new Router({
         {
           path: '/media-management/dedup',
           name: 'dedup-management',
+          meta: {navigationGroup: 'custom'},
           beforeEnter: adminGuard,
           component: () => import(/* webpackChunkName: "dedup-management" */ './views/DedupManagement.vue'),
         },
@@ -168,6 +176,13 @@ const router = new Router({
           name: 'settings-duplicate-pages-unknown',
           beforeEnter: adminGuard,
           component: () => import(/* webpackChunkName: "duplicate-pages-new" */ './views/DuplicatePagesUnknown.vue'),
+        },
+        {
+          path: '/custom/gorse',
+          name: 'gorse-reading',
+          meta: {navigationGroup: 'custom'},
+          beforeEnter: readingGuard,
+          component: () => import('./views/GorseReading.vue'),
         },
         {
           path: '/history',

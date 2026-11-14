@@ -80,6 +80,7 @@
                           :item-context="section.itemContext"
                           nowrap
                           :edit-function="isAdmin ? singleEditSeries : undefined"
+                          :open-function="section.value === RecommendedViewSection.GORSE_RECOMMENDED_SERIES && $store.getters.mePageStreaming ? openGorseSeries : undefined"
                           :selected.sync="selectedSeries"
                           :selectable="selectedBooks.length === 0"
                           :fixed-item-width="fixedCardWidth"
@@ -106,6 +107,8 @@
         :view-config.sync="viewConfig"
         @reset-defaults="resetDefaultView"
       />
+      <gorse-picker-dialog v-if="gorseSession" v-model="gorsePicker" :session="gorseSession"
+                           :initial-series="gorseSeries" :open-book="readGorseBook"/>
     </v-container>
   </div>
 </template>
@@ -163,6 +166,8 @@ import {
   RecommendedViewSection,
 } from '@/types/komga-clientsettings'
 import EditRecommendedDialog from '@/components/dialogs/EditRecommendedDialog.vue'
+import GorsePickerDialog from '@/components/dialogs/GorsePickerDialog.vue'
+import {getGorseReading, GorseReadingSession, PreparedGorseBook} from '@/services/gorse-reading'
 
 interface SectionConfig {
   loader: PageLoader<any> | undefined,
@@ -179,6 +184,7 @@ enum SectionType {
 export default Vue.extend({
   name: 'DashboardView',
   components: {
+    GorsePickerDialog,
     EditRecommendedDialog,
     HorizontalScroller,
     EmptyState,
@@ -192,6 +198,10 @@ export default Vue.extend({
     return {
       ItemContext,
       SectionType,
+      RecommendedViewSection,
+      gorseSession: undefined as GorseReadingSession | undefined,
+      gorseSeries: undefined as SeriesDto | undefined,
+      gorsePicker: false,
       loading: false,
       modalEditRecommended: false,
       loaderRecentlyAddedSeries: undefined as PageLoader<SeriesDto> | undefined,
@@ -322,6 +332,15 @@ export default Vue.extend({
     },
   },
   methods: {
+    openGorseSeries(series: SeriesDto) {
+      if (this.gorsePicker) return
+      this.gorseSession = getGorseReading(this.$store.state.komgaUsers.me.id, this.$komgaSeries, this.$komgaBooks, true)
+      this.gorseSeries = series
+      this.gorsePicker = true
+    },
+    async readGorseBook(prepared: PreparedGorseBook) {
+      await this.$router.push({name: 'read-book', params: {bookId: prepared.book.id}, query: {mode: 'gorse'}})
+    },
     async resetDefaultView() {
       await this.$komgaSettings.deleteClientSettingUser([this.settingsKey])
       await this.$store.dispatch('getClientSettingsUser')

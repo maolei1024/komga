@@ -190,10 +190,6 @@
               <v-list-item-title>{{ $t('duplicates.title') }}</v-list-item-title>
             </v-list-item>
 
-            <v-list-item :to="{name: 'dedup-management'}">
-              <v-list-item-title>{{ $t('dedup.title') }}</v-list-item-title>
-            </v-list-item>
-
             <v-list-group no-action
                           sub-group
                           v-model="expandDuplicatePages"
@@ -210,6 +206,26 @@
                 <v-list-item-title>{{ $t('duplicate_pages.new') }}</v-list-item-title>
               </v-list-item>
             </v-list-group>
+          </v-list-group>
+
+          <v-list-group v-if="isAdmin || $store.getters.mePageStreaming" no-action v-model="expandCustom" prepend-icon="mdi-puzzle-outline">
+            <template v-slot:activator>
+              <v-list-item-title>{{ $t('custom_development.title') }}</v-list-item-title>
+            </template>
+            <v-list-item v-if="$store.getters.mePageStreaming" :to="{name: 'gorse-reading'}">
+              <v-list-item-title>{{ $t('gorse_reading.title') }}</v-list-item-title>
+            </v-list-item>
+            <template v-if="isAdmin">
+              <v-list-item :to="{name: 'settings-gorse'}">
+                <v-list-item-title>{{ $t('custom_development.gorse_settings') }}</v-list-item-title>
+              </v-list-item>
+              <v-list-item :to="{name: 'settings-metadata-enrichment'}">
+                <v-list-item-title>{{ $t('custom_development.metadata_enrichment') }}</v-list-item-title>
+              </v-list-item>
+              <v-list-item :to="{name: 'dedup-management'}">
+                <v-list-item-title>{{ $t('dedup.title') }}</v-list-item-title>
+              </v-list-item>
+            </template>
           </v-list-group>
 
           <v-list-item :to="{name: 'history'}" v-if="isAdmin">
@@ -250,14 +266,6 @@
 
             <v-list-item :to="{name: 'settings-ui'}">
               <v-list-item-title>{{ $t('common.ui') }}</v-list-item-title>
-            </v-list-item>
-
-            <v-list-item :to="{name: 'settings-gorse'}">
-              <v-list-item-title>Gorse</v-list-item-title>
-            </v-list-item>
-
-            <v-list-item :to="{name: 'settings-metadata-enrichment'}">
-              <v-list-item-title>元数据增强</v-list-item-title>
             </v-list-item>
 
             <v-list-item :to="{name: 'metrics'}">
@@ -412,6 +420,7 @@ export default Vue.extend({
       drawerVisible: this.$vuetify.breakpoint.lgAndUp,
       locales: this.$i18n.availableLocales.map((x: any) => ({text: this.$i18n.t('common.locale_name', x), value: x})),
       expandSettings: false,
+      expandCustom: false,
       expandDuplicatePages: false,
       expandMediaManagement: false,
       expandImport: false,
@@ -504,8 +513,9 @@ export default Vue.extend({
   },
   methods: {
     checkRoute(to) {
-      this.expandSettings = to.path.includes('/settings/')
-      this.expandMediaManagement = to.path.includes('/media-management/')
+      this.expandCustom = to.matched.some(route => route.meta.navigationGroup === 'custom')
+      this.expandSettings = !this.expandCustom && to.path.includes('/settings/')
+      this.expandMediaManagement = !this.expandCustom && to.path.includes('/media-management/')
       this.expandImport = to.path.includes('/import/')
       this.expandDuplicatePages = to.path.includes('/duplicate-pages/')
       this.expandAccount = to.path.includes('/account/')

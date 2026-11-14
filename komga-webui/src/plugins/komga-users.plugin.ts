@@ -4,6 +4,7 @@ import {AxiosInstance} from 'axios'
 import _Vue from 'vue'
 import {Module} from 'vuex/types'
 import {UserCreationDto, UserDto, UserUpdateDto} from '@/types/komga-users'
+import {resetGorseReading} from '@/services/gorse-reading'
 
 let service: KomgaUsersService
 
@@ -20,6 +21,7 @@ const vuexModule: Module<any, any> = {
   },
   mutations: {
     setMe (state, user: UserDto) {
+      if (state.me.id !== user.id) resetGorseReading()
       state.me = user
     },
     setAllUsers (state, users: UserDto[]) {

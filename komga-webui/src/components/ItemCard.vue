@@ -112,7 +112,11 @@
 
         <!--      Description-->
         <template v-if="!thumbnailOnly">
-          <router-link v-if="!Array.isArray(title)" :to="title.to" class="link-underline"
+          <a v-if="onOpen && !Array.isArray(title)" :href="$router.resolve(title.to).href" class="link-underline"
+             @click.prevent.stop="onClick">
+            <v-card-subtitle v-line-clamp="2" v-bind="subtitleProps" :title="title.title">{{ title.title }}</v-card-subtitle>
+          </a>
+          <router-link v-else-if="!Array.isArray(title)" :to="title.to" class="link-underline"
                        @click.native="$event.stopImmediatePropagation()">
             <v-card-subtitle
               v-line-clamp="2"
@@ -140,6 +144,9 @@
           </template>
           <v-card-text class="px-2 pt-0 font-weight-light" v-html="body">
           </v-card-text>
+          <v-card-actions v-if="onOpen && !selected && !preselect">
+            <v-btn text small :to="to" @click.stop>{{ $t('gorse_reading.details') }}</v-btn>
+          </v-card-actions>
         </template>
       </v-card>
     </template>
@@ -227,6 +234,10 @@ export default Vue.extend({
       type: Function,
       default: undefined,
       required: false,
+    },
+    onOpen: {
+      type: Function,
+      default: undefined,
     },
     // action menu enabled or not
     actionMenu: {
@@ -379,7 +390,8 @@ export default Vue.extend({
       }
     },
     goto() {
-      this.$router.push(this.computedItem.to())
+      if (this.onOpen) this.onOpen(this.item)
+      else this.$router.push(this.computedItem.to())
     },
     selectItem(e: MouseEvent) {
       if (this.onSelected !== undefined) {

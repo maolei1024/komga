@@ -93,6 +93,8 @@ export default Vue.extend({
     }
   },
   props: {
+    keyboardDisabled: {type: Boolean, default: false},
+    managedBoundary: {type: Boolean, default: false},
     pages: {
       type: Array as () => PageDtoWithUrl[],
       required: true,
@@ -200,6 +202,7 @@ export default Vue.extend({
   },
   methods: {
     keyPressed(e: KeyboardEvent) {
+      if (this.keyboardDisabled || (this.managedBoundary && e.repeat)) return
       this.shortcuts[e.key]?.execute(this)
     },
     imgClass(spread: PageDtoWithUrl[]): string {
@@ -241,6 +244,7 @@ export default Vue.extend({
       if (this.vertical) this.next()
     },
     prev() {
+      if (this.keyboardDisabled) return
       if (this.canPrev) {
         this.carouselPage--
         window.scrollTo(0, 0)
@@ -249,6 +253,7 @@ export default Vue.extend({
       }
     },
     next() {
+      if (this.keyboardDisabled) return
       if (this.canNext) {
         this.carouselPage++
         window.scrollTo(0, 0)

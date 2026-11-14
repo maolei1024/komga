@@ -1,4 +1,30 @@
 {
+  "custom_development": {
+    "title": "二次开发",
+    "gorse_settings": "Gorse 推荐设置",
+    "metadata_enrichment": "元数据增强"
+  },
+  "gorse_reading": {
+    "title": "Gorse 连读",
+    "choose_book": "选择一集开始阅读，之后将按顺序接续。",
+    "book_count": "共 {count} 集",
+    "book_number": "第 {number} 集",
+    "details": "详情",
+    "back": "返回推荐",
+    "close": "关闭",
+    "refresh": "刷新推荐",
+    "more": "显示更多",
+    "retry": "重试",
+    "loading": "正在加载…",
+    "empty": "暂无新的推荐，可以刷新后重试。",
+    "load_failed": "内容加载失败，请重试或选择其他作品。",
+    "save_failed": "阅读进度保存失败，请重试后再切换。",
+    "unavailable": "此系列没有图片阅读器支持的可读书籍，或所选书籍已不可用。",
+    "unavailable_short": "暂不支持阅读",
+    "next_book": "阅读下一集",
+    "choose_next": "选择下一本推荐",
+    "end_hint": "再按一次 ↓ 继续。"
+  },
   "$vuetify": {
     "dataFooter": {
       "pageText": "{0}-{1} 或 {2}"

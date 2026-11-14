@@ -1,7 +1,17 @@
 <template>
-  <v-container class="ma-0 pa-0 full-height" fluid v-if="pages.length > 0"
+  <v-container class="ma-0 pa-0 full-height" fluid
                :style="`width: 100%; background-color: ${backgroundColor}`"
   >
+    <v-alert v-if="readerError" type="error" class="reader-error" role="alert">
+      {{ $t(`gorse_reading.${readerError}`) }}
+      <v-btn text :loading="gorseBusy" @click="retryReader">{{ $t('gorse_reading.retry') }}</v-btn>
+      <v-btn v-if="gorseMode && pages.length" text :disabled="gorseBusy" @click="chooseGorseRecommendations">
+        {{ $t('gorse_reading.choose_next') }}
+      </v-btn>
+      <v-btn v-if="!pages.length" text @click="closeBook">{{ $t('gorse_reading.back') }}</v-btn>
+    </v-alert>
+    <div v-if="!pages.length && !readerError" class="pa-8 text-center">{{ $t('gorse_reading.loading') }}</div>
+    <template v-if="pages.length > 0">
     <div>
       <v-slide-y-transition>
         <!-- Top Toolbar-->
@@ -121,9 +131,12 @@
       </v-slide-y-reverse-transition>
     </div>
 
-    <div class="full-height">
+    <div ref="readingSurface" class="full-height" @load.capture="updateGorseEnd">
       <continuous-reader
         v-if="continuousReader"
+        :key="gorseMode ? book.id : undefined"
+        :keyboard-disabled="gorseInputBlocked"
+        :managed-boundary="gorseMode"
         :pages="pages"
         :page.sync="page"
         :animations="animations"
@@ -137,6 +150,10 @@
 
       <paged-reader
         v-else
+        ref="pagedReader"
+        :key="gorseMode ? book.id : undefined"
+        :keyboard-disabled="gorseInputBlocked"
+        :managed-boundary="gorseMode"
         :pages="pages"
         :page.sync="page"
         :reading-direction="readingDirection"
@@ -149,6 +166,15 @@
         @jump-next="jumpToNext()"
       ></paged-reader>
     </div>
+
+    <div v-if="gorseMode && gorseAtEnd && !gorsePicker && !showToolbars" class="gorse-end">
+      <div class="text-caption text-center mb-1">{{ $t('gorse_reading.end_hint') }}</div>
+      <v-btn color="primary" :loading="gorseBusy" :disabled="gorseInputBlocked" @click="jumpToNext">
+        {{ $t($_.isEmpty(siblingNext) ? 'gorse_reading.choose_next' : 'gorse_reading.next_book') }}
+      </v-btn>
+    </div>
+
+    <gorse-picker-dialog v-if="gorseSession" v-model="gorsePicker" :session="gorseSession" :open-book="openGorseBook"/>
 
     <thumbnail-explorer-dialog
       v-model="showExplorer"
@@ -312,18 +338,23 @@
       v-model="showHelp"
       :shortcuts="shortcutsHelp"
     />
+    </template>
   </v-container>
 </template>
 
 <script lang="ts">
-import {debounce} from 'lodash'
+import {Route} from 'vue-router'
+import GorsePickerDialog from '@/components/dialogs/GorsePickerDialog.vue'
+import {getGorseReading, GorseReadingError, GorseReadingSession, PreparedGorseBook} from '@/services/gorse-reading'
+import {ReaderProgressWriter} from '@/functions/reader-progress'
+import {isReaderAtBottom, isTyping} from '@/functions/reader-boundary'
 import SettingsSelect from '@/components/SettingsSelect.vue'
 import SettingsSwitch from '@/components/SettingsSwitch.vue'
 import ThumbnailExplorerDialog from '@/components/dialogs/ThumbnailExplorerDialog.vue'
 import ShortcutHelpDialog from '@/components/dialogs/ShortcutHelpDialog.vue'
 import {getBookTitleCompact} from '@/functions/book-title'
 import {checkImageSupport, ImageFeature} from '@/functions/check-image'
-import {bookPageUrl} from '@/functions/urls'
+import {bookPageUrl, seriesThumbnailUrl} from '@/functions/urls'
 import {getFileFromUrl} from '@/functions/file'
 import {resizeImageFile} from '@/functions/resize-image'
 import {ReadingDirection} from '@/types/enum-books'
@@ -352,6 +383,7 @@ import {getBookReadRouteFromMedia} from '@/functions/book-format'
 export default Vue.extend({
   name: 'DivinaReader',
   components: {
+    GorsePickerDialog,
     ContinuousReader,
     PagedReader,
     SettingsSwitch,
@@ -365,6 +397,15 @@ export default Vue.extend({
       screenfull,
       fullscreenIcon: 'mdi-fullscreen',
       book: {} as BookDto,
+      gorseSession: undefined as GorseReadingSession | undefined,
+      gorsePicker: false,
+      gorseBusy: false,
+      gorseAtEnd: false,
+      readerError: '',
+      readerRetry: undefined as (() => Promise<void>) | undefined,
+      setupVersion: 0,
+      settingUp: false,
+      progressWriter: undefined as ReaderProgressWriter | undefined,
       series: {} as SeriesDto,
       context: {} as Context,
       contextName: '',
@@ -437,6 +478,15 @@ export default Vue.extend({
     }
   },
   created() {
+    this.progressWriter = new ReaderProgressWriter(
+      (bookId, page) => this.$komgaBooks.updateReadProgress(bookId, {page}),
+      () => {
+        if (this.gorseMode) {
+          this.readerError = 'save_failed'
+          this.readerRetry = () => this.flushProgress()
+        }
+      },
+    )
     this.$vuetify.rtl = false
     checkImageSupport(ImageFeature.WEBP_LOSSY, (isSupported) => {
       if (isSupported) this.supportedMediaTypes.push('image/webp')
@@ -449,6 +499,9 @@ export default Vue.extend({
     })
     this.shortcuts = this.$_.keyBy([...shortcutsSettings, ...shortcutsSettingsPaged, ...shortcutsSettingsContinuous, ...shortcutsMenus, ...shortcutsAll], x => x.key)
     window.addEventListener('keydown', this.keyPressed)
+    window.addEventListener('keydown', this.gorseKeyPressed, true)
+    window.addEventListener('scroll', this.updateGorseEnd, {passive: true})
+    window.addEventListener('resize', this.updateGorseEnd)
     if (screenfull.isEnabled) screenfull.on('change', this.fullscreenChanged)
   },
   async mounted() {
@@ -467,13 +520,20 @@ export default Vue.extend({
     this.pageMargin = this.$store.state.persistedState.webreader.continuous.margin
     this.backgroundColor = this.$store.state.persistedState.webreader.background
 
-    this.setup(this.bookId, Number(this.$route.query.page))
+    this.loadBook()
+  },
+  beforeDestroy() {
+    this.setupVersion++
+    this.progressWriter?.flush().catch(() => {})
   },
   destroyed() {
     document.documentElement.classList.remove('html-reader')
 
     this.$vuetify.rtl = (this.$t('common.locale_rtl') === 'true')
     window.removeEventListener('keydown', this.keyPressed)
+    window.removeEventListener('keydown', this.gorseKeyPressed, true)
+    window.removeEventListener('scroll', this.updateGorseEnd)
+    window.removeEventListener('resize', this.updateGorseEnd)
     if (screenfull.isEnabled) {
       screenfull.off('change', this.fullscreenChanged)
       screenfull.exit()
@@ -486,28 +546,56 @@ export default Vue.extend({
     },
   },
   async beforeRouteUpdate(to, from, next) {
-    if (to.params.bookId !== from.params.bookId) {
-      // route update means either:
-      // - going to previous/next book, in this case the query.page is not set, so it will default to first page
-      // - pressing the back button of the browser and navigating to the previous book, in this case the query.page is set, so we honor it
-      this.$debug('[beforeRouteUpdate]', 'to.query:', to.query)
-      this.setup(to.params.bookId, Number(to.query.page))
+    if (to.params.bookId !== from.params.bookId || to.query.mode !== from.query.mode) {
+      try {
+        if (this.gorseMode) await this.flushProgress()
+        await this.setup(to.params.bookId, Number(to.query.page), to)
+      } catch (error) {
+        this.readerError = error instanceof GorseReadingError ? error.key : 'load_failed'
+        this.readerRetry = async () => { await this.$router.replace(to.fullPath) }
+        next(false)
+        return
+      }
     }
     next()
   },
+  async beforeRouteLeave(to, from, next) {
+    if (to.name === 'login' || this.$store.getters.authenticated === false) {
+      next()
+      return
+    }
+    try {
+      if (this.gorseMode) await this.flushProgress()
+      next()
+    } catch (error) {
+      this.readerError = 'save_failed'
+      this.readerRetry = async () => { await this.$router.push(to.fullPath) }
+      next(false)
+    }
+  },
   watch: {
+    gorsePicker() {
+      this.$nextTick(this.updateGorseEnd)
+    },
     page: {
       handler(val, old) {
-        if (val) {
+        if (val && !this.settingUp) {
           this.markProgress(val)
           this.goToPage = val
           this.updateRoute()
+          this.$nextTick(this.updateGorseEnd)
         }
       },
       immediate: true,
     },
   },
   computed: {
+    gorseMode(): boolean {
+      return this.$route.query.mode === 'gorse'
+    },
+    gorseInputBlocked(): boolean {
+      return this.gorseMode && (this.gorsePicker || this.gorseBusy || this.settingUp || this.showSettings || this.showExplorer || this.showHelp)
+    },
     continuousReader(): boolean {
       return this.readingDirection === ReadingDirection.WEBTOON
     },
@@ -676,80 +764,163 @@ export default Vue.extend({
       else this.fullscreenIcon = 'mdi-fullscreen'
     },
     keyPressed(e: KeyboardEvent) {
+      if (this.gorseInputBlocked || (this.gorseMode && (e.repeat || isTyping(e)))) return
       if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return
       this.shortcuts[e.key]?.execute(this)
     },
-    async setup(bookId: string, page?: number) {
-      this.$debug('[setup]', `bookId:${bookId}`, `page:${page}`)
-      this.book = await this.$komgaBooks.getBook(bookId)
-      this.series = await this.$komgaSeries.getOneSeries(this.book.seriesId)
-
-      // parse query params to get context and contextId
-      if (this.$route.query.contextId && this.$route.query.context
-        && Object.values(ContextOrigin).includes(this.$route.query.context as ContextOrigin)) {
-        this.context = {
-          origin: this.$route.query.context as ContextOrigin,
-          id: this.$route.query.contextId as string,
-        }
-        this.book.context = this.context
-      }
-
-      if (this?.context.origin === ContextOrigin.READLIST) {
-        this.contextName = (await (this.$komgaReadLists.getOneReadList(this.context.id))).name
-        document.title = `Komga - ${this.contextName} - ${this.book.metadata.title}`
-      } else {
-        document.title = `Komga - ${this.bookTitle}`
-      }
-
-      // parse query params to get incognito mode
-      this.incognito = !!(this.$route.query.incognito && this.$route.query.incognito.toString().toLowerCase() === 'true')
-
-      const pageDtos = (await this.$komgaBooks.getBookPages(bookId))
-      pageDtos.forEach((p: any) => p['url'] = this.getPageUrl(p))
-      this.pages = pageDtos as PageDtoWithUrl[]
-
-      this.$debug('[setup]', `pages count:${this.pagesCount}`, 'read progress:', this.book.readProgress)
-      if (page && page >= 1 && page <= this.pagesCount) {
-        this.goTo(page)
-      } else if (this.book.readProgress?.completed === false) {
-        this.goTo(this.book.readProgress?.page!!)
-      } else {
-        this.goToFirst()
-      }
-
-      // set non-persistent reading direction if exists in metadata
-      if (this.series.metadata.readingDirection in ReadingDirection && this.readingDirection !== this.series.metadata.readingDirection) {
-        // bypass setter so setting is not persisted
-        this.settings.readingDirection = this.series.metadata.readingDirection as ReadingDirection
-        this.sendNotificationReadingDirection(true)
-      } else {
-        this.sendNotificationReadingDirection(false)
-      }
-
+    gorseKeyPressed(event: KeyboardEvent) {
+      if (!this.gorseMode || this.gorseInputBlocked || isTyping(event)) return
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      if ((event.target as HTMLElement)?.closest('.v-menu__content')) return
+      this.updateGorseEnd()
+      if (!this.gorseAtEnd) return
+      const forward = ['ArrowDown', 'PageDown', ' ']
+      if (!this.continuousReader && this.readingDirection === ReadingDirection.LEFT_TO_RIGHT) forward.push('ArrowRight')
+      if (!this.continuousReader && this.readingDirection === ReadingDirection.RIGHT_TO_LEFT) forward.push('ArrowLeft')
+      if (!forward.includes(event.key)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (!event.repeat) this.jumpToNext()
+    },
+    updateGorseEnd() {
+      const surface = this.$refs.readingSurface as HTMLElement | undefined
+      const reader = this.$refs.pagedReader as (Vue & {canNext: boolean}) | undefined
+      this.gorseAtEnd = !!(this.gorseMode && !this.settingUp && surface && this.pages.length &&
+        (this.continuousReader || reader?.canNext === false) && isReaderAtBottom(surface))
+    },
+    async runReaderAction(action: () => Promise<void>) {
+      if (this.gorseBusy) return
+      this.gorseBusy = true
+      this.readerError = ''
+      this.readerRetry = action
       try {
-        if (this?.context.origin === ContextOrigin.READLIST) {
-          this.siblingNext = await this.$komgaReadLists.getBookSiblingNext(this.context.id, bookId)
-        } else {
-          this.siblingNext = await this.$komgaBooks.getBookSiblingNext(bookId)
-        }
-      } catch (e) {
-        this.siblingNext = {} as BookDto
-      }
-      try {
-        if (this?.context.origin === ContextOrigin.READLIST) {
-          this.siblingPrevious = await this.$komgaReadLists.getBookSiblingPrevious(this.context.id, bookId)
-        } else {
-          this.siblingPrevious = await this.$komgaBooks.getBookSiblingPrevious(bookId)
-        }
-      } catch (e) {
-        this.siblingPrevious = {} as BookDto
+        await action()
+      } catch (error) {
+        this.readerError = error instanceof GorseReadingError ? error.key : 'load_failed'
+        this.readerRetry = action
+      } finally {
+        this.gorseBusy = false
+        this.$nextTick(this.updateGorseEnd)
       }
     },
-    getPageUrl(page: PageDto): string {
+    retryReader() {
+      if (this.readerRetry) this.runReaderAction(this.readerRetry)
+    },
+    loadBook() {
+      return this.runReaderAction(() => this.setup(this.bookId, Number(this.$route.query.page)))
+    },
+    async flushProgress() {
+      try {
+        await this.progressWriter?.flush()
+      } catch (error) {
+        throw new GorseReadingError('save_failed')
+      }
+    },
+    async openGorseBook(prepared: PreparedGorseBook) {
+      const wasPicking = this.gorsePicker
+      await this.flushProgress()
+      if (wasPicking && !this.gorsePicker) return
+      await this.$router.replace({
+        name: 'read-book', params: {bookId: prepared.book.id},
+        query: {mode: 'gorse', incognito: this.incognito.toString()},
+      })
+      this.gorsePicker = false
+    },
+    async continueGorse() {
+      if (this.gorseAtEnd) this.markProgress(this.pagesCount)
+      await this.flushProgress()
+      if (this.$_.isEmpty(this.siblingNext)) this.gorsePicker = true
+      else {
+        const prepared = await this.gorseSession!.prepareBook(this.siblingNext.id)
+        await this.openGorseBook(prepared)
+      }
+    },
+    chooseGorseRecommendations() {
+      this.runReaderAction(async () => {
+        await this.flushProgress()
+        this.gorsePicker = true
+      })
+    },
+    async setup(bookId: string, page?: number, route: Route = this.$route) {
+      const version = ++this.setupVersion
+      const gorse = route.query.mode === 'gorse'
+      this.settingUp = true
+      this.gorseAtEnd = false
+      try {
+        let prepared: PreparedGorseBook
+        if (gorse) {
+          if (!this.$store.getters.mePageStreaming) throw new GorseReadingError('unavailable')
+          this.gorseSession = getGorseReading(this.$store.state.komgaUsers.me.id, this.$komgaSeries, this.$komgaBooks)
+          prepared = this.gorseSession.takePrepared(bookId) || await this.gorseSession.prepareBook(bookId)
+        } else {
+          const book = await this.$komgaBooks.getBook(bookId)
+          const [series, pages] = await Promise.all([this.$komgaSeries.getOneSeries(book.seriesId), this.$komgaBooks.getBookPages(bookId)])
+          prepared = {book, series, pages}
+        }
+        if (!prepared.pages.length) throw new GorseReadingError('unavailable')
+        const context = gorse ? {origin: ContextOrigin.SERIES, id: prepared.book.seriesId}
+          : route.query.contextId && Object.values(ContextOrigin).includes(route.query.context as ContextOrigin)
+          ? {origin: route.query.context as ContextOrigin, id: route.query.contextId as string}
+          : {} as Context
+        const readList = context.origin === ContextOrigin.READLIST
+        const sibling = async (request: Promise<BookDto>) => {
+          try {
+            return await request
+          } catch (error) {
+            if (gorse && error.status !== 404) throw error
+            return {} as BookDto
+          }
+        }
+        const [nextBook, previousBook, contextName] = await Promise.all([
+          gorse ? Promise.resolve(prepared.nextBook || {} as BookDto) : sibling(readList ? this.$komgaReadLists.getBookSiblingNext(context.id, bookId) : this.$komgaBooks.getBookSiblingNext(bookId)),
+          gorse ? Promise.resolve(prepared.previousBook || {} as BookDto) : sibling(readList ? this.$komgaReadLists.getBookSiblingPrevious(context.id, bookId) : this.$komgaBooks.getBookSiblingPrevious(bookId)),
+          readList ? this.$komgaReadLists.getOneReadList(context.id).then(list => list.name) : Promise.resolve(''),
+        ])
+        if (version !== this.setupVersion) return
+        this.book = prepared.book
+        this.series = prepared.series
+        this.context = context
+        this.book.context = context
+        this.contextName = contextName
+        this.incognito = route.query.incognito?.toString().toLowerCase() === 'true'
+        this.siblingNext = nextBook
+        this.siblingPrevious = previousBook
+        this.jumpToNextBook = false
+        this.jumpToPreviousBook = false
+        this.pages = prepared.pages.map(item => ({...item, url: this.getPageUrl(item, bookId)}))
+        const savedPage = prepared.book.readProgress?.completed === false ? prepared.book.readProgress.page : 1
+        this.page = page && page >= 1 && page <= this.pagesCount ? page : Math.max(1, Math.min(savedPage, this.pagesCount))
+        this.goToPage = this.page
+        if (this.series.metadata.readingDirection in ReadingDirection && this.readingDirection !== this.series.metadata.readingDirection) {
+          this.settings.readingDirection = this.series.metadata.readingDirection as ReadingDirection
+          this.sendNotificationReadingDirection(true)
+        } else this.sendNotificationReadingDirection(false)
+        document.title = readList ? `Komga - ${contextName} - ${this.book.metadata.title}` : `Komga - ${this.bookTitle}`
+        this.readerError = ''
+        await this.$nextTick()
+        if (version !== this.setupVersion) return
+        this.settingUp = false
+        this.markProgress(this.page)
+        this.updateRoute()
+        this.updateGorseEnd()
+        if (gorse) {
+          this.gorseSession!.openedBook(this.book)
+          this.gorseSession!.recommendations().then(items => {
+            items.slice(0, 20).forEach(series => {
+              const image = new Image()
+              image.src = seriesThumbnailUrl(series.id)
+            })
+          }).catch(() => {})
+        }
+      } finally {
+        if (version === this.setupVersion) this.settingUp = false
+      }
+    },
+    getPageUrl(page: PageDto, bookId: string = this.book.id): string {
       if (!this.supportedMediaTypes.includes(page.mediaType)) {
-        return bookPageUrl(this.bookId, page.number, this.convertTo)
+        return bookPageUrl(bookId, page.number, this.convertTo)
       } else {
-        return bookPageUrl(this.bookId, page.number)
+        return bookPageUrl(bookId, page.number)
       }
     },
     jumpToPrevious() {
@@ -760,6 +931,11 @@ export default Vue.extend({
       }
     },
     jumpToNext() {
+      if (this.gorseMode) {
+        this.updateGorseEnd()
+        if (!this.gorseInputBlocked && this.gorseAtEnd) this.runReaderAction(this.continueGorse)
+        return
+      }
       if (this.jumpToNextBook) {
         this.nextBook()
       } else {
@@ -767,6 +943,13 @@ export default Vue.extend({
       }
     },
     previousBook() {
+      if (this.gorseMode) {
+        if (!this.$_.isEmpty(this.siblingPrevious)) this.runReaderAction(async () => {
+          const prepared = await this.gorseSession!.prepareBook(this.siblingPrevious.id)
+          await this.openGorseBook(prepared)
+        })
+        return
+      }
       if (!this.$_.isEmpty(this.siblingPrevious)) {
         this.jumpToPreviousBook = false
         this.$router.push({
@@ -777,6 +960,10 @@ export default Vue.extend({
       }
     },
     nextBook() {
+      if (this.gorseMode) {
+        this.runReaderAction(this.continueGorse)
+        return
+      }
       if (this.$_.isEmpty(this.siblingNext)) {
         this.closeBook()
       } else {
@@ -800,18 +987,27 @@ export default Vue.extend({
       this.goTo(this.pagesCount)
     },
     updateRoute() {
+      if (this.settingUp || this.book.id !== this.$route.params.bookId) return
       this.$router.replace({
         name: this.$route.name,
         params: {bookId: this.$route.params.bookId},
         query: {
+          ...this.$route.query,
           page: this.page.toString(),
           context: this.context.origin,
           contextId: this.context.id,
           incognito: this.incognito.toString(),
         },
-      } as Location)
+      } as Location).catch(() => {})
     },
     closeBook() {
+      if (this.gorseMode) {
+        this.runReaderAction(async () => {
+          await this.flushProgress()
+          await this.$router.replace({name: 'gorse-reading'})
+        })
+        return
+      }
       this.$router.push(
         {
           name: this.book.oneshot ? 'browse-oneshot' : 'browse-book',
@@ -899,11 +1095,11 @@ export default Vue.extend({
       this.notification.message = message
       this.notification.enabled = true
     },
-    markProgress: debounce(function (this: any, page: number) {
-      if (!this.incognito) {
-        this.$komgaBooks.updateReadProgress(this.bookId, {page: page})
+    markProgress(page: number) {
+      if (!this.settingUp && !this.incognito && this.book.id && page >= 1 && page <= this.pagesCount) {
+        this.progressWriter?.queue(this.book.id, page)
       }
-    }, 50),
+    },
     downloadCurrentPage() {
       new jsFileDownloader({
         url: `${this.currentPage.url}?contentNegotiation=false`,
@@ -934,6 +1130,25 @@ export default Vue.extend({
 })
 </script>
 <style scoped>
+.reader-error {
+  position: fixed;
+  top: 48px;
+  left: 16px;
+  right: 16px;
+  z-index: 6;
+}
+
+.gorse-end {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 3;
+  padding: 8px;
+  border-radius: 4px;
+  color: white;
+  background: rgba(0, 0, 0, 0.8);
+}
+
 .settings {
   z-index: 2;
 }

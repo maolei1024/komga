@@ -1,4 +1,30 @@
 {
+  "custom_development": {
+    "title": "Custom features",
+    "gorse_settings": "Gorse recommendation settings",
+    "metadata_enrichment": "Metadata enrichment"
+  },
+  "gorse_reading": {
+    "title": "Gorse continuous reading",
+    "choose_book": "Choose a book to start reading this series.",
+    "book_count": "{count} books",
+    "book_number": "Book {number}",
+    "details": "Details",
+    "back": "Back to recommendations",
+    "close": "Close",
+    "refresh": "Refresh",
+    "more": "Show more",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "empty": "No new recommendations. Refresh to try again.",
+    "load_failed": "Could not load this content. Try again or choose another book.",
+    "save_failed": "Reading progress could not be saved. Retry before switching books.",
+    "unavailable": "This series has no available books supported by the image reader, or the selected book is no longer available.",
+    "unavailable_short": "Unavailable in this reader",
+    "next_book": "Next book in series",
+    "choose_next": "Choose another recommendation",
+    "end_hint": "Press ↓ again to continue."
+  },
   "$vuetify": {
     "dataFooter": {
       "pageText": "{0}-{1} of {2}"

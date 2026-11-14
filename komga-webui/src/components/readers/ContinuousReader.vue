@@ -52,6 +52,8 @@ export default Vue.extend({
     }
   },
   props: {
+    keyboardDisabled: {type: Boolean, default: false},
+    managedBoundary: {type: Boolean, default: false},
     pages: {
       type: Array as () => PageDtoWithUrl[],
       required: true,
@@ -101,6 +103,7 @@ export default Vue.extend({
   },
   destroyed() {
     window.removeEventListener('keydown', this.keyPressed)
+    this.handleKey.cancel()
   },
   mounted() {
     if (this.page != this.currentPage) {
@@ -125,7 +128,13 @@ export default Vue.extend({
     },
   },
   methods: {
-    keyPressed: throttle(function (this: any, e: KeyboardEvent) {
+    keyPressed(event: KeyboardEvent) {
+      if (this.keyboardDisabled) return
+      if (this.managedBoundary && (event.repeat || [' ', 'PageDown', 'ArrowDown'].includes(event.key))) return
+      this.handleKey(event)
+    },
+    handleKey: throttle(function (this: any, e: KeyboardEvent) {
+      if (this.keyboardDisabled) return
       switch (e.key) {
         case ' ':
         case 'PageDown':
@@ -179,6 +188,7 @@ export default Vue.extend({
       this.$emit('menu')
     },
     prev() {
+      if (this.keyboardDisabled) return
       if (this.canPrev) {
         const step = this.$vuetify.breakpoint.height * 0.95
         this.$vuetify.goTo(this.offsetTop - step, this.goToOptions)
@@ -187,6 +197,7 @@ export default Vue.extend({
       }
     },
     next() {
+      if (this.keyboardDisabled) return
       if (this.canNext) {
         const step = this.$vuetify.breakpoint.height * 0.95
         this.$vuetify.goTo(this.offsetTop + step, this.goToOptions)
