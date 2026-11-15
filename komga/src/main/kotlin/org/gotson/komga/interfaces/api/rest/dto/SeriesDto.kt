@@ -1,6 +1,7 @@
 package org.gotson.komga.interfaces.api.rest.dto
 
 import com.fasterxml.jackson.annotation.JsonFormat
+import com.fasterxml.jackson.annotation.JsonInclude
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -23,6 +24,10 @@ data class SeriesDto(
   val booksMetadata: BookMetadataAggregationDto,
   val deleted: Boolean,
   val oneshot: Boolean,
+  @get:JsonInclude(JsonInclude.Include.NON_NULL)
+  val tagCount: Int? = null,
+  @get:JsonInclude(JsonInclude.Include.NON_NULL)
+  val pagesCount: Long? = null,
 )
 
 fun SeriesDto.restrictUrl(restrict: Boolean) = if (restrict) copy(url = "") else this

@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.swagger.v3.oas.annotations.Operation
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.infrastructure.gorse.GorsePreferenceService
+import org.gotson.komga.infrastructure.gorse.GorseReadingPreferenceService
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.rest.dto.GorsePreference
@@ -26,6 +27,7 @@ class GorseLikeController(
   private val preferenceService: GorsePreferenceService,
   private val gorseSettings: GorseSettingsProvider,
   private val bookRepository: BookRepository,
+  private val readingPreferenceService: GorseReadingPreferenceService,
 ) {
   // ===== 需要认证的端点 =====
 
@@ -47,8 +49,8 @@ class GorseLikeController(
     @PathVariable seriesId: String,
   ): Map<String, Boolean> {
     if (!gorseSettings.enabled) return mapOf("success" to false)
-    val userId = principal.user.id
-    return doLike(userId, seriesId)
+    readingPreferenceService.setPreference(principal.user, seriesId, GorsePreference.LIKE)
+    return mapOf("success" to true)
   }
 
   @DeleteMapping("{seriesId}")
@@ -58,8 +60,8 @@ class GorseLikeController(
     @PathVariable seriesId: String,
   ): Map<String, Boolean> {
     if (!gorseSettings.enabled) return mapOf("success" to false)
-    val userId = principal.user.id
-    return doUnlike(userId, seriesId)
+    readingPreferenceService.setPreference(principal.user, seriesId, GorsePreference.NONE)
+    return mapOf("success" to true)
   }
 
   @GetMapping("book/{bookId}")

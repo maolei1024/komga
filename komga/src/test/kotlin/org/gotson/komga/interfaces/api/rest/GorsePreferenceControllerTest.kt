@@ -1,5 +1,6 @@
 package org.gotson.komga.interfaces.api.rest
 
+import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -7,8 +8,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.gotson.komga.domain.model.KomgaUser
 import org.gotson.komga.infrastructure.gorse.GorsePreferenceService
+import org.gotson.komga.infrastructure.gorse.GorseReadingPreferenceService
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
+import org.gotson.komga.interfaces.api.ContentRestrictionChecker
 import org.gotson.komga.interfaces.api.persistence.BookDtoRepository
 import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
 import org.gotson.komga.interfaces.api.rest.dto.BookDto
@@ -24,12 +27,15 @@ class GorsePreferenceControllerTest {
   private val settings = mockk<GorseSettingsProvider>()
   private val seriesRepository = mockk<SeriesDtoRepository>()
   private val bookRepository = mockk<BookDtoRepository>()
+  private val readingPreferenceService = mockk<GorseReadingPreferenceService>()
+  private val contentRestrictionChecker = mockk<ContentRestrictionChecker>(relaxed = true)
   private val principal = mockk<KomgaPrincipal>()
   private val user = mockk<KomgaUser>()
-  private val controller = GorsePreferenceController(preferenceService, settings, seriesRepository, bookRepository)
+  private val controller = GorsePreferenceController(preferenceService, settings, seriesRepository, bookRepository, readingPreferenceService, contentRestrictionChecker)
 
   @BeforeEach
   fun setup() {
+    clearMocks(preferenceService, readingPreferenceService, settings, seriesRepository, bookRepository, principal, user, contentRestrictionChecker)
     every { settings.enabled } returns true
     every { principal.user } returns user
     every { user.id } returns "user"
@@ -37,12 +43,13 @@ class GorsePreferenceControllerTest {
 
   @Test
   fun `series and book endpoints resolve visible content and return authoritative preference`() {
-    every { seriesRepository.findByIdOrNull("series", "user") } returns mockk<SeriesDto>()
+    every { seriesRepository.findByIdOrNull("series", "user") } returns mockk<SeriesDto>(relaxed = true)
     val book = mockk<BookDto>()
     every { book.seriesId } returns "series"
+    every { book.deleted } returns false
     every { bookRepository.findByIdOrNull("book", "user") } returns book
     every { preferenceService.getPreference("user", "series") } returns GorsePreference.DISLIKE
-    every { preferenceService.setPreference("user", "series", GorsePreference.LIKE) } returns GorsePreference.LIKE
+    every { readingPreferenceService.setPreference(user, "series", GorsePreference.LIKE) } returns GorsePreference.LIKE
 
     assertThat(controller.getSeriesPreference(principal, "series").preference).isEqualTo(GorsePreference.DISLIKE)
     assertThat(controller.getBookPreference(principal, "book").seriesId).isEqualTo("series")

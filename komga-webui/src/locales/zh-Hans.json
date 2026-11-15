@@ -7,7 +7,7 @@
   "gorse_reading": {
     "title": "Gorse 连读",
     "choose_book": "选择一集开始阅读，之后将按顺序接续。",
-    "book_count": "共 {count} 集",
+    "metadata": "{tags} 标签 · {pages} 页",
     "book_number": "第 {number} 集",
     "details": "详情",
     "back": "返回推荐",

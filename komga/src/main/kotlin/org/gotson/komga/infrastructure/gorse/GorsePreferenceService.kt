@@ -43,29 +43,66 @@ class GorsePreferenceService(
     userId: String,
     seriesId: String,
     preference: GorsePreference,
+  ): GorsePreference = updatePreference(userId, seriesId, preference, null)
+
+  fun setPreferenceAndComplete(
+    userId: String,
+    seriesId: String,
+    preference: GorsePreference,
+    completeRead: () -> Unit,
+  ): GorsePreference = updatePreference(userId, seriesId, preference, completeRead)
+
+  private fun updatePreference(
+    userId: String,
+    seriesId: String,
+    preference: GorsePreference,
+    completeRead: (() -> Unit)?,
   ): GorsePreference =
     lockFor(userId, seriesId).withLock {
       val types = feedbackTypes()
       val original =
         try {
-          readExplicitFeedback(userId, seriesId, types)
+          gorseClient.getFeedbackChecked(userId, seriesId)
         } catch (e: Exception) {
           throw badGateway("Failed to read original Gorse preference for user $userId and series $seriesId", e)
         }
+      val syncRead = completeRead != null && preference != GorsePreference.NONE
+      val addRead = syncRead && original.none { it.FeedbackType == types.read }
       try {
         apply(userId, seriesId, preference, types)
-        val verified = readExplicitFeedback(userId, seriesId, types)
-        check(matches(verified, preference, types)) {
+        if (addRead) gorseClient.insertFeedbackChecked(listOf(feedback(types.read, userId, seriesId)))
+        val verified = gorseClient.getFeedbackChecked(userId, seriesId)
+        check(matches(verified.filter { it.FeedbackType in setOf(types.positive, types.negative) }, preference, types)) {
           "Gorse preference verification failed: expected $preference, found ${resolve(verified, types)}"
+        }
+        if (syncRead) {
+          check(verified.any { it.FeedbackType == types.read }) { "Gorse read feedback verification failed" }
+          completeRead?.invoke()
         }
         preference
       } catch (primary: Exception) {
-        val compensation = runCatching { restore(userId, seriesId, original, types) }.exceptionOrNull()
-        if (compensation != null) {
-          logger.error(compensation) {
-            "Gorse preference compensation failed for user $userId and series $seriesId after: ${primary.message}"
+        val compensationActions =
+          mutableListOf<() -> Unit>(
+            {
+              restore(userId, seriesId, original.filter { it.FeedbackType in setOf(types.positive, types.negative) }, types)
+            },
+          )
+        if (addRead) {
+          compensationActions += {
+            gorseClient.deleteFeedbackChecked(types.read, userId, seriesId)
+            check(gorseClient.getFeedbackChecked(userId, seriesId).none { it.FeedbackType == types.read }) {
+              "Gorse read feedback compensation verification failed"
+            }
           }
-          primary.addSuppressed(compensation)
+        }
+        val compensationFailures = compensationActions.mapNotNull { runCatching(it).exceptionOrNull() }
+        if (compensationFailures.isNotEmpty()) {
+          compensationFailures.forEach { compensation ->
+            logger.error(compensation) {
+              "Gorse preference compensation failed for user $userId and series $seriesId after: ${primary.message}"
+            }
+            primary.addSuppressed(compensation)
+          }
         } else {
           logger.warn(primary) { "Gorse preference update failed and original state was restored for user $userId and series $seriesId" }
         }

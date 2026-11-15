@@ -23,9 +23,10 @@ class GorseRecommendationControllerTest {
   private val gorseSettings = mockk<GorseSettingsProvider>()
   private val seriesDtoRepository = mockk<SeriesDtoRepository>()
   private val preferenceService = mockk<GorsePreferenceService>()
+  private val recommendationMetadata = mockk<GorseRecommendationMetadata>()
   private val principal = mockk<KomgaPrincipal>()
   private val user = mockk<KomgaUser>()
-  private val controller = GorseRecommendationController(gorseClient, gorseSettings, seriesDtoRepository, preferenceService)
+  private val controller = GorseRecommendationController(gorseClient, gorseSettings, seriesDtoRepository, preferenceService, recommendationMetadata)
 
   @BeforeEach
   fun setup() {
@@ -36,6 +37,7 @@ class GorseRecommendationControllerTest {
     every { user.id } returns "user"
     every { user.isAdmin } returns true
     every { preferenceService.getDislikedSeriesIds("user") } returns emptySet()
+    every { recommendationMetadata.enrich(any()) } answers { firstArg() }
   }
 
   @Test

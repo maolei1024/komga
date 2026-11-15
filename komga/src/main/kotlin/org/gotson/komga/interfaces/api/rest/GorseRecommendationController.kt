@@ -29,6 +29,7 @@ class GorseRecommendationController(
   private val gorseSettings: GorseSettingsProvider,
   private val seriesDtoRepository: SeriesDtoRepository,
   private val preferenceService: GorsePreferenceService,
+  private val recommendationMetadata: GorseRecommendationMetadata,
 ) {
   @GetMapping("recommended")
   @Operation(summary = "Get recommended series from Gorse", description = "Returns series recommended by Gorse for the current user.")
@@ -78,7 +79,7 @@ class GorseRecommendationController(
         candidates = candidates,
         tagPenaltyExponent = gorseSettings.tagPenaltyExponent,
       )
-    val seriesList = rankedSeries.drop(offset).take(size)
+    val seriesList = recommendationMetadata.enrich(rankedSeries.drop(offset).take(size))
 
     logger.debug {
       "Gorse reranked ${rankedSeries.size} visible candidates for user $userId " +

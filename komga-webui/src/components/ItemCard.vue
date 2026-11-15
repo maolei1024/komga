@@ -142,7 +142,10 @@
               </router-link>
             </v-card-subtitle>
           </template>
-          <v-card-text class="px-2 pt-0 font-weight-light" v-html="body">
+          <v-card-text v-if="itemContext.includes(ItemContext.GORSE_METADATA)" class="px-2 pt-0 font-weight-light">
+            <gorse-metadata :item="item"/>
+          </v-card-text>
+          <v-card-text v-else class="px-2 pt-0 font-weight-light" v-html="body">
           </v-card-text>
           <v-card-actions v-if="onOpen && !selected && !preselect">
             <v-btn text small :to="to" @click.stop>{{ $t('gorse_reading.details') }}</v-btn>
@@ -161,6 +164,7 @@ import {getReadProgress, getReadProgressPercentage} from '@/functions/book-progr
 import {ReadStatus} from '@/types/enum-books'
 import {createItem, Item, ItemContext, ItemTitle, ItemTypes} from '@/types/items'
 import Vue from 'vue'
+import GorseMetadata from '@/components/GorseMetadata.vue'
 import {RawLocation} from 'vue-router'
 import ReadListActionsMenu from '@/components/menus/ReadListActionsMenu.vue'
 import {BookDto} from '@/types/komga-books'
@@ -188,7 +192,7 @@ import {CLIENT_SETTING} from '@/types/komga-clientsettings'
 
 export default Vue.extend({
   name: 'ItemCard',
-  components: {OneShotActionsMenu, BookActionsMenu, SeriesActionsMenu, CollectionActionsMenu, ReadListActionsMenu},
+  components: {GorseMetadata, OneShotActionsMenu, BookActionsMenu, SeriesActionsMenu, CollectionActionsMenu, ReadListActionsMenu},
   props: {
     item: {
       type: Object as () => BookDto | SeriesDto | CollectionDto | ReadListDto,
@@ -253,6 +257,7 @@ export default Vue.extend({
   data: () => {
     return {
       ItemTypes,
+      ItemContext,
       actionMenuState: false,
       thumbnailError: false,
       thumbnailCacheBust: '',

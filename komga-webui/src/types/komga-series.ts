@@ -16,6 +16,8 @@ export interface SeriesDto {
   booksMetadata: SeriesBooksMetadataDto,
   deleted: boolean,
   oneshot: boolean,
+  tagCount?: number,
+  pagesCount?: number | null,
 
   // custom fields
   context: Context

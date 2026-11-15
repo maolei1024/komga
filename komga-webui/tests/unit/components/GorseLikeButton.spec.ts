@@ -38,7 +38,7 @@ describe('GorseLikeButton', () => {
   function mount(propsData: Record<string, string> = {seriesId: 'series'}) {
     wrapper = shallowMount(GorseLikeButton, {
       propsData,
-      mocks: {$komgaGorse: service, $eventHub: eventHub},
+      mocks: {$komgaGorse: service, $eventHub: eventHub, $t: (key: string) => key},
       stubs: {
         'v-tooltip': {template: '<div><slot name="activator" :on="{}"/><slot/></div>'},
         'v-btn': {template: '<button v-bind="$attrs" v-on="$listeners"><slot/></button>'},
@@ -100,6 +100,40 @@ describe('GorseLikeButton', () => {
     finishUpdate?.({seriesId: 'series', preference: 'LIKE'})
     await flushPromises()
     expect((view.vm as any).preference).toBe('LIKE')
+    expect((view.vm as any).loading).toBe(false)
+  })
+
+  it('retries the requested preference even when a failed response left it applied remotely', async () => {
+    const view = mount()
+    await flushPromises()
+    service.setSeriesPreference.mockImplementationOnce(async (_id, next) => {
+      preference = next
+      throw new Error('response lost')
+    })
+    await view.find('[data-testid="gorse-dislike"]').trigger('click')
+    await flushPromises()
+    expect(view.find('[data-testid="gorse-retry"]').exists()).toBe(true)
+
+    await view.find('[data-testid="gorse-retry"]').trigger('click')
+    await flushPromises()
+    expect(service.setSeriesPreference.mock.calls.map(call => call[1])).toEqual(['DISLIKE', 'DISLIKE'])
+    expect((view.vm as any).preference).toBe('DISLIKE')
+    expect(view.find('[data-testid="gorse-retry"]').exists()).toBe(false)
+  })
+
+  it('ignores a stale mutation after switching to another series', async () => {
+    let finish: ((value: {seriesId: string, preference: string}) => void) | undefined
+    service.setSeriesPreference.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const view = mount()
+    await flushPromises()
+    await view.find('[data-testid="gorse-like"]').trigger('click')
+    await view.setProps({seriesId: 'other'})
+    await flushPromises()
+    finish?.({seriesId: 'series', preference: 'LIKE'})
+    await flushPromises()
+
+    expect((view.vm as any).preference).toBe('NONE')
+    expect((view.vm as any).retryPreference).toBe(null)
     expect((view.vm as any).loading).toBe(false)
   })
 })

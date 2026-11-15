@@ -3,8 +3,10 @@ package org.gotson.komga.interfaces.api.rest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.gotson.komga.infrastructure.gorse.GorsePreferenceService
+import org.gotson.komga.infrastructure.gorse.GorseReadingPreferenceService
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
+import org.gotson.komga.interfaces.api.ContentRestrictionChecker
 import org.gotson.komga.interfaces.api.persistence.BookDtoRepository
 import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
 import org.gotson.komga.interfaces.api.rest.dto.GorsePreferenceDto
@@ -28,6 +30,8 @@ class GorsePreferenceController(
   private val gorseSettings: GorseSettingsProvider,
   private val seriesDtoRepository: SeriesDtoRepository,
   private val bookDtoRepository: BookDtoRepository,
+  private val readingPreferenceService: GorseReadingPreferenceService,
+  private val contentRestrictionChecker: ContentRestrictionChecker,
 ) {
   @GetMapping("series/{seriesId}")
   @Operation(summary = "Get the current user's explicit preference for a series")
@@ -49,7 +53,7 @@ class GorsePreferenceController(
   ): GorsePreferenceDto {
     requireEnabled()
     requireSeries(seriesId, principal)
-    return GorsePreferenceDto(seriesId, preferenceService.setPreference(principal.user.id, seriesId, update.preference))
+    return GorsePreferenceDto(seriesId, readingPreferenceService.setPreference(principal.user, seriesId, update.preference))
   }
 
   @GetMapping("book/{bookId}")
@@ -72,24 +76,29 @@ class GorsePreferenceController(
   ): GorsePreferenceDto {
     requireEnabled()
     val seriesId = requireBookSeries(bookId, principal)
-    return GorsePreferenceDto(seriesId, preferenceService.setPreference(principal.user.id, seriesId, update.preference))
+    return GorsePreferenceDto(seriesId, readingPreferenceService.setPreference(principal.user, seriesId, update.preference))
   }
 
   private fun requireSeries(
     seriesId: String,
     principal: KomgaPrincipal,
   ) {
-    if (seriesDtoRepository.findByIdOrNull(seriesId, principal.user.id) == null) {
-      throw ResponseStatusException(HttpStatus.NOT_FOUND)
-    }
+    val series =
+      seriesDtoRepository.findByIdOrNull(seriesId, principal.user.id)?.takeUnless { it.deleted }
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    contentRestrictionChecker.checkContentRestriction(principal.user, series)
   }
 
   private fun requireBookSeries(
     bookId: String,
     principal: KomgaPrincipal,
-  ): String =
-    bookDtoRepository.findByIdOrNull(bookId, principal.user.id)?.seriesId
-      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  ): String {
+    val book =
+      bookDtoRepository.findByIdOrNull(bookId, principal.user.id)?.takeUnless { it.deleted }
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    contentRestrictionChecker.checkContentRestriction(principal.user, book)
+    return book.seriesId
+  }
 
   private fun requireEnabled() {
     if (!gorseSettings.enabled) throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Gorse is disabled")

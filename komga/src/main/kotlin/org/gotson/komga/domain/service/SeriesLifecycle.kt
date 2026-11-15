@@ -206,22 +206,30 @@ class SeriesLifecycle(
   fun markReadProgressCompleted(
     seriesId: String,
     user: KomgaUser,
+    bookIds: Collection<String>? = null,
   ) {
-    val bookIds =
-      bookRepository
-        .findAllIdsBySeriesId(seriesId)
+    val pendingBookIds =
+      (bookIds ?: bookRepository.findAllIdsBySeriesId(seriesId))
         .filter { bookId ->
           val readProgress = readProgressRepository.findByBookIdAndUserIdOrNull(bookId, user.id)
           readProgress == null || !readProgress.completed
         }
     val progresses =
       mediaRepository
-        .getPagesSizes(bookIds)
+        .getPagesSizes(pendingBookIds)
         .map { (bookId, pageSize) -> ReadProgress(bookId, user.id, pageSize, true) }
 
+    if (bookIds != null) check(progresses.size == pendingBookIds.size) { "Some books have no media information" }
     readProgressRepository.save(progresses)
-    progresses.forEach { eventPublisher.publishEvent(DomainEvent.ReadProgressChanged(it)) }
-    eventPublisher.publishEvent(DomainEvent.ReadProgressSeriesChanged(seriesId, user.id))
+    val events = progresses.map { DomainEvent.ReadProgressChanged(it) } + DomainEvent.ReadProgressSeriesChanged(seriesId, user.id)
+    events.forEach { event ->
+      if (bookIds == null) {
+        eventPublisher.publishEvent(event)
+      } else {
+        runCatching { eventPublisher.publishEvent(event) }
+          .onFailure { logger.error(it) { "Failed to notify completed read progress for series $seriesId" } }
+      }
+    }
   }
 
   fun deleteReadProgress(

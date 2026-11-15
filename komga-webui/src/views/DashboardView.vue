@@ -364,6 +364,7 @@ export default Vue.extend({
             loader: this.loaderGorseRecommendedSeries,
             type: SectionType.SERIES,
             value: section,
+            itemContext: [ItemContext.GORSE_METADATA],
           }
         case RecommendedViewSection.ON_DECK:
           return {

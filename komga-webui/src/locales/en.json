@@ -7,7 +7,7 @@
   "gorse_reading": {
     "title": "Gorse continuous reading",
     "choose_book": "Choose a book to start reading this series.",
-    "book_count": "{count} books",
+    "metadata": "{tags} tags · {pages} pages",
     "book_number": "Book {number}",
     "details": "Details",
     "back": "Back to recommendations",

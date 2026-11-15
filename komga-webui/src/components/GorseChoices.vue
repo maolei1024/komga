@@ -10,9 +10,10 @@
       >
         <v-img :src="thumbnail(item)" aspect-ratio="0.7071" :class="{blur: blur(item)}"/>
         <span class="d-block pa-2 text-body-2">{{ item.metadata.title }}</span>
-        <span class="d-block px-2 pb-2 text-caption">
+        <span v-if="'seriesId' in item" class="d-block px-2 pb-1 text-caption text-truncate">
           {{ subtitle(item) }}
         </span>
+        <gorse-metadata :item="item" class="px-2 pb-2"/>
       </button>
       <v-card-actions>
         <v-btn text small :to="details(item)">{{ $t('gorse_reading.details') }}</v-btn>
@@ -23,6 +24,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
+import GorseMetadata from '@/components/GorseMetadata.vue'
 import {BookDto} from '@/types/komga-books'
 import {SeriesDto} from '@/types/komga-series'
 import {CLIENT_SETTING} from '@/types/komga-clientsettings'
@@ -31,6 +33,7 @@ import {isGorseReadable} from '@/services/gorse-reading'
 
 export default Vue.extend({
   name: 'GorseChoices',
+  components: {GorseMetadata},
   props: {
     items: {type: Array as () => (SeriesDto | BookDto)[], required: true},
     busy: {type: Boolean, default: false},
@@ -43,7 +46,7 @@ export default Vue.extend({
       return 'seriesId' in item && !isGorseReadable(item)
     },
     subtitle(item: SeriesDto | BookDto): string {
-      if (!('seriesId' in item)) return this.$t('gorse_reading.book_count', {count: item.booksCount}).toString()
+      if (!('seriesId' in item)) return ''
       if (!isGorseReadable(item)) return this.$t('gorse_reading.unavailable_short').toString()
       return this.$t('gorse_reading.book_number', {number: item.metadata.number}).toString()
     },

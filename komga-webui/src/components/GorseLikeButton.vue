@@ -39,6 +39,9 @@
       </template>
       <span>{{ preference === 'DISLIKE' ? '取消不感兴趣' : '不感兴趣' }}</span>
     </v-tooltip>
+    <v-btn v-if="retryPreference !== null" data-testid="gorse-retry" text small :disabled="loading" @click.stop="retry">
+      {{ $t('gorse_reading.retry') }}
+    </v-btn>
   </div>
 </template>
 
@@ -65,6 +68,7 @@ export default Vue.extend({
       loading: false,
       pendingPreference: null as GorsePreference | null,
       requestVersion: 0,
+      retryPreference: null as GorsePreference | null,
     }
   },
   watch: {
@@ -81,11 +85,16 @@ export default Vue.extend({
       },
     },
   },
+  beforeDestroy() {
+    this.requestVersion++
+  },
   methods: {
     async fetchPreference() {
       const version = ++this.requestVersion
       this.loading = true
       this.pendingPreference = null
+      this.retryPreference = null
+      this.preference = 'NONE'
       try {
         const result = this.seriesId
           ? await this.$komgaGorse.getSeriesPreference(this.seriesId)
@@ -100,18 +109,34 @@ export default Vue.extend({
     async togglePreference(selected: Exclude<GorsePreference, 'NONE'>) {
       if (this.loading) return
       const target: GorsePreference = this.preference === selected ? 'NONE' : selected
+      await this.savePreference(target, selected)
+    },
+    async retry() {
+      if (this.retryPreference === null || this.loading) return
+      await this.savePreference(this.retryPreference, this.retryPreference)
+    },
+    async savePreference(target: GorsePreference, selected: GorsePreference) {
+      const version = ++this.requestVersion
+      const seriesId = this.seriesId
+      const bookId = this.bookId
       this.loading = true
       this.pendingPreference = selected
       try {
-        const result: GorsePreferenceDto = this.seriesId
-          ? await this.$komgaGorse.setSeriesPreference(this.seriesId, target)
-          : await this.$komgaGorse.setBookPreference(this.bookId, target)
+        const result: GorsePreferenceDto = seriesId
+          ? await this.$komgaGorse.setSeriesPreference(seriesId, target)
+          : await this.$komgaGorse.setBookPreference(bookId, target)
+        if (version !== this.requestVersion) return
         this.preference = result.preference
+        this.retryPreference = null
       } catch (e) {
+        if (version !== this.requestVersion) return
+        this.retryPreference = target
         this.notifyError('更新 Gorse 偏好失败')
       } finally {
-        this.loading = false
-        this.pendingPreference = null
+        if (version === this.requestVersion) {
+          this.loading = false
+          this.pendingPreference = null
+        }
       }
     },
     notifyError(message: string) {
