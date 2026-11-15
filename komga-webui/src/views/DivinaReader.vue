@@ -1,6 +1,7 @@
 <template>
   <v-container class="ma-0 pa-0 full-height" fluid
-               :style="`width: 100%; background-color: ${backgroundColor}`"
+               :class="{'gorse-feedback-reserved': gorseFeedbackVisible}"
+               :style="`width: 100%; background-color: ${backgroundColor}; --gorse-feedback-space: ${gorseFeedbackHeight + (showToolbars ? 48 : 0)}px; --gorse-feedback-offset: ${showToolbars ? 48 : 0}px`"
   >
     <v-alert v-if="readerError" type="error" class="reader-error" role="alert">
       {{ $t(`gorse_reading.${readerError}`) }}
@@ -167,14 +168,28 @@
       ></paged-reader>
     </div>
 
-    <div v-if="gorseMode && gorseAtEnd && !gorsePicker && !showToolbars" class="gorse-end">
+    <div v-if="gorseMode && gorseAtEnd && !gorsePicker && !showToolbars && !gorseFeedbackVisible" class="gorse-end">
       <div class="text-caption text-center mb-1">{{ $t('gorse_reading.end_hint') }}</div>
       <v-btn color="primary" :loading="gorseBusy" :disabled="gorseInputBlocked" @click="jumpToNext">
         {{ $t($_.isEmpty(siblingNext) ? 'gorse_reading.choose_next' : 'gorse_reading.next_book') }}
       </v-btn>
     </div>
 
-    <gorse-picker-dialog v-if="gorseSession" v-model="gorsePicker" :session="gorseSession" :open-book="openGorseBook"/>
+    <div v-if="gorseFeedbackSaving && !gorsePicker" class="gorse-feedback-saving-mask" @wheel.prevent @touchmove.prevent/>
+    <div v-if="gorseFeedbackVisible" class="gorse-reader-feedback">
+      <gorse-reader-feedback :state="gorseFeedback" :disabled="gorseBusy || settingUp" @height="resizeFeedback">
+        <template #next>
+          <v-btn small color="primary" :disabled="gorseFeedbackSaving || gorseBusy" @click="runReaderAction(continueGorse)">
+            {{ $t('gorse_reading.choose_next') }}
+          </v-btn>
+        </template>
+      </gorse-reader-feedback>
+    </div>
+    <gorse-picker-dialog v-if="gorseSession" v-model="gorsePicker" :session="gorseSession" :open-book="openGorseBook" :blocked="gorseFeedbackSaving">
+      <template v-if="gorseCompleted && gorseFeedback" #feedback>
+        <gorse-reader-feedback :state="gorseFeedback" :disabled="gorseBusy || settingUp" @close="gorsePicker = false"/>
+      </template>
+    </gorse-picker-dialog>
 
     <thumbnail-explorer-dialog
       v-model="showExplorer"
@@ -345,6 +360,8 @@
 <script lang="ts">
 import {Route} from 'vue-router'
 import GorsePickerDialog from '@/components/dialogs/GorsePickerDialog.vue'
+import GorseReaderFeedbackPanel from '@/components/GorseReaderFeedback.vue'
+import {GorseReaderFeedback} from '@/services/gorse-reader-feedback'
 import {getGorseReading, GorseReadingError, GorseReadingSession, PreparedGorseBook} from '@/services/gorse-reading'
 import {ReaderProgressWriter} from '@/functions/reader-progress'
 import {isReaderAtBottom, isTyping} from '@/functions/reader-boundary'
@@ -384,6 +401,7 @@ export default Vue.extend({
   name: 'DivinaReader',
   components: {
     GorsePickerDialog,
+    GorseReaderFeedback: GorseReaderFeedbackPanel,
     ContinuousReader,
     PagedReader,
     SettingsSwitch,
@@ -401,6 +419,9 @@ export default Vue.extend({
       gorsePicker: false,
       gorseBusy: false,
       gorseAtEnd: false,
+      gorseCompleted: false,
+      gorseFeedback: undefined as GorseReaderFeedback | undefined,
+      gorseFeedbackHeight: 0,
       readerError: '',
       readerRetry: undefined as (() => Promise<void>) | undefined,
       setupVersion: 0,
@@ -524,6 +545,7 @@ export default Vue.extend({
   },
   beforeDestroy() {
     this.setupVersion++
+    this.gorseFeedback?.dispose()
     this.progressWriter?.flush().catch(() => {})
   },
   destroyed() {
@@ -546,6 +568,7 @@ export default Vue.extend({
     },
   },
   async beforeRouteUpdate(to, from, next) {
+    if (this.gorseFeedbackSaving) { next(false); return }
     if (to.params.bookId !== from.params.bookId || to.query.mode !== from.query.mode) {
       try {
         if (this.gorseMode) await this.flushProgress()
@@ -564,6 +587,7 @@ export default Vue.extend({
       next()
       return
     }
+    if (this.gorseFeedbackSaving) { next(false); return }
     try {
       if (this.gorseMode) await this.flushProgress()
       next()
@@ -574,6 +598,11 @@ export default Vue.extend({
     }
   },
   watch: {
+    '$store.state.komgaUsers.me.id'() {
+      this.gorseFeedback?.dispose()
+      this.gorseFeedback = undefined
+      this.gorseCompleted = false
+    },
     gorsePicker() {
       this.$nextTick(this.updateGorseEnd)
     },
@@ -594,7 +623,13 @@ export default Vue.extend({
       return this.$route.query.mode === 'gorse'
     },
     gorseInputBlocked(): boolean {
-      return this.gorseMode && (this.gorsePicker || this.gorseBusy || this.settingUp || this.showSettings || this.showExplorer || this.showHelp)
+      return this.gorseMode && (this.gorsePicker || this.gorseBusy || this.gorseFeedbackSaving || this.settingUp || this.showSettings || this.showExplorer || this.showHelp)
+    },
+    gorseFeedbackSaving(): boolean {
+      return !!this.gorseFeedback?.saving
+    },
+    gorseFeedbackVisible(): boolean {
+      return this.gorseMode && this.gorseCompleted && !!this.gorseFeedback && !this.gorsePicker
     },
     continuousReader(): boolean {
       return this.readingDirection === ReadingDirection.WEBTOON
@@ -764,11 +799,27 @@ export default Vue.extend({
       else this.fullscreenIcon = 'mdi-fullscreen'
     },
     keyPressed(e: KeyboardEvent) {
+      if ((e.target as HTMLElement)?.closest?.('[data-gorse-feedback]')) return
       if (this.gorseInputBlocked || (this.gorseMode && (e.repeat || isTyping(e)))) return
       if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return
       this.shortcuts[e.key]?.execute(this)
     },
     gorseKeyPressed(event: KeyboardEvent) {
+      if (this.gorseMode && this.gorseFeedbackSaving) {
+        if (event.key !== 'Tab') event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
+      if (this.gorseMode && this.gorseFeedback?.expanded && event.key === 'Escape') {
+        this.gorseFeedback.expanded = false
+        this.$nextTick(() => {
+          document.querySelector<HTMLElement>('.v-dialog--active [data-feedback-details-toggle], .gorse-reader-feedback [data-feedback-details-toggle]')?.focus()
+        })
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
+      if ((event.target as HTMLElement)?.closest?.('[data-gorse-feedback]')) return
       if (!this.gorseMode || this.gorseInputBlocked || isTyping(event)) return
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
       if ((event.target as HTMLElement)?.closest('.v-menu__content')) return
@@ -787,9 +838,20 @@ export default Vue.extend({
       const reader = this.$refs.pagedReader as (Vue & {canNext: boolean}) | undefined
       this.gorseAtEnd = !!(this.gorseMode && !this.settingUp && surface && this.pages.length &&
         (this.continuousReader || reader?.canNext === false) && isReaderAtBottom(surface))
+      if (this.gorseAtEnd && this.$_.isEmpty(this.siblingNext)) this.gorseCompleted = true
+    },
+    resizeFeedback(height: number) {
+      const difference = height - this.gorseFeedbackHeight
+      if (Math.abs(difference) < 1) return
+      const wasAtEnd = this.gorseAtEnd
+      this.gorseFeedbackHeight = height
+      this.$nextTick(() => {
+        if (wasAtEnd && this.gorseFeedbackVisible) window.scrollBy(0, difference)
+        this.updateGorseEnd()
+      })
     },
     async runReaderAction(action: () => Promise<void>) {
-      if (this.gorseBusy) return
+      if (this.gorseBusy || this.gorseFeedbackSaving) return
       this.gorseBusy = true
       this.readerError = ''
       this.readerRetry = action
@@ -817,8 +879,10 @@ export default Vue.extend({
       }
     },
     async openGorseBook(prepared: PreparedGorseBook) {
+      if (this.gorseFeedbackSaving) throw new GorseReadingError('feedback_busy')
       const wasPicking = this.gorsePicker
       await this.flushProgress()
+      if (this.gorseFeedbackSaving) throw new GorseReadingError('feedback_busy')
       if (wasPicking && !this.gorsePicker) return
       await this.$router.replace({
         name: 'read-book', params: {bookId: prepared.book.id},
@@ -827,7 +891,7 @@ export default Vue.extend({
       this.gorsePicker = false
     },
     async continueGorse() {
-      if (this.gorseAtEnd) this.markProgress(this.pagesCount)
+      if (this.gorseAtEnd || this.gorseCompleted) this.markProgress(this.pagesCount)
       await this.flushProgress()
       if (this.$_.isEmpty(this.siblingNext)) this.gorsePicker = true
       else {
@@ -885,6 +949,21 @@ export default Vue.extend({
         this.incognito = route.query.incognito?.toString().toLowerCase() === 'true'
         this.siblingNext = nextBook
         this.siblingPrevious = previousBook
+        this.gorseFeedback?.dispose()
+        this.gorseFeedback = undefined
+        this.gorseCompleted = false
+        this.gorseFeedbackHeight = 0
+        if (gorse && this.$_.isEmpty(nextBook)) {
+          const finalPage = prepared.pages.length
+          this.gorseFeedback = new GorseReaderFeedback(
+            prepared.series.id, prepared.series.metadata.title, this.incognito, this.$komgaGorse,
+            async () => {
+              this.progressWriter!.queue(bookId, finalPage)
+              await this.flushProgress()
+            },
+          )
+          this.gorseFeedback.load()
+        }
         this.jumpToNextBook = false
         this.jumpToPreviousBook = false
         this.pages = prepared.pages.map(item => ({...item, url: this.getPageUrl(item, bookId)}))
@@ -976,6 +1055,7 @@ export default Vue.extend({
       }
     },
     goTo(page: number) {
+      if (this.gorseFeedbackSaving) return
       this.$debug('[goTo]', `page:${page}`)
       this.page = page
       this.markProgress(page)
@@ -1096,7 +1176,7 @@ export default Vue.extend({
       this.notification.enabled = true
     },
     markProgress(page: number) {
-      if (!this.settingUp && !this.incognito && this.book.id && page >= 1 && page <= this.pagesCount) {
+      if (!this.settingUp && !this.incognito && !this.gorseFeedbackSaving && this.book.id && page >= 1 && page <= this.pagesCount) {
         this.progressWriter?.queue(this.book.id, page)
       }
     },
@@ -1130,6 +1210,14 @@ export default Vue.extend({
 })
 </script>
 <style scoped>
+.gorse-reader-feedback { position: fixed; top: var(--gorse-feedback-offset); left: 0; right: 0; z-index: 4; }
+.gorse-feedback-reserved { padding-top: var(--gorse-feedback-space) !important; }
+.gorse-feedback-saving-mask { position: fixed; inset: 0; z-index: 3; }
+@media (max-width: 959px) {
+  .gorse-reader-feedback { top: auto; bottom: var(--gorse-feedback-offset); }
+  .gorse-feedback-reserved { padding-top: 0 !important; padding-bottom: var(--gorse-feedback-space) !important; }
+}
+
 .reader-error {
   position: fixed;
   top: 48px;

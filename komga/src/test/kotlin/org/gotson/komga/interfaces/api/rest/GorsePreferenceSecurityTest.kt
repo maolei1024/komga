@@ -21,6 +21,9 @@ class GorsePreferenceSecurityTest(
       .get("/api/v1/gorse/preference/series/series")
       .andExpect { status { isUnauthorized() } }
     mockMvc
+      .get("/api/v1/gorse/preference/series/series/context")
+      .andExpect { status { isUnauthorized() } }
+    mockMvc
       .put("/api/v1/gorse/preference/series/series") {
         contentType = org.springframework.http.MediaType.APPLICATION_JSON
         content = """{"preference":"DISLIKE"}"""

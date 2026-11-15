@@ -1,22 +1,22 @@
 <template>
   <div @keydown.capture="handleEscape" :aria-busy="busy">
     <div class="d-flex align-center mb-4">
-      <v-btn v-if="selectedSeries" icon :disabled="busy" @click="back" :aria-label="$t('gorse_reading.back')">
+      <v-btn v-if="selectedSeries" icon :disabled="busy || blocked" @click="back" :aria-label="$t('gorse_reading.back')">
         <v-icon>mdi-arrow-left</v-icon>
       </v-btn>
       <h2 class="text-h6">{{ selectedSeries ? selectedSeries.metadata.title : $t('gorse_reading.title') }}</h2>
       <v-spacer/>
-      <v-btn v-if="!selectedSeries" text :disabled="busy" @click="load(true)">{{ $t('gorse_reading.refresh') }}</v-btn>
+      <v-btn v-if="!selectedSeries" text :disabled="busy || blocked" @click="load(true)">{{ $t('gorse_reading.refresh') }}</v-btn>
     </div>
     <p v-if="selectedSeries">{{ $t('gorse_reading.choose_book') }}</p>
     <v-progress-linear v-if="busy" indeterminate class="mb-4"/>
     <v-alert v-if="error" type="error" role="alert">{{ $t(`gorse_reading.${error}`) }}</v-alert>
-    <gorse-choices ref="choices" :items="visibleItems" :busy="busy" @choose="choose"/>
+    <gorse-choices ref="choices" :items="visibleItems" :busy="busy || blocked" @choose="choose"/>
     <p v-if="!busy && !error && !visibleItems.length" class="text-center pa-8">{{ $t('gorse_reading.empty') }}</p>
-    <v-btn v-if="visibleCount < items.length" block text class="mt-4" :disabled="busy" @click="showMore">
+    <v-btn v-if="visibleCount < items.length" block text class="mt-4" :disabled="busy || blocked" @click="showMore">
       {{ $t('gorse_reading.more') }}
     </v-btn>
-    <v-btn v-if="error" text :disabled="busy" @click="retry">{{ $t('gorse_reading.retry') }}</v-btn>
+    <v-btn v-if="error" text :disabled="busy || blocked" @click="retry">{{ $t('gorse_reading.retry') }}</v-btn>
   </div>
 </template>
 
@@ -37,6 +37,7 @@ export default Vue.extend({
     openBook: {type: Function, required: true},
     selectInDialog: {type: Boolean, default: false},
     autofocus: {type: Boolean, default: false},
+    blocked: {type: Boolean, default: false},
   },
   data() {
     return {
@@ -67,7 +68,7 @@ export default Vue.extend({
   },
   methods: {
     async perform(action: (version: number) => Promise<void>, retry: () => Promise<void>) {
-      if (this.busy) return
+      if (this.busy || this.blocked) return
       const version = ++this.requestVersion
       this.busy = true
       this.error = ''
@@ -80,7 +81,7 @@ export default Vue.extend({
         if (version === this.requestVersion) {
           this.busy = false
           await this.$nextTick()
-          if (this.autofocus) (this.$refs.choices as InstanceType<typeof GorseChoices>)?.focusFirst()
+          if (this.autofocus && !this.blocked) (this.$refs.choices as InstanceType<typeof GorseChoices>)?.focusFirst()
         }
       }
     },
@@ -94,6 +95,7 @@ export default Vue.extend({
       }, () => this.load(refresh))
     },
     choose(item: SeriesDto | BookDto) {
+      if (this.blocked) return
       if ('seriesId' in item) this.read(item)
       else if (this.selectInDialog) this.$emit('series', item)
       else this.selectSeries(item)
@@ -122,7 +124,7 @@ export default Vue.extend({
       this.retryAction?.()
     },
     async back() {
-      if (this.busy) return
+      if (this.busy || this.blocked) return
       if (this.initialSeries) this.$emit('close')
       else {
         this.selectedSeries = undefined
@@ -132,6 +134,7 @@ export default Vue.extend({
       }
     },
     handleEscape(event: KeyboardEvent) {
+      if (this.blocked) { event.preventDefault(); event.stopImmediatePropagation(); return }
       if (event.repeat && event.key === 'Enter') {
         event.preventDefault()
         event.stopImmediatePropagation()

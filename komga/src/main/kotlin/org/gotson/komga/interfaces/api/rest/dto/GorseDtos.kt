@@ -66,3 +66,23 @@ data class GorsePreferenceDto(
   val seriesId: String,
   val preference: GorsePreference,
 )
+
+enum class GorseFeaturesStatus {
+  AVAILABLE,
+  MISSING,
+  UNAVAILABLE,
+}
+
+data class GorseFeedbackContextDto(
+  val seriesId: String,
+  val pagesCount: Long?,
+  val tagCount: Int?,
+  val featuresStatus: GorseFeaturesStatus,
+  val authors: List<String> = emptyList(),
+  val tags: List<String> = emptyList(),
+  val pageBuckets: List<String> = emptyList(),
+  val tagBuckets: List<String> = emptyList(),
+  val genres: List<String> = emptyList(),
+  val groups: List<String> = emptyList(),
+  val characters: List<String> = emptyList(),
+)

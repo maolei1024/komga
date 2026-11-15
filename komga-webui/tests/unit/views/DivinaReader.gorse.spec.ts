@@ -31,6 +31,7 @@ describe('Gorse reader transitions', () => {
   }
   const series = {getOneSeries: jest.fn(), getRecommendedSeries: jest.fn()}
   const router = {replace: jest.fn(), push: jest.fn()}
+  const gorse = {getFeedbackContext: jest.fn(), getSeriesPreference: jest.fn(), setSeriesPreference: jest.fn()}
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -45,6 +46,9 @@ describe('Gorse reader transitions', () => {
     series.getRecommendedSeries.mockResolvedValue({content: []})
     router.replace.mockResolvedValue(undefined)
     router.push.mockResolvedValue(undefined)
+    gorse.getFeedbackContext.mockResolvedValue({seriesId: 'series', featuresStatus: 'AVAILABLE', tags: []})
+    gorse.getSeriesPreference.mockResolvedValue({seriesId: 'series', preference: 'NONE'})
+    gorse.setSeriesPreference.mockImplementation(async (seriesId, preference) => ({seriesId, preference}))
   })
   afterEach(async () => {
     wrapper?.destroy()
@@ -63,6 +67,7 @@ describe('Gorse reader transitions', () => {
         $router: router,
         $komgaBooks: books,
         $komgaSeries: series,
+        $komgaGorse: gorse,
         $vuetify: {rtl: false, breakpoint: {width: 1200, height: 800}},
         $store: {
           getters: {mePageStreaming: true},
@@ -154,6 +159,9 @@ describe('Gorse reader transitions', () => {
     await view.runReaderAction(view.continueGorse)
     expect(books.updateReadProgress).not.toHaveBeenCalled()
     expect(view.gorsePicker).toBe(true)
+    await view.gorseFeedback.toggle('LIKE')
+    expect(gorse.getSeriesPreference).not.toHaveBeenCalled()
+    expect(gorse.setSeriesPreference).not.toHaveBeenCalled()
   })
 
   it('retains the confirmation step in ordinary reading', async () => {
@@ -162,6 +170,73 @@ describe('Gorse reader transitions', () => {
     expect(view.jumpToNextBook).toBe(true)
     expect(view.gorsePicker).toBe(false)
     expect(router.push).not.toHaveBeenCalled()
+    expect(gorse.getFeedbackContext).not.toHaveBeenCalled()
+  })
+
+  it('prefetches the final series context but waits for the actual end to display feedback', async () => {
+    ;(isReaderAtBottom as jest.Mock).mockReturnValue(false)
+    const view = await mount()
+    expect(gorse.getFeedbackContext).toHaveBeenCalledWith('series')
+    expect(view.gorseFeedbackVisible).toBe(false)
+    ;(isReaderAtBottom as jest.Mock).mockReturnValue(true)
+    view.updateGorseEnd()
+    await Vue.nextTick()
+    expect(view.gorseFeedbackVisible).toBe(true)
+    const feedback = view.gorseFeedback
+    await view.continueGorse()
+    expect(view.gorseFeedback).toBe(feedback)
+    expect(view.gorseCompleted).toBe(true)
+    expect(view.gorseFeedbackVisible).toBe(false)
+    view.gorsePicker = false
+    expect(view.gorseFeedbackVisible).toBe(true)
+  })
+
+  it('does not offer series feedback at an intermediate book end', async () => {
+    books.getBookSiblingNext.mockResolvedValue(book('second'))
+    const view = await mount()
+    expect(view.gorseCompleted).toBe(false)
+    expect(view.gorseFeedback).toBeUndefined()
+    expect(gorse.getFeedbackContext).not.toHaveBeenCalled()
+  })
+
+  it('blocks book changes, exit, and reader keys while final feedback is pending', async () => {
+    const view = await mount()
+    let finish!: (result: object) => void
+    gorse.setSeriesPreference.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = view.gorseFeedback.toggle('LIKE')
+    await flushPromises()
+    router.replace.mockClear()
+    view.closeBook()
+    view.nextBook()
+    expect(view.gorseInputBlocked).toBe(true)
+    expect(router.replace).not.toHaveBeenCalled()
+    const next = jest.fn()
+    const hook = (DivinaReader as any).options.beforeRouteLeave
+    await (Array.isArray(hook) ? hook[0] : hook).call(view, {name: 'gorse-reading'}, {}, next)
+    expect(next).toHaveBeenCalledWith(false)
+    expect(books.updateReadProgress).toHaveBeenLastCalledWith('first', {page: 2})
+    finish({seriesId: 'series', preference: 'LIKE'})
+    await pending
+    expect(view.gorseFeedbackSaving).toBe(false)
+  })
+
+  it('collapses feature details before closing the picker and isolates focused feedback controls', async () => {
+    const view = await mount()
+    view.gorsePicker = true
+    view.gorseFeedback.expanded = true
+    const escape = new KeyboardEvent('keydown', {key: 'Escape', cancelable: true})
+    view.gorseKeyPressed(escape)
+    expect(view.gorseFeedback.expanded).toBe(false)
+    expect(view.gorsePicker).toBe(true)
+    expect(escape.defaultPrevented).toBe(true)
+    view.gorsePicker = false
+    const button = document.createElement('button')
+    button.setAttribute('data-gorse-feedback', '')
+    document.body.appendChild(button)
+    const advance = jest.spyOn(view, 'jumpToNext')
+    button.dispatchEvent(new KeyboardEvent('keydown', {key: ' ', bubbles: true}))
+    expect(advance).not.toHaveBeenCalled()
+    button.remove()
   })
 
   it('shows a recoverable error rather than an empty reader for missing pages', async () => {

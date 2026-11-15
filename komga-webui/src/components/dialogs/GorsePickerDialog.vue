@@ -1,17 +1,19 @@
 <template>
-  <v-dialog :value="value" @input="$emit('input', $event)" max-width="1100" scrollable
+  <v-dialog :value="value" @input="close" max-width="1100" scrollable :persistent="blocked" :retain-focus="true"
             :fullscreen="$vuetify.breakpoint.smAndDown">
     <v-card v-if="value" @keydown.stop :class="{'gorse-picker-mobile': $vuetify.breakpoint.smAndDown}">
       <v-card-actions class="gorse-picker-toolbar justify-end">
-        <v-btn icon :aria-label="$t('gorse_reading.close')" @click="$emit('input', false)"><v-icon>mdi-close</v-icon></v-btn>
+        <v-btn icon :disabled="blocked" :aria-label="$t('gorse_reading.close')" @click="close(false)"><v-icon>mdi-close</v-icon></v-btn>
       </v-card-actions>
+      <div v-if="$scopedSlots.feedback" class="gorse-picker-feedback"><slot name="feedback"/></div>
       <v-card-text class="gorse-picker-content">
         <gorse-browser
           :session="session"
           :initial-series="initialSeries"
           :open-book="openBook"
+          :blocked="blocked"
           autofocus
-          @close="$emit('input', false)"
+          @close="close(false)"
         />
       </v-card-text>
     </v-card>
@@ -32,6 +34,10 @@ export default Vue.extend({
     session: {type: Object as () => GorseReadingSession, required: true},
     initialSeries: {type: Object as () => SeriesDto, default: undefined},
     openBook: {type: Function, required: true},
+    blocked: {type: Boolean, default: false},
+  },
+  methods: {
+    close(value: boolean) { if (!this.blocked) this.$emit('input', value) },
   },
 })
 </script>
@@ -39,12 +45,17 @@ export default Vue.extend({
 <style scoped>
 .gorse-picker-toolbar {
   flex: 0 0 auto;
+  order: 0;
 }
 
 .gorse-picker-content {
+  order: 2;
   min-height: 0;
   overscroll-behavior: contain;
 }
+
+.gorse-picker-feedback { flex: 0 0 auto; min-height: 0; order: 1; }
+.gorse-picker-mobile .gorse-picker-feedback { order: 3; }
 
 .gorse-picker-mobile {
   height: 100vh;

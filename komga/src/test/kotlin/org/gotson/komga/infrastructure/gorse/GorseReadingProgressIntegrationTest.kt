@@ -27,7 +27,9 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
 @SpringBootTest
@@ -88,6 +90,31 @@ class GorseReadingProgressIntegrationTest(
     seriesLifecycle.deleteMany(listOf(series))
     users.delete(reader.id)
     libraries.delete(library.id)
+  }
+
+  @Test
+  fun `context endpoint returns stored Gorse labels and actual pages without changing reading state`() {
+    every { client.getItemChecked(series.id) } returns
+      GorseItem(
+        series.id,
+        Labels = mapOf("authors" to listOf("stored artist"), "tags" to listOf("stored tag"), "preference_buckets" to listOf("pagesize_legacy", "tagsize_0-5")),
+        Timestamp = "2026-11-15T00:00:00Z",
+      )
+    mockMvc
+      .perform(get("/api/v1/gorse/preference/series/${series.id}/context").with(user(KomgaPrincipal(reader))))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.featuresStatus").value("AVAILABLE"))
+      .andExpect(jsonPath("$.pagesCount").value(36))
+      .andExpect(jsonPath("$.tagCount").value(0))
+      .andExpect(jsonPath("$.authors[0]").value("stored artist"))
+      .andExpect(jsonPath("$.pageBuckets[0]").value("pagesize_legacy"))
+    assertThat(progresses.findAllByUserId(reader.id)).isEmpty()
+    assertThat(feedback).isEmpty()
+    val restricted = reader.copy(sharedAllLibraries = false, sharedLibrariesIds = emptySet())
+    mockMvc
+      .perform(get("/api/v1/gorse/preference/series/${series.id}/context").with(user(KomgaPrincipal(restricted))))
+      .andExpect(status().isForbidden())
+    verify(exactly = 1) { client.getItemChecked(series.id) }
   }
 
   @Test

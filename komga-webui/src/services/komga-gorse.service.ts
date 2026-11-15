@@ -50,6 +50,20 @@ export interface GorsePreferenceDto {
     preference: GorsePreference
 }
 
+export interface GorseFeedbackContextDto {
+    seriesId: string
+    pagesCount: number | null
+    tagCount: number | null
+    featuresStatus: 'AVAILABLE' | 'MISSING' | 'UNAVAILABLE'
+    authors: string[]
+    tags: string[]
+    pageBuckets: string[]
+    tagBuckets: string[]
+    genres: string[]
+    groups: string[]
+    characters: string[]
+}
+
 export default class KomgaGorseService {
     private http: AxiosInstance
 
@@ -152,6 +166,10 @@ export default class KomgaGorseService {
 
     async getSeriesPreference(seriesId: string): Promise<GorsePreferenceDto> {
         return (await this.http.get(`${API_GORSE}/preference/series/${seriesId}`)).data
+    }
+
+    async getFeedbackContext(seriesId: string): Promise<GorseFeedbackContextDto> {
+        return (await this.http.get(`${API_GORSE}/preference/series/${seriesId}/context`)).data
     }
 
     async setSeriesPreference(seriesId: string, preference: GorsePreference): Promise<GorsePreferenceDto> {

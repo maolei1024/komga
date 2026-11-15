@@ -10,7 +10,14 @@ import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
+import org.gotson.komga.infrastructure.security.KomgaPrincipal
+import org.gotson.komga.interfaces.api.ContentRestrictionChecker
+import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
+import org.gotson.komga.interfaces.api.rest.GorseFeedbackContextController
+import org.gotson.komga.interfaces.api.rest.GorseRecommendationMetadata
+import org.gotson.komga.interfaces.api.rest.dto.GorseFeaturesStatus
 import org.gotson.komga.interfaces.api.rest.dto.GorsePreference
+import org.gotson.komga.interfaces.api.rest.dto.SeriesDto
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.junit.jupiter.api.parallel.ResourceLock
@@ -22,6 +29,45 @@ import java.util.UUID
 @EnabledIfEnvironmentVariable(named = "KOMGA_TEST_GORSE_URL", matches = "http://127\\.0\\.0\\.1:[0-9]+")
 @ResourceLock("default-time-zone")
 class GorseReadingPreferenceLiveTest {
+  @Test
+  fun `feedback context returns actual isolated Gorse features`() {
+    val settings = mockk<GorseSettingsProvider>()
+    every { settings.apiUrl } returns System.getenv("KOMGA_TEST_GORSE_URL")
+    every { settings.apiKey } returns "local-validation-only"
+    every { settings.enabled } returns true
+    val client = GorseClient(settings)
+    val seriesId = "context-${UUID.randomUUID()}"
+    val item =
+      GorseItem(
+        seriesId,
+        Labels = mapOf("tags" to listOf("actual tag"), "authors" to listOf("actual author"), "preference_buckets" to listOf("pagesize_legacy", "tagsize_0-5")),
+        Timestamp = Instant.now().toString(),
+      )
+    val principal = mockk<KomgaPrincipal>(relaxed = true)
+    every { principal.user.id } returns "context-reader"
+    val series = mockk<SeriesDto>(relaxed = true)
+    every { series.pagesCount } returns 36L
+    every { series.tagCount } returns 28
+    val repository = mockk<SeriesDtoRepository>()
+    every { repository.findByIdOrNull(seriesId, "context-reader") } returns series
+    val metadata = mockk<GorseRecommendationMetadata>()
+    every { metadata.enrich(listOf(series)) } returns listOf(series)
+    val controller = GorseFeedbackContextController(repository, mockk<ContentRestrictionChecker>(relaxed = true), metadata, client, settings)
+    try {
+      client.upsertItemChecked(item)
+      val context = controller.getContext(principal, seriesId)
+      assertThat(context.featuresStatus).isEqualTo(GorseFeaturesStatus.AVAILABLE)
+      assertThat(context.tags).containsExactly("actual tag")
+      assertThat(context.authors).containsExactly("actual author")
+      assertThat(context.pageBuckets).containsExactly("pagesize_legacy")
+      assertThat(context.tagCount).isEqualTo(28)
+      assertThat(context.pagesCount).isEqualTo(36L)
+    } finally {
+      client.deleteItemChecked(seriesId)
+    }
+    assertThat(controller.getContext(principal, seriesId).featuresStatus).isEqualTo(GorseFeaturesStatus.MISSING)
+  }
+
   @Test
   fun `isolated Gorse persists explicit preference and read together`() {
     val settings = mockk<GorseSettingsProvider>()

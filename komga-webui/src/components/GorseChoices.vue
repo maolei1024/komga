@@ -16,7 +16,7 @@
         <gorse-metadata :item="item" class="px-2 pb-2"/>
       </button>
       <v-card-actions>
-        <v-btn text small :to="details(item)">{{ $t('gorse_reading.details') }}</v-btn>
+        <v-btn text small :disabled="busy" :to="details(item)">{{ $t('gorse_reading.details') }}</v-btn>
       </v-card-actions>
     </v-card>
   </div>
