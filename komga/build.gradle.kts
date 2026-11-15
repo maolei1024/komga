@@ -152,6 +152,7 @@ tasks {
   withType<Test> {
     useJUnitPlatform()
     systemProperty("spring.profiles.active", "test")
+    systemProperty("spring.test.context.cache.maxSize", "2")
     maxHeapSize = "1G"
   }
 
