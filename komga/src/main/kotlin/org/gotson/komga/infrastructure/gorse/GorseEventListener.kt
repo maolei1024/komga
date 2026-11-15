@@ -7,9 +7,9 @@ import org.gotson.komga.domain.persistence.KomgaUserRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
+import org.gotson.komga.language.toUTCZoned
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 
@@ -89,7 +89,7 @@ class GorseEventListener(
         FeedbackType = gorseSettings.feedbackType,
         UserId = progress.userId,
         ItemId = book.seriesId,
-        Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+        Timestamp = progress.readDate.toUTCZoned().format(ISO_UTC_FORMATTER),
       )
     gorseClient.insertFeedback(listOf(feedback))
   }
@@ -141,7 +141,7 @@ class GorseEventListener(
           FeedbackType = gorseSettings.feedbackType,
           UserId = progress.userId,
           ItemId = book.seriesId,
-          Timestamp = progress.readDate.atOffset(ZoneOffset.UTC).format(ISO_UTC_FORMATTER),
+          Timestamp = progress.readDate.toUTCZoned().format(ISO_UTC_FORMATTER),
         )
       }
     if (feedbackList.isNotEmpty()) {
