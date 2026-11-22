@@ -2,6 +2,7 @@ package org.gotson.komga.interfaces.api.rest
 
 import org.gotson.komga.infrastructure.gorse.GorseClient
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
+import org.gotson.komga.infrastructure.metadata.enrichment.MetadataEnrichmentDictionaryService
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.ContentRestrictionChecker
 import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
@@ -25,6 +26,7 @@ class GorseFeedbackContextController(
   private val metadata: GorseRecommendationMetadata,
   private val client: GorseClient,
   private val settings: GorseSettingsProvider,
+  private val dictionary: MetadataEnrichmentDictionaryService,
 ) {
   @GetMapping("{seriesId}/context")
   fun getContext(
@@ -54,11 +56,13 @@ class GorseFeedbackContextController(
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinct()
+    val tags = values("tags")
     val buckets = values("preference_buckets")
     return result.copy(
       featuresStatus = GorseFeaturesStatus.AVAILABLE,
       authors = values("authors"),
-      tags = values("tags"),
+      tags = tags,
+      displayTags = tags.map { dictionary.lookup("tag", it) ?: it },
       pageBuckets = buckets.filter { it.startsWith("pagesize_", ignoreCase = true) },
       tagBuckets = buckets.filter { it.startsWith("tagsize_", ignoreCase = true) },
       genres = values("genres"),

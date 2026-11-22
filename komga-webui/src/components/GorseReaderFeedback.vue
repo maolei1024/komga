@@ -9,10 +9,18 @@
         </v-btn>
       </div>
       <div class="text-caption text-truncate" :title="summary">{{ summary }}</div>
-      <div class="text-caption text-truncate" :title="bucketSummary">{{ bucketSummary }}</div>
       <v-progress-linear v-if="state.contextLoading" indeterminate height="2"/>
     </div>
-    <div v-if="state.expanded" class="gorse-feedback-details" tabindex="0">
+    <template v-if="state.context && state.context.featuresStatus === 'AVAILABLE'">
+      <strong id="gorse-content-tags-label" class="gorse-feedback-tag-label text-caption font-weight-medium">
+        {{ $t('gorse_feedback.tags', {count: state.context.tags.length}) }}
+      </strong>
+      <ul v-if="displayTags.length" class="gorse-feedback-tags gorse-feedback-scroll" tabindex="0" aria-labelledby="gorse-content-tags-label">
+        <li v-for="(tag, index) in displayTags" :key="state.context.tags[index]">{{ tag }}</li>
+      </ul>
+      <span v-else class="text-caption">{{ $t('gorse_feedback.no_tags') }}</span>
+    </template>
+    <div v-if="state.expanded" class="gorse-feedback-details gorse-feedback-scroll" tabindex="0">
       <dl>
         <template v-for="field in fields">
           <dt :key="field.key + '-label'">{{ $t('gorse_feedback.' + field.key) }}</dt>
@@ -33,20 +41,17 @@
       {{ $t('gorse_feedback.' + state.saveError) }}
       <v-btn text x-small :disabled="disabled || state.saving" @click="state.retry()">{{ $t('gorse_reading.retry') }}</v-btn>
     </div>
-    <div class="gorse-feedback-actions">
-      <template v-if="!state.incognito">
-        <v-btn v-for="choice in choices" :key="choice.value" small outlined
-               :data-feedback="choice.value" :aria-pressed="state.preference === choice.value"
-               :aria-label="$t(state.preference === choice.value ? choice.cancel : choice.label)"
-               :color="state.preference === choice.value ? 'primary' : undefined"
-               :disabled="disabled || state.saving || !state.preferenceReady"
-               :loading="state.saving && (state.pending === choice.value || (state.pending === 'NONE' && state.preference === choice.value))"
-               @click="state.toggle(choice.value)">
-          <v-icon small left>{{ choice.icon }}</v-icon>{{ $t(choice.label) }}
-        </v-btn>
-        <span v-if="state.saved" class="text-caption" role="status">{{ $t('gorse_feedback.saved') }}</span>
-      </template>
-      <slot name="next"/>
+    <div v-if="!state.incognito" class="gorse-feedback-actions">
+      <v-btn v-for="choice in choices" :key="choice.value" small outlined
+             :data-feedback="choice.value" :aria-pressed="state.preference === choice.value"
+             :aria-label="$t(state.preference === choice.value ? choice.cancel : choice.label)"
+             :color="state.preference === choice.value ? 'primary' : undefined"
+             :disabled="disabled || state.saving || !state.preferenceReady"
+             :loading="state.saving && (state.pending === choice.value || (state.pending === 'NONE' && state.preference === choice.value))"
+             @click="state.toggle(choice.value)">
+        <v-icon small left>{{ choice.icon }}</v-icon>{{ $t(choice.label) }}
+      </v-btn>
+      <span v-if="state.saved" class="text-caption" role="status">{{ $t('gorse_feedback.saved') }}</span>
     </div>
   </section>
 </template>
@@ -62,7 +67,6 @@ export default Vue.extend({
     disabled: {type: Boolean, default: false},
   },
   data: () => ({
-    observer: undefined as ResizeObserver | undefined,
     choices: [
       {value: 'LIKE' as const, label: 'gorse_feedback.like', cancel: 'gorse_feedback.cancel_like', icon: 'mdi-heart-outline'},
       {value: 'DISLIKE' as const, label: 'gorse_feedback.dislike', cancel: 'gorse_feedback.cancel_dislike', icon: 'mdi-thumb-down-outline'},
@@ -72,56 +76,37 @@ export default Vue.extend({
     unknown(): string { return this.$t('gorse_feedback.unknown').toString() },
     summary(): string {
       const context = this.state.context
-      return this.$t('gorse_feedback.summary', {
-        pages: context?.pagesCount ?? '—', tags: context?.tagCount ?? '—', authors: this.values(context?.authors),
-      }).toString()
+      return this.$t('gorse_feedback.summary', {pages: context?.pagesCount ?? '—', tags: context?.tagCount ?? '—'}).toString()
     },
-    bucketSummary(): string {
-      return this.$t('gorse_feedback.buckets', {
-        pages: this.values(this.state.context?.pageBuckets), tags: this.values(this.state.context?.tagBuckets),
-      }).toString()
+    displayTags(): string[] {
+      return this.state.context?.displayTags ?? this.state.context?.tags ?? []
     },
     fields(): {key: string, value: string}[] {
       const context = this.state.context
-      return [
-        {key: 'pages', value: String(context?.pagesCount ?? '—')},
-        {key: 'card_tags', value: String(context?.tagCount ?? '—')},
-        {key: 'content_tags', value: context?.featuresStatus === 'AVAILABLE' && context.tags.length ? String(context.tags.length) : this.unknown},
-        ...(['authors', 'pageBuckets', 'tagBuckets', 'tags', 'genres', 'groups', 'characters'] as const)
-          .map(key => ({key, value: this.values(context?.[key])})),
-      ]
+      return (['authors', 'pageBuckets', 'tagBuckets', 'genres', 'groups', 'characters'] as const)
+        .map(key => ({key, value: this.values(context?.[key])}))
     },
   },
-  mounted() {
-    if (typeof ResizeObserver !== 'undefined') {
-      this.observer = new ResizeObserver(this.measure)
-      this.observer.observe(this.$el)
-    }
-    this.measure()
-  },
-  updated() { this.measure() },
-  beforeDestroy() { this.observer?.disconnect() },
   methods: {
     values(values?: string[]): string { return values?.length ? values.join(' · ') : this.unknown },
-    measure() { this.$emit('height', this.$el.getBoundingClientRect().height) },
     keyPressed(event: KeyboardEvent) {
       event.stopPropagation()
       const target = event.target as HTMLElement | null
-      const details = target?.closest?.('.gorse-feedback-details') as HTMLElement | null
+      const scrollArea = target?.closest<HTMLElement>('.gorse-feedback-scroll')
       if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault()
       if (event.key === ' ' && !target?.closest?.('button, a[href]')) {
         event.preventDefault()
-        if (details) details.scrollTop += (event.shiftKey ? -1 : 1) * details.clientHeight
+        if (scrollArea) scrollArea.scrollTop += (event.shiftKey ? -1 : 1) * scrollArea.clientHeight
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
         event.preventDefault()
-        if (details) {
-          if (event.key === 'Home') details.scrollTop = 0
-          else if (event.key === 'End') details.scrollTop = details.scrollHeight
+        if (scrollArea) {
+          if (event.key === 'Home') scrollArea.scrollTop = 0
+          else if (event.key === 'End') scrollArea.scrollTop = scrollArea.scrollHeight
           else {
-            const distance = event.key.startsWith('Page') ? details.clientHeight : 40
-            if (['ArrowUp', 'PageUp'].includes(event.key)) details.scrollTop -= distance
-            if (['ArrowDown', 'PageDown'].includes(event.key)) details.scrollTop += distance
+            const distance = event.key.startsWith('Page') ? scrollArea.clientHeight : 40
+            if (['ArrowUp', 'PageUp'].includes(event.key)) scrollArea.scrollTop -= distance
+            if (['ArrowDown', 'PageDown'].includes(event.key)) scrollArea.scrollTop += distance
           }
         }
       }
@@ -153,12 +138,30 @@ export default Vue.extend({
 }
 .gorse-feedback-summary, .gorse-feedback-actions, .gorse-feedback-status { flex: 0 0 auto; }
 .gorse-feedback-summary strong { min-width: 0; }
-.gorse-feedback-details { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.gorse-feedback-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.gorse-feedback-scroll:focus-visible { outline: 2px solid var(--v-primary-base, currentColor); outline-offset: 1px; }
+.gorse-feedback-tag-label { margin: 4px 0; }
+.gorse-feedback-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: .25rem .375rem;
+  max-height: 5.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .8125rem;
+  line-height: 1.25rem;
+}
+.gorse-feedback-tags li {
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, .14);
+  overflow-wrap: anywhere;
+}
 .gorse-feedback-details dl { margin: 8px 0; }
 .gorse-feedback-details dt { font-weight: 600; font-size: 12px; }
 .gorse-feedback-details dd { margin: 0 0 8px; overflow-wrap: anywhere; font-size: 13px; }
 .gorse-feedback-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 8px; }
-@media (max-width: 959px) {
-  .gorse-reader-feedback-panel { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
-}
 </style>

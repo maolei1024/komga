@@ -10,6 +10,7 @@ import org.gotson.komga.domain.model.KomgaUser
 import org.gotson.komga.infrastructure.gorse.GorseClient
 import org.gotson.komga.infrastructure.gorse.GorseItem
 import org.gotson.komga.infrastructure.gorse.GorseSettingsProvider
+import org.gotson.komga.infrastructure.metadata.enrichment.MetadataEnrichmentDictionaryService
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.ContentRestrictionChecker
 import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
@@ -28,14 +29,16 @@ class GorseFeedbackContextControllerTest {
   private val metadata = mockk<GorseRecommendationMetadata>()
   private val client = mockk<GorseClient>()
   private val settings = mockk<GorseSettingsProvider>()
+  private val dictionary = mockk<MetadataEnrichmentDictionaryService>()
   private val principal = mockk<KomgaPrincipal>()
   private val user = mockk<KomgaUser>()
   private val series = mockk<SeriesDto>()
-  private val controller = GorseFeedbackContextController(seriesRepository, checker, metadata, client, settings)
+  private val controller = GorseFeedbackContextController(seriesRepository, checker, metadata, client, settings, dictionary)
 
   @BeforeEach
   fun setup() {
-    clearMocks(seriesRepository, checker, metadata, client, settings, principal, user, series)
+    clearMocks(seriesRepository, checker, metadata, client, settings, dictionary, principal, user, series)
+    every { dictionary.lookup("tag", any()) } returns null
     every { principal.user } returns user
     every { user.id } returns "user"
     every { settings.enabled } returns true
@@ -48,6 +51,7 @@ class GorseFeedbackContextControllerTest {
 
   @Test
   fun `returns actual Gorse features independently of card counts or current bucket configuration`() {
+    every { dictionary.lookup("tag", "romance") } returns "恋爱"
     every { client.getItemChecked("series") } returns
       GorseItem(
         "series",
@@ -69,6 +73,7 @@ class GorseFeedbackContextControllerTest {
     assertThat(result.pagesCount).isEqualTo(36L)
     assertThat(result.tagCount).isEqualTo(28)
     assertThat(result.tags).containsExactly("romance", "action")
+    assertThat(result.displayTags).containsExactly("恋爱", "action")
     assertThat(result.authors).containsExactly("artist one", "artist two")
     assertThat(result.pageBuckets).containsExactly("pagesize_historical")
     assertThat(result.tagBuckets).containsExactly("tagsize_0-5")
@@ -86,6 +91,7 @@ class GorseFeedbackContextControllerTest {
       assertThat(result.featuresStatus).isEqualTo(expected)
       assertThat(result.pagesCount).isEqualTo(36L)
       assertThat(result.tags).isEmpty()
+      assertThat(result.displayTags).isEmpty()
       assertThat(result.pageBuckets).isEmpty()
     }
     every { client.getItemChecked("series") } throws IllegalStateException("network unavailable")
@@ -101,6 +107,8 @@ class GorseFeedbackContextControllerTest {
     assertThat(result.pagesCount).isNull()
     assertThat(result.authors).isEmpty()
     assertThat(result.tags).containsExactly("romance")
+    assertThat(result.displayTags).containsExactly("romance")
+    verify(exactly = 1) { dictionary.lookup("tag", "romance") }
     assertThat(result.tagBuckets).isEmpty()
   }
 

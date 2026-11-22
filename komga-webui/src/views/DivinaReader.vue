@@ -1,8 +1,5 @@
 <template>
-  <v-container class="ma-0 pa-0 full-height" fluid
-               :class="{'gorse-feedback-reserved': gorseFeedbackVisible}"
-               :style="`width: 100%; background-color: ${backgroundColor}; --gorse-feedback-space: ${gorseFeedbackHeight + (showToolbars ? 48 : 0)}px; --gorse-feedback-offset: ${showToolbars ? 48 : 0}px`"
-  >
+  <v-container class="ma-0 pa-0 full-height full-width" fluid :style="{backgroundColor}">
     <v-alert v-if="readerError" type="error" class="reader-error" role="alert">
       {{ $t(`gorse_reading.${readerError}`) }}
       <v-btn text :loading="gorseBusy" @click="retryReader">{{ $t('gorse_reading.retry') }}</v-btn>
@@ -168,23 +165,14 @@
       ></paged-reader>
     </div>
 
-    <div v-if="gorseMode && gorseAtEnd && !gorsePicker && !showToolbars && !gorseFeedbackVisible" class="gorse-end">
+    <div v-if="gorseMode && gorseAtEnd && !gorsePicker && (!showToolbars || gorseCompleted)"
+         class="gorse-end" :class="{'gorse-end-with-toolbar': showToolbars}">
       <div class="text-caption text-center mb-1">{{ $t('gorse_reading.end_hint') }}</div>
       <v-btn color="primary" :loading="gorseBusy" :disabled="gorseInputBlocked" @click="jumpToNext">
         {{ $t($_.isEmpty(siblingNext) ? 'gorse_reading.choose_next' : 'gorse_reading.next_book') }}
       </v-btn>
     </div>
 
-    <div v-if="gorseFeedbackSaving && !gorsePicker" class="gorse-feedback-saving-mask" @wheel.prevent @touchmove.prevent/>
-    <div v-if="gorseFeedbackVisible" class="gorse-reader-feedback">
-      <gorse-reader-feedback :state="gorseFeedback" :disabled="gorseBusy || settingUp" @height="resizeFeedback">
-        <template #next>
-          <v-btn small color="primary" :disabled="gorseFeedbackSaving || gorseBusy" @click="runReaderAction(continueGorse)">
-            {{ $t('gorse_reading.choose_next') }}
-          </v-btn>
-        </template>
-      </gorse-reader-feedback>
-    </div>
     <gorse-picker-dialog v-if="gorseSession" v-model="gorsePicker" :session="gorseSession" :open-book="openGorseBook" :blocked="gorseFeedbackSaving">
       <template v-if="gorseCompleted && gorseFeedback" #feedback>
         <gorse-reader-feedback :state="gorseFeedback" :disabled="gorseBusy || settingUp" @close="gorsePicker = false"/>
@@ -421,7 +409,6 @@ export default Vue.extend({
       gorseAtEnd: false,
       gorseCompleted: false,
       gorseFeedback: undefined as GorseReaderFeedback | undefined,
-      gorseFeedbackHeight: 0,
       readerError: '',
       readerRetry: undefined as (() => Promise<void>) | undefined,
       setupVersion: 0,
@@ -628,9 +615,6 @@ export default Vue.extend({
     gorseFeedbackSaving(): boolean {
       return !!this.gorseFeedback?.saving
     },
-    gorseFeedbackVisible(): boolean {
-      return this.gorseMode && this.gorseCompleted && !!this.gorseFeedback && !this.gorsePicker
-    },
     continuousReader(): boolean {
       return this.readingDirection === ReadingDirection.WEBTOON
     },
@@ -810,10 +794,10 @@ export default Vue.extend({
         event.stopImmediatePropagation()
         return
       }
-      if (this.gorseMode && this.gorseFeedback?.expanded && event.key === 'Escape') {
+      if (this.gorsePicker && this.gorseFeedback?.expanded && event.key === 'Escape') {
         this.gorseFeedback.expanded = false
         this.$nextTick(() => {
-          document.querySelector<HTMLElement>('.v-dialog--active [data-feedback-details-toggle], .gorse-reader-feedback [data-feedback-details-toggle]')?.focus()
+          document.querySelector<HTMLElement>('.v-dialog--active [data-feedback-details-toggle]')?.focus()
         })
         event.preventDefault()
         event.stopImmediatePropagation()
@@ -839,16 +823,6 @@ export default Vue.extend({
       this.gorseAtEnd = !!(this.gorseMode && !this.settingUp && surface && this.pages.length &&
         (this.continuousReader || reader?.canNext === false) && isReaderAtBottom(surface))
       if (this.gorseAtEnd && this.$_.isEmpty(this.siblingNext)) this.gorseCompleted = true
-    },
-    resizeFeedback(height: number) {
-      const difference = height - this.gorseFeedbackHeight
-      if (Math.abs(difference) < 1) return
-      const wasAtEnd = this.gorseAtEnd
-      this.gorseFeedbackHeight = height
-      this.$nextTick(() => {
-        if (wasAtEnd && this.gorseFeedbackVisible) window.scrollBy(0, difference)
-        this.updateGorseEnd()
-      })
     },
     async runReaderAction(action: () => Promise<void>) {
       if (this.gorseBusy || this.gorseFeedbackSaving) return
@@ -952,7 +926,6 @@ export default Vue.extend({
         this.gorseFeedback?.dispose()
         this.gorseFeedback = undefined
         this.gorseCompleted = false
-        this.gorseFeedbackHeight = 0
         if (gorse && this.$_.isEmpty(nextBook)) {
           const finalPage = prepared.pages.length
           this.gorseFeedback = new GorseReaderFeedback(
@@ -1210,14 +1183,6 @@ export default Vue.extend({
 })
 </script>
 <style scoped>
-.gorse-reader-feedback { position: fixed; top: var(--gorse-feedback-offset); left: 0; right: 0; z-index: 4; }
-.gorse-feedback-reserved { padding-top: var(--gorse-feedback-space) !important; }
-.gorse-feedback-saving-mask { position: fixed; inset: 0; z-index: 3; }
-@media (max-width: 959px) {
-  .gorse-reader-feedback { top: auto; bottom: var(--gorse-feedback-offset); }
-  .gorse-feedback-reserved { padding-top: 0 !important; padding-bottom: var(--gorse-feedback-space) !important; }
-}
-
 .reader-error {
   position: fixed;
   top: 48px;
@@ -1236,6 +1201,8 @@ export default Vue.extend({
   color: white;
   background: rgba(0, 0, 0, 0.8);
 }
+
+.gorse-end-with-toolbar { bottom: 64px; }
 
 .settings {
   z-index: 2;

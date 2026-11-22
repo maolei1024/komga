@@ -45,17 +45,14 @@ export default Vue.extend({
 <style scoped>
 .gorse-picker-toolbar {
   flex: 0 0 auto;
-  order: 0;
 }
 
 .gorse-picker-content {
-  order: 2;
   min-height: 0;
   overscroll-behavior: contain;
 }
 
-.gorse-picker-feedback { flex: 0 0 auto; min-height: 0; order: 1; }
-.gorse-picker-mobile .gorse-picker-feedback { order: 3; }
+.gorse-picker-feedback { flex: 0 0 auto; min-height: 0; }
 
 .gorse-picker-mobile {
   height: 100vh;

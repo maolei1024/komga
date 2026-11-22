@@ -10,6 +10,7 @@ import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadProgressRepository
+import org.gotson.komga.infrastructure.metadata.enrichment.MetadataEnrichmentDictionaryService
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
 import org.gotson.komga.interfaces.api.ContentRestrictionChecker
 import org.gotson.komga.interfaces.api.persistence.SeriesDtoRepository
@@ -52,12 +53,15 @@ class GorseReadingPreferenceLiveTest {
     every { repository.findByIdOrNull(seriesId, "context-reader") } returns series
     val metadata = mockk<GorseRecommendationMetadata>()
     every { metadata.enrich(listOf(series)) } returns listOf(series)
-    val controller = GorseFeedbackContextController(repository, mockk<ContentRestrictionChecker>(relaxed = true), metadata, client, settings)
+    val dictionary = mockk<MetadataEnrichmentDictionaryService>()
+    every { dictionary.lookup("tag", "actual tag") } returns "内容标签"
+    val controller = GorseFeedbackContextController(repository, mockk<ContentRestrictionChecker>(relaxed = true), metadata, client, settings, dictionary)
     try {
       client.upsertItemChecked(item)
       val context = controller.getContext(principal, seriesId)
       assertThat(context.featuresStatus).isEqualTo(GorseFeaturesStatus.AVAILABLE)
       assertThat(context.tags).containsExactly("actual tag")
+      assertThat(context.displayTags).containsExactly("内容标签")
       assertThat(context.authors).containsExactly("actual author")
       assertThat(context.pageBuckets).containsExactly("pagesize_legacy")
       assertThat(context.tagCount).isEqualTo(28)

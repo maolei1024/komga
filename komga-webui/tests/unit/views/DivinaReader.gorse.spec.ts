@@ -2,6 +2,7 @@ import {shallowMount, Wrapper} from '@vue/test-utils'
 import Vue from 'vue'
 import lodash from 'lodash'
 import DivinaReader from '@/views/DivinaReader.vue'
+import GorseReaderFeedback from '@/components/GorseReaderFeedback.vue'
 import {ContinuousScaleType, PagedReaderLayout, ScaleType} from '@/types/enum-reader'
 import {ReadingDirection} from '@/types/enum-books'
 import {resetGorseReading} from '@/services/gorse-reading'
@@ -58,6 +59,10 @@ describe('Gorse reader transitions', () => {
   async function mount(query: Record<string, string> = {mode: 'gorse'}) {
     wrapper = shallowMount(DivinaReader, {
       propsData: {bookId: 'first'},
+      stubs: {
+        GorsePickerDialog: {props: ['value'], template: '<aside v-if="value"><slot name="feedback"/></aside>'},
+        GorseReaderFeedback: {extends: GorseReaderFeedback, methods: {$t: (key: string) => key}},
+      },
       mocks: {
         $_: lodash,
         $debug: jest.fn(),
@@ -173,22 +178,33 @@ describe('Gorse reader transitions', () => {
     expect(gorse.getFeedbackContext).not.toHaveBeenCalled()
   })
 
-  it('prefetches the final series context but waits for the actual end to display feedback', async () => {
+  it('offers feedback only inside the next-book picker, including after closing and reopening it', async () => {
     ;(isReaderAtBottom as jest.Mock).mockReturnValue(false)
     const view = await mount()
     expect(gorse.getFeedbackContext).toHaveBeenCalledWith('series')
-    expect(view.gorseFeedbackVisible).toBe(false)
+    expect(wrapper!.find('[data-gorse-feedback]').exists()).toBe(false)
+    expect(wrapper!.find('.gorse-end').exists()).toBe(false)
     ;(isReaderAtBottom as jest.Mock).mockReturnValue(true)
     view.updateGorseEnd()
+    view.showToolbars = true
     await Vue.nextTick()
-    expect(view.gorseFeedbackVisible).toBe(true)
-    const feedback = view.gorseFeedback
-    await view.continueGorse()
-    expect(view.gorseFeedback).toBe(feedback)
-    expect(view.gorseCompleted).toBe(true)
-    expect(view.gorseFeedbackVisible).toBe(false)
+    expect(wrapper!.find('[data-gorse-feedback]').exists()).toBe(false)
+    await wrapper!.find('.gorse-end v-btn').trigger('click')
+    await flushPromises()
+    const like = 'aside [data-feedback="LIKE"]'
+    expect(wrapper!.find(like).exists()).toBe(true)
+    await wrapper!.find(like).trigger('click')
+    await flushPromises()
+    expect(gorse.setSeriesPreference).toHaveBeenLastCalledWith('series', 'LIKE')
     view.gorsePicker = false
-    expect(view.gorseFeedbackVisible).toBe(true)
+    await Vue.nextTick()
+    expect(wrapper!.find('[data-gorse-feedback]').exists()).toBe(false)
+    view.gorseKeyPressed(new KeyboardEvent('keydown', {key: 'ArrowDown'}))
+    await flushPromises()
+    expect(wrapper!.find(like).attributes('aria-pressed')).toBe('true')
+    await wrapper!.find(like).trigger('click')
+    await flushPromises()
+    expect(gorse.setSeriesPreference).toHaveBeenLastCalledWith('series', 'NONE')
   })
 
   it('does not offer series feedback at an intermediate book end', async () => {
@@ -197,6 +213,10 @@ describe('Gorse reader transitions', () => {
     expect(view.gorseCompleted).toBe(false)
     expect(view.gorseFeedback).toBeUndefined()
     expect(gorse.getFeedbackContext).not.toHaveBeenCalled()
+    expect(wrapper!.find('.gorse-end').text()).toContain('gorse_reading.next_book')
+    view.showToolbars = true
+    await Vue.nextTick()
+    expect(wrapper!.find('.gorse-end').exists()).toBe(false)
   })
 
   it('blocks book changes, exit, and reader keys while final feedback is pending', async () => {

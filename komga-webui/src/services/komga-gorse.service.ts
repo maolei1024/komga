@@ -57,6 +57,7 @@ export interface GorseFeedbackContextDto {
     featuresStatus: 'AVAILABLE' | 'MISSING' | 'UNAVAILABLE'
     authors: string[]
     tags: string[]
+    displayTags?: string[]
     pageBuckets: string[]
     tagBuckets: string[]
     genres: string[]

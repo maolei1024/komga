@@ -85,4 +85,5 @@ data class GorseFeedbackContextDto(
   val genres: List<String> = emptyList(),
   val groups: List<String> = emptyList(),
   val characters: List<String> = emptyList(),
+  val displayTags: List<String> = emptyList(),
 )
